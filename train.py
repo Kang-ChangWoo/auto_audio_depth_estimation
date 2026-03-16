@@ -730,6 +730,8 @@ def train(cfg):
     else:
         optimizer = torch.optim.SGD(model.parameters(), lr=lr)
 
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.mode.epochs, eta_min=1e-6)
+
     # Output directories
     project_dir = os.path.dirname(os.path.abspath(__file__))
     experiment_name = (f"{cfg.model.generator}_{cfg.dataset.name}_BS{batch_size}_"
@@ -824,9 +826,10 @@ def train(cfg):
                     msg += f' H:{np.mean(losses_accum["hist"]):.4f}'
                 print(msg)
 
+        scheduler.step()
         epoch_time = time.time() - t0
         print(f'Epoch [{epoch}/{cfg.mode.epochs}] Loss: {np.mean(losses_accum["total"]):.4f} '
-              f'Time: {epoch_time:.1f}s')
+              f'Time: {epoch_time:.1f}s LR: {scheduler.get_last_lr()[0]:.6f}')
 
         # --- Validation ---
         if epoch % cfg.mode.validation_iter == 0:
