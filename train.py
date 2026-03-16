@@ -36,6 +36,12 @@ from prepare import (
 
 
 # ============================================================
+# Constants (fixed, do not modify)
+# ============================================================
+
+TIME_BUDGET = 3600  # training time budget in seconds (1 hour)
+
+# ============================================================
 # Configuration
 # ============================================================
 
@@ -761,6 +767,7 @@ def train(cfg):
     depth_type = cfg.dataset.depth_type
     target_h, target_w = int(cfg.dataset.images_size[0]), int(cfg.dataset.images_size[1])
 
+    training_start = time.time()
     for epoch in range(start_epoch, cfg.mode.epochs + 1):
         foa_frozen = foa_freeze_epochs > 0 and epoch <= foa_freeze_epochs
         if foa_freeze_epochs > 0:
@@ -893,8 +900,15 @@ def train(cfg):
                 }, os.path.join(ckpt_dir, f'best_model_epoch{epoch}.pth'))
                 print(f'  >> Best model saved (ABS_REL: {best_abs_rel:.4f})')
 
+        # Time budget check
+        elapsed = time.time() - training_start
+        if elapsed >= TIME_BUDGET:
+            print(f'\nTime budget reached ({elapsed:.1f}s >= {TIME_BUDGET}s). Stopping.')
+            break
 
+    total_time = time.time() - training_start
     print(f'\nTraining complete. Best ABS_REL: {best_abs_rel:.4f}')
+    print(f'training_seconds: {total_time:.1f}')
 
 
 # ============================================================
