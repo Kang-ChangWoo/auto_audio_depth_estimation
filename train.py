@@ -868,15 +868,15 @@ def train(cfg):
                             up = depth_pred_v[idx].cpu().numpy()
                         errors.append(compute_errors(ug, up))
 
-                        if do_vis and dataset_idx in vis_indices:
-                            scene_id, step_idx = val_set.samples[dataset_idx]
-                            gt_rgb = load_gt_rgb(dataset_dir, scene_id, step_idx, depth_type, target_h, target_w)
-                            vis_data.append({
-                                'gt_rgb': gt_rgb, 'gt_depth': ug, 'pred_depth': up,
-                                'input': audio_v[idx].cpu().numpy(),
-                                'gt_foa': gt_foa_v[idx].cpu().numpy(),
-                                'pred_foa': pred_foa_v[idx].cpu().numpy(),
-                            })
+                        #if do_vis and dataset_idx in vis_indices:
+                        #    scene_id, step_idx = val_set.samples[dataset_idx]
+                        #    gt_rgb = load_gt_rgb(dataset_dir, scene_id, step_idx, depth_type, target_h, target_w)
+                        #    vis_data.append({
+                        #        'gt_rgb': gt_rgb, 'gt_depth': ug, 'pred_depth': up,
+                        #        'input': audio_v[idx].cpu().numpy(),
+                        #        'gt_foa': gt_foa_v[idx].cpu().numpy(),
+                        #        'pred_foa': pred_foa_v[idx].cpu().numpy(),
+                        #    })
 
             mean_errors = np.array(errors).mean(0)
             abs_rel = mean_errors[0]
