@@ -833,8 +833,8 @@ def train(cfg):
             model.eval()
             errors = []
             val_losses = []
-            vis_data = []
-            do_vis = (epoch % 5 == 0)
+            # vis_data = []  # disabled: dataset has no RGB images
+            do_vis = False  # disabled: dataset only has depth.npy, audio.wav, ambi
 
             with torch.no_grad():
                 for batch_idx, (audio_v, gtdepth_v, ambi_v) in enumerate(val_loader):
@@ -868,15 +868,16 @@ def train(cfg):
                             up = depth_pred_v[idx].cpu().numpy()
                         errors.append(compute_errors(ug, up))
 
-                        #if do_vis and dataset_idx in vis_indices:
-                        #    scene_id, step_idx = val_set.samples[dataset_idx]
-                        #    gt_rgb = load_gt_rgb(dataset_dir, scene_id, step_idx, depth_type, target_h, target_w)
-                        #    vis_data.append({
-                        #        'gt_rgb': gt_rgb, 'gt_depth': ug, 'pred_depth': up,
-                        #        'input': audio_v[idx].cpu().numpy(),
-                        #        'gt_foa': gt_foa_v[idx].cpu().numpy(),
-                        #        'pred_foa': pred_foa_v[idx].cpu().numpy(),
-                        #    })
+                        # Visualization disabled: dataset only has depth.npy, audio.wav, ambi
+                        # if do_vis and dataset_idx in vis_indices:
+                        #     scene_id, step_idx = val_set.samples[dataset_idx]
+                        #     gt_rgb = load_gt_rgb(dataset_dir, scene_id, step_idx, depth_type, target_h, target_w)
+                        #     vis_data.append({
+                        #         'gt_rgb': gt_rgb, 'gt_depth': ug, 'pred_depth': up,
+                        #         'input': audio_v[idx].cpu().numpy(),
+                        #         'gt_foa': gt_foa_v[idx].cpu().numpy(),
+                        #         'pred_foa': pred_foa_v[idx].cpu().numpy(),
+                        #     })
 
             mean_errors = np.array(errors).mean(0)
             abs_rel = mean_errors[0]
@@ -884,9 +885,9 @@ def train(cfg):
                   f'ABS_REL: {abs_rel:.4f} RMSE: {mean_errors[1]:.4f} '
                   f'd1: {mean_errors[2]:.4f} d2: {mean_errors[3]:.4f} d3: {mean_errors[4]:.4f}')
 
-            if do_vis and vis_data:
-                save_visualizations(vis_data, epoch, vis_dir, cfg.dataset.max_depth)
-                print(f'  Saved {len(vis_data)} visualizations')
+            # if do_vis and vis_data:
+            #     save_visualizations(vis_data, epoch, vis_dir, cfg.dataset.max_depth)
+            #     print(f'  Saved {len(vis_data)} visualizations')
 
             if abs_rel < best_abs_rel:
                 best_abs_rel = abs_rel
