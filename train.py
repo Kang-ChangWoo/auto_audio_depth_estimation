@@ -97,7 +97,7 @@ def make_config(args):
             learning_rate=args.lr,
             optimizer=args.optimizer,
             validation=True,
-            validation_iter=5,
+            validation_iter=2,
             saving_checkpoints=10,
             shuffle=True,
             num_threads=args.num_workers,
@@ -733,7 +733,7 @@ def train(cfg):
     else:
         optimizer = torch.optim.SGD(model.parameters(), lr=lr)
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.mode.epochs, eta_min=1e-6)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=15, eta_min=1e-6)
 
     # Output directories
     project_dir = os.path.dirname(os.path.abspath(__file__))
