@@ -68,19 +68,81 @@ def sh_basis_matrix(max_order, elevation, azimuth):
     return B
 
 
-def reconstruct_per_component_maps(sh_coeffs, B):
-    """Reconstruct per-SH-component energy maps.
+def compute_covariance(ir, sr=48000, window_ms=None):
+    """Compute inter-channel covariance matrix R from ambisonic IR.
+
+    R_nm = (1/T) sum_t b_n(t) b_m(t)
+
     Args:
-        sh_coeffs: (n_ch, T) SH time-domain signals
-        B: (N_pixels, n_ch) precomputed SH basis matrix
+        ir: (n_ch, N_samples) ambisonic impulse response
+        sr: sample rate
+        window_ms: (start_ms, end_ms) time window, or None for full IR
     Returns:
-        (n_ch, N_pixels) per-component spatial energy maps
+        R: (n_ch, n_ch) covariance matrix
+    """
+    if window_ms is not None:
+        s0 = int(window_ms[0] * sr / 1000)
+        s1 = int(window_ms[1] * sr / 1000)
+        s1 = min(s1, ir.shape[1])
+        ir_win = ir[:, s0:s1]
+    else:
+        ir_win = ir
+    T = ir_win.shape[1]
+    if T == 0:
+        return np.zeros((ir.shape[0], ir.shape[0]))
+    return (ir_win @ ir_win.T) / T
+
+
+def energy_map_from_cov(R, B, H, W):
+    """Compute directional energy E(Omega) = y(Omega)^T R y(Omega).
+
+    Args:
+        R: (n_ch, n_ch) covariance matrix
+        B: (H*W, n_ch) SH basis
+    Returns:
+        E: (H, W) directional energy map
+    """
+    BR = B @ R          # (H*W, n_ch)
+    E = np.sum(BR * B, axis=1)  # (H*W,)
+    return E.reshape(H, W)
+
+
+def reconstruct_energy_maps(ir, B, H, W, sr=48000, early_ms=20.0):
+    """Compute covariance-based directional energy maps from ambisonic IR.
+
+    Uses inter-channel covariance to properly capture directional energy,
+    instead of the old per-channel RMS projection which loses correlations.
+
+    Returns (4, H, W):
+        [0] Full-IR energy map
+        [1] Early energy map (0 to early_ms)
+        [2] Late energy map (early_ms to end)
+        [3] Early-Late difference (each normalized before subtraction)
     """
     n_ch = B.shape[1]
-    A = sh_coeffs[:n_ch]
-    rms = np.sqrt(np.mean(A ** 2, axis=1))
-    maps = B * rms[None, :]
-    return maps.T
+    ir_ch = ir[:n_ch]
+
+    # Full energy
+    R_full = compute_covariance(ir_ch, sr=sr)
+    E_full = energy_map_from_cov(R_full, B, H, W)
+
+    # Early energy (0 to early_ms)
+    R_early = compute_covariance(ir_ch, sr=sr, window_ms=(0, early_ms))
+    E_early = energy_map_from_cov(R_early, B, H, W)
+
+    # Late energy (early_ms to end)
+    total_ms = ir_ch.shape[1] / sr * 1000
+    R_late = compute_covariance(ir_ch, sr=sr, window_ms=(early_ms, total_ms))
+    E_late = energy_map_from_cov(R_late, B, H, W)
+
+    # Difference: normalize each then subtract
+    def _norm(x):
+        mx = np.max(np.abs(x))
+        return x / (mx + 1e-12)
+
+    E_diff = _norm(E_early) - _norm(E_late)
+
+    return np.stack([E_full, E_early, E_late, E_diff], axis=0)
 
 
 # ============================================================
@@ -122,6 +184,8 @@ class SoundSpacesDataset(Dataset):
         self.max_depth = cfg.dataset.max_depth
         self.min_depth = cfg.dataset.min_depth
         self.use_ambisonic = getattr(cfg.dataset, 'use_ambisonic', False)
+        self.ambi_sr = getattr(cfg.dataset, 'ambi_sr', 48000)
+        self.ambi_early_ms = getattr(cfg.dataset, 'ambi_early_ms', 20.0)
 
         scene_split = get_scene_split(
             self.root_dir, cfg.dataset.split_ratio, seed=cfg.dataset.split_seed)
@@ -219,13 +283,15 @@ class SoundSpacesDataset(Dataset):
                 self.root_dir, scene, 'ambi1_npy', f'ambi1_{sample_idx}.npy')
             sh_coeffs = np.load(ambi_path).astype(np.float64)
             h, w = self._erp_shape
-            component_maps = reconstruct_per_component_maps(sh_coeffs, self._sh_basis)
-            component_maps = component_maps.reshape(4, h, w).astype(np.float32)
+            energy_maps = reconstruct_energy_maps(
+                sh_coeffs, self._sh_basis, h, w,
+                sr=self.ambi_sr, early_ms=self.ambi_early_ms)
+            energy_maps = energy_maps.astype(np.float32)
             for ch in range(4):
-                cmax = np.abs(component_maps[ch]).max()
+                cmax = np.abs(energy_maps[ch]).max()
                 if cmax > 0:
-                    component_maps[ch] = component_maps[ch] / cmax
-            ambi_erp = torch.from_numpy(component_maps)
+                    energy_maps[ch] = energy_maps[ch] / cmax
+            ambi_erp = torch.from_numpy(energy_maps)
             return audio.contiguous(), gt_depth.contiguous(), ambi_erp.contiguous()
 
         return audio.contiguous(), gt_depth.contiguous()

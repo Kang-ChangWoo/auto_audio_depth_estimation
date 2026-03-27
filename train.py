@@ -30,7 +30,7 @@ import matplotlib.pyplot as plt
 
 from prepare import (
     SoundSpacesDataset, make_dataloader, compute_errors, compute_foa_errors,
-    load_gt_rgb, sh_basis_matrix, reconstruct_per_component_maps,
+    load_gt_rgb, sh_basis_matrix, reconstruct_energy_maps,
     _acn_to_nm, _sn3d_norm, _real_sh_sn3d_np,
 )
 
@@ -568,7 +568,10 @@ class AudioDepthFOAV2Loss(nn.Module):
 
 
 def extract_foa_target_from_energy_map(energy_map):
-    """Extract (B, 4) FOA target from (B, 4, H, W) energy maps."""
+    """Extract (B, 4) FOA target from (B, 4, H, W) covariance-based energy maps.
+
+    Channels: [full, early, late, early-late diff] directional energy.
+    """
     return energy_map.mean(dim=(2, 3))
 
 
