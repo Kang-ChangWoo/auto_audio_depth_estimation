@@ -733,7 +733,7 @@ def train(cfg):
     else:
         optimizer = torch.optim.SGD(model.parameters(), lr=lr)
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=15, eta_min=1e-6)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=13, eta_min=1e-6)
 
     # Output directories
     project_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1104,7 +1104,7 @@ def parse_args():
     # Training
     p.add_argument('--batch-size', type=int, default=32) #64
     p.add_argument('--epochs', type=int, default=40) #80
-    p.add_argument('--lr', type=float, default=0.001)
+    p.add_argument('--lr', type=float, default=0.002)
     p.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam', 'SGD'])
     p.add_argument('--num-workers', type=int, default=16)#32
     p.add_argument('--foa-freeze-epochs', type=int, default=0,
