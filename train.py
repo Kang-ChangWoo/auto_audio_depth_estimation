@@ -86,7 +86,7 @@ def make_config(args):
             foa_weight=0.2,
             foa_use_cosine=True,
             foa_cosine_weight=0.2,
-            hist_weight=0.2,
+            hist_weight=0.1,
             latent_reg_weight=0.001,
             foa_freeze_epochs=args.foa_freeze_epochs,
         ),
