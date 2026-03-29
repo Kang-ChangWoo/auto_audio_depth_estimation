@@ -83,7 +83,7 @@ def make_config(args):
             scale_shift_hidden=128,
             scale_shift_layers=2,
             depth_weight=1.0,
-            foa_weight=0.3,
+            foa_weight=0.2,
             foa_use_cosine=True,
             foa_cosine_weight=0.2,
             hist_weight=0.2,
