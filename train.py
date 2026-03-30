@@ -735,7 +735,7 @@ def train(cfg):
     else:
         optimizer = torch.optim.SGD(model.parameters(), lr=lr)
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=13, eta_min=1e-6)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=12, eta_min=1e-6)
 
     # Output directories
     project_dir = os.path.dirname(os.path.abspath(__file__))
