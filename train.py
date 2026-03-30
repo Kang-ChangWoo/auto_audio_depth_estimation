@@ -1124,6 +1124,12 @@ def parse_args():
 
 
 if __name__ == '__main__':
+    # Reproducibility
+    torch.manual_seed(42)
+    np.random.seed(42)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     # Performance tuning
     os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')
     os.environ.setdefault('OMP_NUM_THREADS', '8')
