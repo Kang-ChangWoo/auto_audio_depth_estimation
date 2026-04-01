@@ -86,7 +86,7 @@ def make_config(args):
             foa_weight=0.2,
             foa_use_cosine=True,
             foa_cosine_weight=0.2,
-            hist_weight=0.0,
+            hist_weight=0.2,
             latent_reg_weight=0.001,
             foa_freeze_epochs=args.foa_freeze_epochs,
         ),
@@ -102,16 +102,16 @@ def make_config(args):
             shuffle=True,
             num_threads=args.num_workers,
             checkpoints=args.checkpoint,
-            use_l1=True,
+            use_l1=False,
             use_berhu=True,
-            use_silog=True,
+            use_silog=False,
             use_gradient=True,
-            use_ssim=True,
-            w_l1=1.0,
-            w_berhu=0.5,
-            w_silog=0.5,
+            use_ssim=False,
+            w_l1=0.0,
+            w_berhu=1.0,
             w_gradient=0.5,
-            w_ssim=1.0,
+            w_silog=0.0,
+            w_ssim=0.0,
             experiment_name=args.experiment_name,
             eval_on=args.eval_on,
             vis_every=args.vis_every,
@@ -842,8 +842,7 @@ def train(cfg):
             model.eval()
             errors = []
             val_losses = []
-            # vis_data = []  # disabled: dataset has no RGB images
-            do_vis = False  # disabled: dataset only has depth.npy, audio.wav, ambi
+            vis_data = []
 
             with torch.no_grad():
                 for batch_idx, (audio_v, gtdepth_v, ambi_v) in enumerate(val_loader):
@@ -877,16 +876,15 @@ def train(cfg):
                             up = depth_pred_v[idx].cpu().numpy()
                         errors.append(compute_errors(ug, up))
 
-                        # Visualization disabled: dataset only has depth.npy, audio.wav, ambi
-                        # if do_vis and dataset_idx in vis_indices:
-                        #     scene_id, step_idx = val_set.samples[dataset_idx]
-                        #     gt_rgb = load_gt_rgb(dataset_dir, scene_id, step_idx, depth_type, target_h, target_w)
-                        #     vis_data.append({
-                        #         'gt_rgb': gt_rgb, 'gt_depth': ug, 'pred_depth': up,
-                        #         'input': audio_v[idx].cpu().numpy(),
-                        #         'gt_foa': gt_foa_v[idx].cpu().numpy(),
-                        #         'pred_foa': pred_foa_v[idx].cpu().numpy(),
-                        #     })
+                        if dataset_idx in vis_indices:
+                            scene_id, step_idx = val_set.samples[dataset_idx]
+                            gt_rgb = load_gt_rgb(dataset_dir, scene_id, step_idx, depth_type, target_h, target_w)
+                            vis_data.append({
+                                'gt_rgb': gt_rgb, 'gt_depth': ug, 'pred_depth': up,
+                                'input': audio_v[idx].cpu().numpy(),
+                                'gt_foa': gt_foa_v[idx].cpu().numpy(),
+                                'pred_foa': pred_foa_v[idx].cpu().numpy(),
+                            })
 
             mean_errors = np.array(errors).mean(0)
             abs_rel = mean_errors[0]
@@ -894,20 +892,16 @@ def train(cfg):
                   f'ABS_REL: {abs_rel:.4f} RMSE: {mean_errors[1]:.4f} '
                   f'd1: {mean_errors[2]:.4f} d2: {mean_errors[3]:.4f} d3: {mean_errors[4]:.4f}')
 
-            # if do_vis and vis_data:
-            #     save_visualizations(vis_data, epoch, vis_dir, cfg.dataset.max_depth)
-            #     print(f'  Saved {len(vis_data)} visualizations')
+            if vis_data:
+                save_visualizations(vis_data, epoch, vis_dir, cfg.dataset.max_depth)
+                print(f'  Saved {len(vis_data)} visualizations')
 
             if abs_rel < best_abs_rel:
                 best_abs_rel = abs_rel
-                # Remove previous best model
-                import glob
-                for old in glob.glob(os.path.join(ckpt_dir, 'best_model_epoch*.pth')):
-                    os.remove(old)
                 torch.save({
                     'epoch': epoch, 'state_dict': model.state_dict(),
                     'optimizer': optimizer.state_dict(), 'best_abs_rel': best_abs_rel,
-                }, os.path.join(ckpt_dir, f'best_model_epoch{epoch}.pth'))
+                }, os.path.join(ckpt_dir, 'best_model.pth'))
                 print(f'  >> Best model saved (ABS_REL: {best_abs_rel:.4f})')
 
         # Time budget check
@@ -951,11 +945,7 @@ def test(cfg):
     load_epoch = cfg.mode.checkpoints
     if load_epoch is None or str(load_epoch) == 'best':
         import glob
-        best_files = sorted(glob.glob(os.path.join(ckpt_dir, 'best_model_epoch*.pth')))
-        if best_files:
-            ckpt_path = best_files[-1]
-        else:
-            ckpt_path = os.path.join(ckpt_dir, 'best_model.pth')
+        ckpt_path = os.path.join(ckpt_dir, 'best_model.pth')
     else:
         ckpt_path = os.path.join(ckpt_dir, f'checkpoint_{load_epoch}.pth')
     print(f'Loading: {ckpt_path}')
