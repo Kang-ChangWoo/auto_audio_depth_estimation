@@ -102,12 +102,12 @@ def make_config(args):
             shuffle=True,
             num_threads=args.num_workers,
             checkpoints=args.checkpoint,
-            use_l1=True,
+            use_l1=False,
             use_berhu=True,
             use_silog=True,
             use_gradient=True,
             use_ssim=False,
-            w_l1=1.0,
+            w_l1=0.0,
             w_berhu=1.0,
             w_gradient=0.5,
             w_silog=0.5,
@@ -739,12 +739,12 @@ def train(cfg):
 
     # Output directories
     project_dir = os.path.dirname(os.path.abspath(__file__))
-    experiment_name = (f"{cfg.model.generator}_{cfg.dataset.name}_BS{batch_size}_"
-                       f"Lr{lr}_{cfg.mode.optimizer}_{cfg.mode.experiment_name}")
+    experiment_name = cfg.mode.experiment_name
     ckpt_dir = os.path.join(project_dir, 'checkpoints', experiment_name)
     vis_dir = os.path.join(project_dir, 'outputs', experiment_name, 'visualizations')
     os.makedirs(ckpt_dir, exist_ok=True)
     os.makedirs(vis_dir, exist_ok=True)
+    print(f'Experiment: {experiment_name}')
     print(f'Checkpoints: {ckpt_dir}')
 
     # Resume
@@ -938,8 +938,7 @@ def test(cfg):
 
     # Load checkpoint
     project_dir = os.path.dirname(os.path.abspath(__file__))
-    experiment_name = (f"{cfg.model.generator}_{cfg.dataset.name}_BS{cfg.mode.batch_size}_"
-                       f"Lr{cfg.mode.learning_rate}_{cfg.mode.optimizer}_{cfg.mode.experiment_name}")
+    experiment_name = cfg.mode.experiment_name
     ckpt_dir = os.path.join(project_dir, 'checkpoints', experiment_name)
 
     load_epoch = cfg.mode.checkpoints
@@ -1104,7 +1103,7 @@ def parse_args():
                    help='Depth-only warmup epochs before enabling SH branch') #20 /10
 
     # Experiment
-    p.add_argument('--experiment-name', type=str, default='audio_depth_foa_v2_echoes_erp_v1')
+    p.add_argument('--experiment-name', type=str, default='audiodepth_foa_berhu_silog')
     p.add_argument('--checkpoint', type=str, default=None,
                    help='Checkpoint to resume (epoch number or "best")')
     p.add_argument('--vis-every', type=int, default=100,
