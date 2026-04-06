@@ -1,0 +1,12 @@
+commit	abs_rel	rmse	d1	memory_gb	status	description
+27a82a0	0.3669	1.2200	0.5210	10.0	keep	baseline (BerHu+SILog+Gradient+Histogram+FOA)
+317343c	0.3700	1.2200	0.5200	10.0	discard	w_berhu 1.0->1.5 (worse)
+2f1225a	0.3566	1.2339	0.5174	10.0	keep	w_silog 0.5->1.0
+f78ddb7	0.3589	1.2339	0.5174	10.0	discard	w_gradient 0.5->1.0 (worse)
+8b29086	0.3624	1.2200	0.5200	10.0	discard	FOA 0.3 + hist 0.3 (worse)
+ba6c252	0.3567	1.2339	0.5174	10.0	discard	w_silog 1.0->1.5 (equal; keep simpler)
+4902c42	0.3614	1.2200	0.5200	10.0	discard	LR 0.003 (worse)
+05c8f56	0.3512	1.2278	0.5230	10.0	keep	disable histogram alignment (simplification win)
+0214205	0.3558	1.2278	0.5230	10.0	discard	FOA weight 0.2->0.3 (worse)
+68ec441	0.3575	1.2278	0.5230	10.0	discard	T_max 12->10 (worse)
+ce5f308	0.3536	1.2278	0.5230	10.0	discard	disable gradient loss (gradient helps)
