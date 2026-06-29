@@ -517,15 +517,18 @@ def train(cfg):
     total_params = sum(p.numel() for p in model.parameters()) / 1e6
     print(f'Model: {cfg.model.name} ({total_params:.2f}M params)')
 
-    # Optimizer + warmup-cosine schedule
+    # Optimizer + TIME-based warmup-cosine schedule. The LR anneals by wall-clock
+    # fraction of TIME_BUDGET (not epoch count), so models that fit fewer epochs in
+    # the hour (e.g. the heavier full-decode head) still anneal fully -> fair budget.
     optimizer = _build_optimizer(model, cfg)
-    steps_per_epoch = max(1, len(train_loader))
-    total_steps = cfg.mode.epochs * steps_per_epoch
-    warm = steps_per_epoch
-    scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer,
-        lambda s: (s + 1) / warm if s < warm
-        else 0.5 * (1 + math.cos(math.pi * (s - warm) / max(1, total_steps - warm))))
+    base_lr = cfg.mode.learning_rate
+    warm_frac = 0.1                                   # warmup over first 10% of the budget
+
+    def _lr_at(elapsed):
+        f = min(1.0, elapsed / TIME_BUDGET)
+        if f < warm_frac:
+            return base_lr * (f / warm_frac)
+        return base_lr * 0.5 * (1 + math.cos(math.pi * (f - warm_frac) / (1 - warm_frac)))
 
     # Output directories
     project_dir = os.path.dirname(os.path.abspath(__file__))
@@ -555,6 +558,7 @@ def train(cfg):
     depth_type = cfg.dataset.depth_type
 
     training_start = time.time()
+    cur_lr = base_lr
     for epoch in range(start_epoch, cfg.mode.epochs + 1):
         model.train()
         t0 = time.time()
@@ -576,8 +580,10 @@ def train(cfg):
                 loss, parts = composite_loss(out, gt, mask, mcfg)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            cur_lr = _lr_at(time.time() - training_start)
+            for pg in optimizer.param_groups:
+                pg['lr'] = cur_lr
             optimizer.step()
-            scheduler.step()
 
             accum['total'] = accum.get('total', 0.0) + float(loss.detach())
             for k, v in parts.items():
@@ -592,7 +598,7 @@ def train(cfg):
 
         epoch_loss = accum['total'] / n_batches
         print(f'Epoch [{epoch}/{cfg.mode.epochs}] Loss: {epoch_loss:.4f} '
-              f'Time: {time.time()-t0:.1f}s LR: {scheduler.get_last_lr()[0]:.6f}')
+              f'Time: {time.time()-t0:.1f}s LR: {cur_lr:.6f}')
 
         # --- Validation ---
         if epoch % cfg.mode.validation_iter == 0:
