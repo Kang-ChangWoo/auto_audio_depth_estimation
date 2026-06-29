@@ -503,7 +503,6 @@ def train(cfg):
 
     # Optimizer + warmup-cosine schedule
     optimizer = _build_optimizer(model, cfg)
-    scaler = torch.amp.GradScaler('cuda')                  # AMP (mixed precision)
     steps_per_epoch = max(1, len(train_loader))
     total_steps = cfg.mode.epochs * steps_per_epoch
     warm = steps_per_epoch
@@ -556,14 +555,12 @@ def train(cfg):
                     gt[fm] = torch.flip(gt[fm], dims=[-1])
                     mask[fm] = torch.flip(mask[fm], dims=[-1])
             optimizer.zero_grad()
-            with torch.amp.autocast('cuda'):
+            with torch.amp.autocast('cuda', dtype=torch.bfloat16):
                 out = model(spec)
                 loss, parts = composite_loss(out, gt, mask, mcfg)
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
+            loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            scaler.step(optimizer)
-            scaler.update()
+            optimizer.step()
             scheduler.step()
 
             accum['total'] = accum.get('total', 0.0) + float(loss.detach())
