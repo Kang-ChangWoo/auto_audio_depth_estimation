@@ -1,14 +1,24 @@
 """
-Data preparation and evaluation utilities for AudioDepthFOA V2.
+Data preparation and evaluation utilities for the RayDPT audio->ERP-depth model.
 
-Provides:
-    - SoundSpacesDataset: binaural echoes -> ERP depth dataset
-    - compute_errors: depth error metrics
-    - compute_foa_errors: FOA evaluation metrics
-    - get_scene_split: deterministic train/val/test scene splitting
+Ported from the `test_for_audio_implicit_full` repo (RayDPT pipeline) into the
+two-file autoresearch layout. This file is the FIXED data + evaluation harness:
+
+    - erp_grid / sh_basis_matrix : ERP spherical geometry (shared with the model's
+                                   per-ray feature bank in train.py)
+    - get_scene_split            : deterministic train/val/test scene split
+    - SoundSpacesDataset         : binaural audio -> {spec, depth, mask}
+    - make_dataloader            : DataLoader factory (dict-batch collate)
+    - compute_errors             : depth error metrics (the ground-truth metric)
+    - load_gt_rgb                : visualization helper
+
+Frame convention (matches RayDPT's RayBank):
+    x = front, y = left(+)/right(-) ear axis, z = up.
+    az in (-pi, pi],  el in (-pi/2, pi/2),  cell-centred.
+    dir = (cos el cos az, cos el sin az, sin el)
 
 Usage:
-    from prepare import SoundSpacesDataset, compute_errors, compute_foa_errors
+    from prepare import SoundSpacesDataset, make_dataloader, compute_errors, erp_grid
 """
 
 import math
@@ -28,8 +38,44 @@ from PIL import Image
 
 
 # ============================================================
-# SH basis computation (ACN / SN3D) — needed by dataset
+# ERP spherical geometry (shared by the model's ray-feature bank)
 # ============================================================
+
+def erp_grid(H, W):
+    """Cell-centred elevation/azimuth grids for an HxW equirectangular map.
+
+    Returns (el, az), each (H, W) float32.
+        az in (-pi, pi]  increasing left->right
+        el in (pi/2, -pi/2) increasing top->bottom
+    """
+    ii, jj = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+    az = (jj + 0.5) / W * 2.0 * np.pi - np.pi
+    el = np.pi / 2.0 - (ii + 0.5) / H * np.pi
+    return el.astype(np.float32), az.astype(np.float32)
+
+
+def radial_factor(H, W):
+    """Per-pixel factor that converts cubemap perspective (perpendicular-Z) ERP
+    depth -> radial (along-ray) depth: r = d / max(|dx|, |dy|, |dz|).
+
+    The SoundSpaces `erp_depth` maps store the per-face perpendicular distance
+    (stitched cubemap), so a flat wall back-projects as a circular arc unless
+    rescaled. Dividing by the dominant ray-direction axis recovers true radial
+    depth (verified: flat floor/ceiling, vertical walls). RayDPT trains on radial
+    depth (the source repo's `erp_depth_radial`), so we apply this on the fly.
+    """
+    el, az = erp_grid(H, W)
+    dx = np.cos(el) * np.cos(az)
+    dy = np.cos(el) * np.sin(az)
+    dz = np.sin(el)
+    linf = np.maximum.reduce([np.abs(dx), np.abs(dy), np.abs(dz)])
+    return (1.0 / np.clip(linf, 1e-6, None)).astype(np.float32)        # (H, W)
+
+
+# ------------------------------------------------------------
+# Real spherical-harmonic basis (ACN / SN3D), used by the optional
+# SH ray-PE in the model and available as a fixed geometry primitive.
+# ------------------------------------------------------------
 
 def _acn_to_nm(acn):
     n = int(math.floor(math.sqrt(acn)))
@@ -58,95 +104,18 @@ def _real_sh_sn3d_np(acn, elevation, azimuth):
 
 
 def sh_basis_matrix(max_order, elevation, azimuth):
-    """Compute SH basis matrix for given grid. Returns (N_pixels, N_channels)."""
+    """SH basis for a grid. elevation/azimuth (H,W) or (N,). Returns (N, (L+1)^2)."""
     n_ch = (max_order + 1) ** 2
-    el_flat = elevation.ravel()
-    az_flat = azimuth.ravel()
-    B = np.zeros((el_flat.size, n_ch))
+    el_flat = np.asarray(elevation).ravel()
+    az_flat = np.asarray(azimuth).ravel()
+    B = np.zeros((el_flat.size, n_ch), dtype=np.float64)
     for q in range(n_ch):
         B[:, q] = _real_sh_sn3d_np(q, el_flat, az_flat)
     return B
 
 
-def compute_covariance(ir, sr=48000, window_ms=None):
-    """Compute inter-channel covariance matrix R from ambisonic IR.
-
-    R_nm = (1/T) sum_t b_n(t) b_m(t)
-
-    Args:
-        ir: (n_ch, N_samples) ambisonic impulse response
-        sr: sample rate
-        window_ms: (start_ms, end_ms) time window, or None for full IR
-    Returns:
-        R: (n_ch, n_ch) covariance matrix
-    """
-    if window_ms is not None:
-        s0 = int(window_ms[0] * sr / 1000)
-        s1 = int(window_ms[1] * sr / 1000)
-        s1 = min(s1, ir.shape[1])
-        ir_win = ir[:, s0:s1]
-    else:
-        ir_win = ir
-    T = ir_win.shape[1]
-    if T == 0:
-        return np.zeros((ir.shape[0], ir.shape[0]))
-    return (ir_win @ ir_win.T) / T
-
-
-def energy_map_from_cov(R, B, H, W):
-    """Compute directional energy E(Omega) = y(Omega)^T R y(Omega).
-
-    Args:
-        R: (n_ch, n_ch) covariance matrix
-        B: (H*W, n_ch) SH basis
-    Returns:
-        E: (H, W) directional energy map
-    """
-    BR = B @ R          # (H*W, n_ch)
-    E = np.sum(BR * B, axis=1)  # (H*W,)
-    return E.reshape(H, W)
-
-
-def reconstruct_energy_maps(ir, B, H, W, sr=48000, early_ms=20.0):
-    """Compute covariance-based directional energy maps from ambisonic IR.
-
-    Uses inter-channel covariance to properly capture directional energy,
-    instead of the old per-channel RMS projection which loses correlations.
-
-    Returns (4, H, W):
-        [0] Full-IR energy map
-        [1] Early energy map (0 to early_ms)
-        [2] Late energy map (early_ms to end)
-        [3] Early-Late difference (each normalized before subtraction)
-    """
-    n_ch = B.shape[1]
-    ir_ch = ir[:n_ch]
-
-    # Full energy
-    R_full = compute_covariance(ir_ch, sr=sr)
-    E_full = energy_map_from_cov(R_full, B, H, W)
-
-    # Early energy (0 to early_ms)
-    R_early = compute_covariance(ir_ch, sr=sr, window_ms=(0, early_ms))
-    E_early = energy_map_from_cov(R_early, B, H, W)
-
-    # Late energy (early_ms to end)
-    total_ms = ir_ch.shape[1] / sr * 1000
-    R_late = compute_covariance(ir_ch, sr=sr, window_ms=(early_ms, total_ms))
-    E_late = energy_map_from_cov(R_late, B, H, W)
-
-    # Difference: normalize each then subtract
-    def _norm(x):
-        mx = np.max(np.abs(x))
-        return x / (mx + 1e-12)
-
-    E_diff = _norm(E_early) - _norm(E_late)
-
-    return np.stack([E_full, E_early, E_late, E_diff], axis=0)
-
-
 # ============================================================
-# Scene splitting
+# Scene splitting (deterministic; no scene_split.json required)
 # ============================================================
 
 def get_scene_split(dataset_dir, split_ratio, seed=42):
@@ -170,164 +139,169 @@ def get_scene_split(dataset_dir, split_ratio, seed=42):
 
 
 # ============================================================
-# Dataset
+# Dataset: binaural audio -> ERP radial depth
 # ============================================================
 
+_C = 340.0                       # speed of sound [m/s]
+_NFFT, _HOP, _WIN = 512, 160, 400
+
+
 class SoundSpacesDataset(Dataset):
-    """Sound-Spaces dataset: binaural echoes -> ERP depth."""
+    """Binaural echoes -> ERP depth, at cfg.dataset.images_size.
+
+    Each item is a dict:
+        spec  : (in_ch, H, W)  log-mag binaural spectrogram (in_ch=2) or RIR
+                spatial feature [logL, logR, ILD, cosIPD, sinIPD][:in_ch] (in_ch in {3,5})
+        depth : (1, H, W)      radial depth / max_depth in [0, 1]
+        mask  : (1, H, W)      valid-depth mask in {0, 1}
+        key   : "<scene>/<idx>"
+    """
 
     def __init__(self, cfg, split='train'):
         self.cfg = cfg
-        self.root_dir = cfg.dataset.dataset_dir
-        self.audio_format = cfg.dataset.audio_format
-        self.depth_type = cfg.dataset.depth_type
-        self.max_depth = cfg.dataset.max_depth
-        self.min_depth = cfg.dataset.min_depth
-        self.use_ambisonic = getattr(cfg.dataset, 'use_ambisonic', False)
-        self.ambi_sr = getattr(cfg.dataset, 'ambi_sr', 48000)
-        self.ambi_early_ms = getattr(cfg.dataset, 'ambi_early_ms', 20.0)
+        d = cfg.dataset
+        self.root_dir = d.dataset_dir
+        self.depth_type = d.depth_type
+        self.max_depth = d.max_depth
+        self.H, self.W = int(d.images_size[0]), int(d.images_size[1])
+        self.in_ch = int(getattr(d, 'in_ch', 2))
+        self.sr = int(getattr(d, 'sample_rate', 48000))
+        self.log_spec = bool(getattr(d, 'log_spec', True))
+        self.win_m = float(getattr(d, 'audio_window_m', 0) or self.max_depth)
+        self.cut = int(2.0 * self.win_m / _C * self.sr)
+        # cubemap perpendicular-Z -> radial depth conversion (see radial_factor)
+        self._radial = torch.from_numpy(radial_factor(self.H, self.W))[None]   # (1,H,W)
 
-        scene_split = get_scene_split(
-            self.root_dir, cfg.dataset.split_ratio, seed=cfg.dataset.split_seed)
+        scene_split = get_scene_split(self.root_dir, d.split_ratio, seed=d.split_seed)
         self.scenes = scene_split[split]
 
+        self.spectro = T.Spectrogram(n_fft=_NFFT, win_length=_WIN,
+                                     hop_length=_HOP, power=1.0)
+        self._win = torch.hann_window(_WIN)
+
         self.samples = []
-        skipped = 0
         for scene in self.scenes:
             audio_dir = os.path.join(self.root_dir, scene, 'audio_wav')
             depth_dir = os.path.join(self.root_dir, scene, f'{self.depth_type}_depth')
-            if not os.path.isdir(audio_dir) or not os.path.isdir(depth_dir):
+            if not (os.path.isdir(audio_dir) and os.path.isdir(depth_dir)):
                 continue
-            if self.use_ambisonic:
-                ambi_dir = os.path.join(self.root_dir, scene, 'ambi1_npy')
-                if not os.path.isdir(ambi_dir):
-                    continue
-
-            audio_files = sorted([f for f in os.listdir(audio_dir) if f.endswith('.wav')])
-            for af in audio_files:
+            for af in sorted(f for f in os.listdir(audio_dir) if f.endswith('.wav')):
                 idx = af.replace('audio_', '').replace('.wav', '')
-                depth_file = f'{self.depth_type}_depth_{idx}.npy'
-                depth_path = os.path.join(depth_dir, depth_file)
-                if not os.path.exists(depth_path):
-                    continue
-                if self.use_ambisonic:
-                    ambi_path = os.path.join(self.root_dir, scene, 'ambi1_npy', f'ambi1_{idx}.npy')
-                    if not os.path.exists(ambi_path):
-                        continue
-                depth = np.load(depth_path).astype(np.float32)
-                if np.mean(depth <= 0) > 0.1:
-                    skipped += 1
-                    continue
-                self.samples.append((scene, idx))
+                depth_path = os.path.join(depth_dir, f'{self.depth_type}_depth_{idx}.npy')
+                if os.path.exists(depth_path):
+                    self.samples.append((scene, idx))
 
         print(f"[{split}] {len(self.samples)} samples from {len(self.scenes)} scenes "
-              f"(filtered {skipped} with >10% no-depth)"
-              f"{' [ambisonic=ON]' if self.use_ambisonic else ''}")
-
-        if self.use_ambisonic:
-            h, w = cfg.dataset.images_size
-            h, w = int(h), int(w)
-            jj, ii = np.meshgrid(np.arange(w), np.arange(h))
-            az_grid = (jj + 0.5) / w * 2 * np.pi - np.pi
-            el_grid = np.pi / 2 - (ii + 0.5) / h * np.pi
-            self._sh_basis = sh_basis_matrix(1, el_grid, az_grid)
-            self._erp_shape = (h, w)
-            self._sh_n_ch = 4
-            print(f"  Precomputed SH basis matrix: {self._sh_basis.shape} (order=1)")
+              f"({self.H}x{self.W}, in_ch={self.in_ch})", flush=True)
 
     def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, idx):
-        scene, sample_idx = self.samples[idx]
+    def _wave(self, scene, idx):
+        wav, sr = torchaudio.load(
+            os.path.join(self.root_dir, scene, 'audio_wav', f'audio_{idx}.wav'))
+        if sr != self.sr:
+            wav = T.Resample(sr, self.sr)(wav)
+        wav = wav[:, :self.cut]
+        if wav.shape[1] < self.cut:
+            wav = F.pad(wav, (0, self.cut - wav.shape[1]))
+        return wav
 
-        # Load binaural audio
-        audio_path = os.path.join(self.root_dir, scene, 'audio_wav', f'audio_{sample_idx}.wav')
-        waveform, sr = torchaudio.load(audio_path)
-        waveform = waveform.clone()
+    def _spec2(self, wav):
+        """2ch binaural magnitude spectrogram (log1p optional), resized to (H,W)."""
+        sp = self.spectro(wav)                                 # (2,F,T')
+        if self.log_spec:
+            sp = torch.log1p(sp)
+        return F.interpolate(sp.unsqueeze(0), (self.H, self.W),
+                             mode='nearest').squeeze(0).float()
 
-        n_fft, hop_length, win_length = 512, 160, 400
-        cut = int((2 * 20.0 / 340) * sr)
-        waveform = waveform[:, :cut]
+    def _specN(self, wav, n):
+        """RIR spatial feature [logL, logR, ILD, cosIPD, sinIPD][:n], resized to (H,W)."""
+        st = torch.stft(wav, _NFFT, _HOP, _WIN, self._win, return_complex=True)  # (2,F,T')
+        L, R = st[0], st[1]
+        eps = 1e-6
+        lmag = torch.log1p(L.abs()); rmag = torch.log1p(R.abs())
+        ild = torch.log(L.abs() + eps) - torch.log(R.abs() + eps)
+        ipd = torch.angle(L * torch.conj(R))
+        feat = torch.stack([lmag, rmag, ild, torch.cos(ipd), torch.sin(ipd)], 0)[:n]
+        return F.interpolate(feat.unsqueeze(0), (self.H, self.W),
+                             mode='nearest').squeeze(0).float()
 
-        if 'spectrogram' in self.audio_format:
-            audio = self._get_spectrogram(waveform, n_fft=n_fft, power=1.0,
-                                          win_length=win_length, hop_length=hop_length)
-            images_size = self.cfg.dataset.images_size
-            target_size = tuple(int(x) for x in images_size)
-            audio = F.interpolate(audio.unsqueeze(0), size=target_size, mode='nearest').squeeze(0)
-        else:
-            audio = waveform
-
-        # Load ERP depth
-        depth_path = os.path.join(
+    def _depth(self, scene, idx):
+        d = np.nan_to_num(np.load(os.path.join(
             self.root_dir, scene, f'{self.depth_type}_depth',
-            f'{self.depth_type}_depth_{sample_idx}.npy')
-        depth = np.load(depth_path).astype(np.float32)
-        depth = np.nan_to_num(depth)
-        depth[depth == -np.inf] = 0
-        depth[depth == np.inf] = 0
-        depth[depth < 0.0] = 0.0
-        depth[depth > self.max_depth] = self.max_depth
-        gt_depth = torch.from_numpy(depth).unsqueeze(0)
+            f'{self.depth_type}_depth_{idx}.npy')).astype(np.float32))
+        d[d < 0] = 0.0
+        t = F.interpolate(torch.from_numpy(d)[None, None], (self.H, self.W),
+                          mode='nearest').squeeze(0)            # (1,H,W) perspective-Z
+        t = t * self._radial                                   # -> radial (along-ray) depth
+        t = t.clamp(max=self.max_depth)
+        return t / self.max_depth, (t > 0).float()
 
-        if 'resize' in self.cfg.dataset.preprocess:
-            h, w = self.cfg.dataset.images_size
-            gt_depth = F.interpolate(gt_depth.unsqueeze(0), size=(int(h), int(w)),
-                                     mode='nearest').squeeze(0)
-        if self.cfg.dataset.depth_norm:
-            gt_depth = gt_depth / self.max_depth
+    def __getitem__(self, i):
+        scene, idx = self.samples[i]
+        try:
+            wav = self._wave(scene, idx)
+            spec = self._spec2(wav) if self.in_ch == 2 else self._specN(wav, self.in_ch)
+            depth, mask = self._depth(scene, idx)
+        except Exception as e:
+            print(f"[skip {scene}/{idx}] {e}", flush=True)
+            return self[(i + 1) % len(self)]
+        return {"spec": spec.contiguous(), "depth": depth.contiguous(),
+                "mask": mask.contiguous(), "key": f"{scene}/{idx}"}
 
-        if self.use_ambisonic:
-            ambi_path = os.path.join(
-                self.root_dir, scene, 'ambi1_npy', f'ambi1_{sample_idx}.npy')
-            sh_coeffs = np.load(ambi_path).astype(np.float64)
-            h, w = self._erp_shape
-            energy_maps = reconstruct_energy_maps(
-                sh_coeffs, self._sh_basis, h, w,
-                sr=self.ambi_sr, early_ms=self.ambi_early_ms)
-            energy_maps = energy_maps.astype(np.float32)
-            for ch in range(4):
-                cmax = np.abs(energy_maps[ch]).max()
-                if cmax > 0:
-                    energy_maps[ch] = energy_maps[ch] / cmax
-            ambi_erp = torch.from_numpy(energy_maps)
-            return audio.contiguous(), gt_depth.contiguous(), ambi_erp.contiguous()
 
-        return audio.contiguous(), gt_depth.contiguous()
+def collate(batch):
+    return {k: ([x[k] for x in batch] if k == "key"
+                else torch.stack([x[k] for x in batch]))
+            for k in batch[0]}
 
-    def _get_spectrogram(self, waveform, n_fft=512, power=1.0, win_length=64, hop_length=16):
-        spectrogram = T.Spectrogram(n_fft=n_fft, win_length=win_length,
-                                    power=power, hop_length=hop_length)
-        return spectrogram(waveform)
+
+def swap_audio_lr(spec):
+    """Channel-aware binaural L/R swap (the physically-correct mirror for this rig).
+
+    Negates the L-R-antisymmetric channels (ILD, sin(IPD)); cos(IPD) is symmetric.
+        2ch [L,R]                         -> [R,L]
+        3ch [Lmag,Rmag,ILD]               -> [Rmag,Lmag,-ILD]
+        5ch [Lmag,Rmag,ILD,cosIPD,sinIPD] -> [Rmag,Lmag,-ILD,cosIPD,-sinIPD]
+    Pairs with a width-flip (az -> -az) of depth/mask for L/R mirror augmentation.
+    """
+    C = spec.shape[1]
+    if C == 2:
+        return spec[:, [1, 0]]
+    y = spec.clone()
+    y[:, 0], y[:, 1] = spec[:, 1], spec[:, 0]
+    if C >= 3:
+        y[:, 2] = -spec[:, 2]                       # ILD -> -ILD
+    if C >= 5:
+        y[:, 3] = spec[:, 3]; y[:, 4] = -spec[:, 4]  # cos(IPD) same, sin(IPD) -> -sin(IPD)
+    return y
 
 
 def make_dataloader(cfg, split, batch_size=None, shuffle=None):
-    """Create a DataLoader for the given split.
-    Args:
-        cfg: config object with dataset and mode attributes
-        split: 'train', 'val', or 'test'
-        batch_size: override cfg.mode.batch_size if provided
-        shuffle: override default (True for train, False otherwise)
-    Returns:
-        (dataset, dataloader) tuple
-    """
+    """Create (dataset, dataloader) for the given split."""
     dataset = SoundSpacesDataset(cfg, split=split)
     if batch_size is None:
         batch_size = cfg.mode.batch_size
     if shuffle is None:
         shuffle = (split == 'train')
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle,
-                        num_workers=cfg.mode.num_threads, pin_memory=True)
+                        num_workers=cfg.mode.num_threads, collate_fn=collate,
+                        pin_memory=True, drop_last=shuffle)
     return dataset, loader
 
 
 # ============================================================
-# Evaluation metrics
+# Evaluation metrics (ground-truth metric — do not weaken)
 # ============================================================
 
 def compute_errors(gt, pred):
-    """Depth error metrics between predicted and ground truth."""
+    """Depth error metrics between predicted and ground-truth depth (in METRES).
+
+    Masks invalid (gt <= 0) pixels. Returns:
+        (abs_rel, rmse, a1, a2, a3, log_10, mae)
+    """
+    gt = np.asarray(gt); pred = np.asarray(pred)
     mask = gt > 0
     pred, gt = pred[mask], gt[mask]
     if len(pred) == 0:
@@ -342,24 +316,12 @@ def compute_errors(gt, pred):
     log_10 = np.abs(np.log10(gt + 1e-8) - np.log10(pred + 1e-8)).mean()
     mae = np.abs(gt - pred).mean()
 
-    for v in [rmse, a1, a2, a3, abs_rel, log_10, mae]:
-        if v != v:
-            v = 0.0
-    return abs_rel, rmse, a1, a2, a3, log_10, mae
-
-
-def compute_foa_errors(gt_foa, pred_foa):
-    """FOA evaluation metrics (guided channels only)."""
-    foa_l1 = np.abs(gt_foa - pred_foa).mean()
-    dot = np.dot(gt_foa, pred_foa)
-    foa_cosine = dot / (np.linalg.norm(gt_foa) + 1e-8) / (np.linalg.norm(pred_foa) + 1e-8)
-    gt_dir, pred_dir = gt_foa[1:], pred_foa[1:]
-    foa_dir_cosine = np.dot(gt_dir, pred_dir) / (np.linalg.norm(gt_dir) + 1e-8) / (np.linalg.norm(pred_dir) + 1e-8)
-    return {'foa_l1': float(foa_l1), 'foa_cosine': float(foa_cosine), 'foa_dir_cosine': float(foa_dir_cosine)}
+    out = [abs_rel, rmse, a1, a2, a3, log_10, mae]
+    return tuple(0.0 if (v != v) else float(v) for v in out)
 
 
 # ============================================================
-# Visualization helpers
+# Visualization helper
 # ============================================================
 
 def load_gt_rgb(dataset_dir, scene, sample_idx, depth_type, h=256, w=512):

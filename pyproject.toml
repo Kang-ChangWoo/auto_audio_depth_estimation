@@ -1,7 +1,7 @@
 [project]
 name = "autoresearch"
 version = "0.1.0"
-description = "Depth estimation from echoes — AudioDepthFOA V2"
+description = "Depth estimation from echoes"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [

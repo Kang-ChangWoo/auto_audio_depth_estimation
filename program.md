@@ -30,6 +30,22 @@ Each experiment runs on a single GPU. The training script runs for a **fixed tim
 - Install new packages or add dependencies. You can only use what's already in `pyproject.toml`.
 - Modify the evaluation harness. The `compute_errors` function in `prepare.py` is the ground truth metric.
 
+**Training objective (RayDPT).** The model is trained with the composite loss in `composite_loss` (`train.py`):
+
+```
+loss = w_dense·main  +  w_coarse_layout·lc  +  w_low·llow
+```
+
+- `main` — dense masked-MAE on the full-resolution depth `D`. This is the **only required** term (`w_dense=1.0`).
+- `lc` — coarse 16×32 layout MAE on `D_coarse` (`w_coarse_layout=1.0`). **Not mandatory** — a layout regularizer.
+- `llow` — low-pass MAE on `gaussian_blur_erp(D)` (`w_low=0.5`). **Not mandatory** — a smoothness / low-frequency regularizer.
+
+`lc` and `llow` are auxiliary knobs: set their weights to `0` (or drop them) to train on the dense term alone. They bias the model toward correct global layout but are not required for training to run, and are fair game to tune/disable when chasing ABS_REL/RMSE. (Note: `prepare.py._depth` also converts the dataset's cubemap perpendicular-Z depth to **radial** depth — RayDPT trains and is evaluated on radial depth.)
+
+**Default config = `C_raydpt_5chflip`, but these are knobs, not requirements.** The first run establishes the baseline with the defaults: `--in-ch 5` (RIR spatial feature `[logL,logR,ILD,cosIPD,sinIPD]`) + `--flip-aug True` (L/R mirror augmentation) + radial depth. None of these are mandatory — `--in-ch {2,3,5}`, `--flip-aug {True,False}`, the loss weights, optimizer, LR, batch size, model width/depth, number of attention layers, etc. are all fair game to lower ABS_REL/RMSE.
+
+**The one architectural invariant: keep the model RAY-CONDITIONED.** RayDPT's essence is per-ray spherical queries — the fixed `RayBank` on the ERP ray grid — that cross-attend the audio tokens, so depth is decoded *per ray direction*, not as a plain pixel map regressed from a global bottleneck. You may restructure almost anything else, but **do not remove the ray-conditioning** (RayBank ray queries × audio cross-attention): that is the hypothesis under test. A pure encoder→pixel-decoder with no ray queries is out of scope.
+
 **The goal is simple: get the lowest ABS_REL and RMSE errors.** Since the time budget is fixed, you don't need to worry about training time — it's always 30 minutes. Everything is fair game: change the architecture, the optimizer, the hyperparameters, the batch size, the model size. The only constraint is that the code runs without crashing and finishes within the time budget.
 
 **VRAM** is a soft constraint. Some increase is acceptable for meaningful ABS_REL and RMSE gains, but it should not blow up dramatically.
