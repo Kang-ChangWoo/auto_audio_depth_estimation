@@ -316,8 +316,9 @@ class RayDPT(nn.Module):
         f16, fd = bank(16, 32); f32, _ = bank(32, 64); f64, _ = bank(64, 128)
         self.register_buffer("rf16", f16); self.register_buffer("rf32", f32)
         self.register_buffer("rf64", f64)
-        mk_rp = lambda: nn.Sequential(nn.Linear(fd, dim), nn.GELU(), nn.Linear(dim, dim))
-        self.rp16, self.rp32, self.rp64 = mk_rp(), mk_rp(), mk_rp()
+        # SHARED ray-query MLP across scales: ray feats are resolution-independent
+        # direction functions (same feat_dim) -> scale-consistent embedding, fewer params.
+        self.ray_proj = nn.Sequential(nn.Linear(fd, dim), nn.GELU(), nn.Linear(dim, dim))
         # audio kv: e4 (512 tok), e3 (2048 tok). 64-scale reuses e4 (cheap global cue).
         self.kv_e4 = nn.Linear(ngf * 8, dim)
         self.kv_e3 = nn.Linear(ngf * 4, dim)
@@ -348,16 +349,16 @@ class RayDPT(nn.Module):
         if self.lite:
             # 2-scale lite: ONE ray cross-attn at 32x64 (Q32 <- e4), e3/e2 projection
             # skips + local spherical attn. Isolates the DPT-fusion / ray-grid gain.
-            F32 = self._cross(self.rp32, self.rf32, self.cr32, kv4, B, 32, 64)
+            F32 = self._cross(self.ray_proj, self.rf32, self.cr32, kv4, B, 32, 64)
             m = F32 + self.se3(e3)                              # 32x64
             d_c = torch.sigmoid(self.coarse_head(F.adaptive_avg_pool2d(m, (16, 32))))
             x = self.lsa32(self.refine32(m))                    # 32x64
             x = self.lsa64(self.refine64(self.up(x) + self.se2(e2)))   # 64x128
         else:
             kv3 = self.kv_e3(e3.flatten(2).transpose(1, 2))     # (B,2048,dim)
-            F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4, B, 16, 32)
-            F32 = self._cross(self.rp32, self.rf32, self.cr32, kv3, B, 32, 64)
-            F64 = self._cross(self.rp64, self.rf64, self.cr64, kv4, B, 64, 128)
+            F16 = self._cross(self.ray_proj, self.rf16, self.cr16, kv4, B, 16, 32)
+            F32 = self._cross(self.ray_proj, self.rf32, self.cr32, kv3, B, 32, 64)
+            F64 = self._cross(self.ray_proj, self.rf64, self.cr64, kv4, B, 64, 128)
             m16 = F16 + self.se4(e4)                             # 16x32
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
             x = self.lsa32(self.refine32(self.up(m16) + F32 + self.se3(e3)))   # 32x64
@@ -671,7 +672,7 @@ def parse_args():
 
     p.add_argument('--batch-size', type=int, default=32)
     p.add_argument('--epochs', type=int, default=10)
-    p.add_argument('--lr', type=float, default=4e-4)
+    p.add_argument('--lr', type=float, default=6e-4)
     p.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam', 'SGD'])
     p.add_argument('--num-workers', type=int, default=16)
     p.add_argument('--in-ch', type=int, default=5, choices=[2, 3, 5],
