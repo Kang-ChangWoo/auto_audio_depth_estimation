@@ -503,6 +503,7 @@ def train(cfg):
 
     # Optimizer + warmup-cosine schedule
     optimizer = _build_optimizer(model, cfg)
+    scaler = torch.amp.GradScaler('cuda')                  # AMP (mixed precision)
     steps_per_epoch = max(1, len(train_loader))
     total_steps = cfg.mode.epochs * steps_per_epoch
     warm = steps_per_epoch
@@ -554,13 +555,15 @@ def train(cfg):
                     spec[fm] = swap_audio_lr(spec[fm])
                     gt[fm] = torch.flip(gt[fm], dims=[-1])
                     mask[fm] = torch.flip(mask[fm], dims=[-1])
-            out = model(spec)
-            loss, parts = composite_loss(out, gt, mask, mcfg)
-
             optimizer.zero_grad()
-            loss.backward()
+            with torch.amp.autocast('cuda'):
+                out = model(spec)
+                loss, parts = composite_loss(out, gt, mask, mcfg)
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
             scheduler.step()
 
             accum['total'] = accum.get('total', 0.0) + float(loss.detach())
@@ -669,9 +672,9 @@ def parse_args():
                    default='/home/rvi-lab/workspace/sound-spaces/dataset_simplified',
                    help='Path to SoundSpaces dataset')
 
-    p.add_argument('--batch-size', type=int, default=16)
-    p.add_argument('--epochs', type=int, default=40)
-    p.add_argument('--lr', type=float, default=3e-4)
+    p.add_argument('--batch-size', type=int, default=32)
+    p.add_argument('--epochs', type=int, default=10)
+    p.add_argument('--lr', type=float, default=6e-4)
     p.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam', 'SGD'])
     p.add_argument('--num-workers', type=int, default=16)
     p.add_argument('--in-ch', type=int, default=5, choices=[2, 3, 5],
