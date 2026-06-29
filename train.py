@@ -90,6 +90,7 @@ def make_config(args):
             raydpt_win32=5,
             raydpt_win64=3,
             raydpt_lite=args.raydpt_lite,
+            raydpt_full_decode=args.raydpt_full_decode,
             # ray-feature bank flags
             use_xyz=True,
             use_fourier_pe=True,
@@ -316,9 +317,8 @@ class RayDPT(nn.Module):
         f16, fd = bank(16, 32); f32, _ = bank(32, 64); f64, _ = bank(64, 128)
         self.register_buffer("rf16", f16); self.register_buffer("rf32", f32)
         self.register_buffer("rf64", f64)
-        # SHARED ray-query MLP across scales: ray feats are resolution-independent
-        # direction functions (same feat_dim) -> scale-consistent embedding, fewer params.
-        self.ray_proj = nn.Sequential(nn.Linear(fd, dim), nn.GELU(), nn.Linear(dim, dim))
+        mk_rp = lambda: nn.Sequential(nn.Linear(fd, dim), nn.GELU(), nn.Linear(dim, dim))
+        self.rp16, self.rp32, self.rp64 = mk_rp(), mk_rp(), mk_rp()
         # audio kv: e4 (512 tok), e3 (2048 tok). 64-scale reuses e4 (cheap global cue).
         self.kv_e4 = nn.Linear(ngf * 8, dim)
         self.kv_e3 = nn.Linear(ngf * 4, dim)
@@ -335,6 +335,15 @@ class RayDPT(nn.Module):
         self.coarse_head = nn.Conv2d(dim, 1, 1)
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
         self.lite = getattr(cfg, "raydpt_lite", False)        # 2-scale (32,64) lite variant
+        # full-decode: LEARNED upsample 64x128 -> 256x512 (+e1 skip), U-Net decoder tail
+        # instead of parameter-free bilinear x4. Closes the fairness gap vs pix2pix.
+        self.full_decode = getattr(cfg, "raydpt_full_decode", False)
+        if self.full_decode:
+            self.proj_fd = conv_bn(dim, ngf)                  # dim->ngf at 64x128
+            self.se1 = nn.Conv2d(ngf, ngf, 1)                 # e1 (128x256) DPT skip
+            self.dec1 = Refine(ngf)                           # at 128x256
+            self.dec2 = nn.Sequential(conv_bn(ngf, ngf), Refine(ngf))   # at 256x512
+            self.head_fd = nn.Conv2d(ngf, 1, 3, 1, 1)
 
     def _cross(self, rp, rf, blocks, kv, B, h, w):
         q = rp(rf)[None].expand(B, -1, -1)
@@ -349,22 +358,28 @@ class RayDPT(nn.Module):
         if self.lite:
             # 2-scale lite: ONE ray cross-attn at 32x64 (Q32 <- e4), e3/e2 projection
             # skips + local spherical attn. Isolates the DPT-fusion / ray-grid gain.
-            F32 = self._cross(self.ray_proj, self.rf32, self.cr32, kv4, B, 32, 64)
+            F32 = self._cross(self.rp32, self.rf32, self.cr32, kv4, B, 32, 64)
             m = F32 + self.se3(e3)                              # 32x64
             d_c = torch.sigmoid(self.coarse_head(F.adaptive_avg_pool2d(m, (16, 32))))
             x = self.lsa32(self.refine32(m))                    # 32x64
             x = self.lsa64(self.refine64(self.up(x) + self.se2(e2)))   # 64x128
         else:
             kv3 = self.kv_e3(e3.flatten(2).transpose(1, 2))     # (B,2048,dim)
-            F16 = self._cross(self.ray_proj, self.rf16, self.cr16, kv4, B, 16, 32)
-            F32 = self._cross(self.ray_proj, self.rf32, self.cr32, kv3, B, 32, 64)
-            F64 = self._cross(self.ray_proj, self.rf64, self.cr64, kv4, B, 64, 128)
+            F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4, B, 16, 32)
+            F32 = self._cross(self.rp32, self.rf32, self.cr32, kv3, B, 32, 64)
+            F64 = self._cross(self.rp64, self.rf64, self.cr64, kv4, B, 64, 128)
             m16 = F16 + self.se4(e4)                             # 16x32
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
             x = self.lsa32(self.refine32(self.up(m16) + F32 + self.se3(e3)))   # 32x64
             x = self.lsa64(self.refine64(self.up(x) + F64 + self.se2(e2)))     # 64x128
-        D = torch.sigmoid(self.head(x))
-        D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
+        if self.full_decode:                                   # LEARNED upsample 64x128 -> 256x512
+            xf = self.up(self.proj_fd(x))                       # 128x256, ngf
+            xf = self.dec1(xf + self.se1(e1))                  # + e1 skip
+            xf = self.dec2(self.up(xf))                        # 256x512, ngf
+            D = torch.sigmoid(self.head_fd(xf))
+        else:
+            D = torch.sigmoid(self.head(x))                    # 64x128 head
+            D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
         return {"D": D, "D0": D, "extras": {"D_coarse": d_c}}
 
 
@@ -682,6 +697,8 @@ def parse_args():
                    help='L/R mirror augmentation (depth width-flip + channel-aware audio swap)')
     p.add_argument('--raydpt-lite', type=lambda s: s == 'True', default=False,
                    help='2-scale (32,64) lite RayDPT variant')
+    p.add_argument('--raydpt-full-decode', type=lambda s: s == 'True', default=True,
+                   help='learned upsample 64x128->256x512 (+e1 skip) instead of bilinear x4')
 
     p.add_argument('--experiment-name', type=str, default='raydpt_5chflip')
     p.add_argument('--checkpoint', type=str, default=None,
