@@ -90,6 +90,7 @@ def make_config(args):
             raydpt_win32=5,
             raydpt_win64=3,
             raydpt_lite=args.raydpt_lite,
+            raydpt_full_decode=args.raydpt_full_decode,
             # ray-feature bank flags
             use_xyz=True,
             use_fourier_pe=True,
@@ -104,7 +105,7 @@ def make_config(args):
             w_dense=1.0,
             w_coarse_layout=1.0,
             w_low=0.5,
-            w_rel=0.1,
+            w_rel=0.25,
         ),
         mode=Cfg(
             mode=args.mode,
@@ -335,6 +336,15 @@ class RayDPT(nn.Module):
         self.coarse_head = nn.Conv2d(dim, 1, 1)
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
         self.lite = getattr(cfg, "raydpt_lite", False)        # 2-scale (32,64) lite variant
+        # full-decode: LEARNED upsample 64x128 -> 256x512 (+e1 skip), U-Net decoder tail
+        # instead of parameter-free bilinear x4. Improves RMSE (full-res detail).
+        self.full_decode = getattr(cfg, "raydpt_full_decode", False)
+        if self.full_decode:
+            self.proj_fd = conv_bn(dim, ngf)                  # dim->ngf at 64x128
+            self.se1 = nn.Conv2d(ngf, ngf, 1)                 # e1 (128x256) DPT skip
+            self.dec1 = Refine(ngf)                           # at 128x256
+            self.dec2 = nn.Sequential(conv_bn(ngf, ngf), Refine(ngf))   # at 256x512
+            self.head_fd = nn.Conv2d(ngf, 1, 3, 1, 1)
 
     def _cross(self, rp, rf, blocks, kv, B, h, w):
         q = rp(rf)[None].expand(B, -1, -1)
@@ -363,8 +373,14 @@ class RayDPT(nn.Module):
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
             x = self.lsa32(self.refine32(self.up(m16) + F32 + self.se3(e3)))   # 32x64
             x = self.lsa64(self.refine64(self.up(x) + F64 + self.se2(e2)))     # 64x128
-        D = torch.sigmoid(self.head(x))
-        D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
+        if self.full_decode:                                   # LEARNED upsample 64x128 -> 256x512
+            xf = self.up(self.proj_fd(x))                       # 128x256, ngf
+            xf = self.dec1(xf + self.se1(e1))                  # + e1 skip
+            xf = self.dec2(self.up(xf))                        # 256x512, ngf
+            D = torch.sigmoid(self.head_fd(xf))
+        else:
+            D = torch.sigmoid(self.head(x))
+            D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
         return {"D": D, "D0": D, "extras": {"D_coarse": d_c}}
 
 
@@ -687,6 +703,8 @@ def parse_args():
                         '2=log-mag binaural; 3=[logL,logR,ILD]')
     p.add_argument('--flip-aug', type=lambda s: s == 'True', default=True,
                    help='L/R mirror augmentation (depth width-flip + channel-aware audio swap)')
+    p.add_argument('--raydpt-full-decode', type=lambda s: s == 'True', default=True,
+                   help='learned upsample 64x128->256x512 (+e1 skip) instead of bilinear x4')
     p.add_argument('--raydpt-lite', type=lambda s: s == 'True', default=False,
                    help='2-scale (32,64) lite RayDPT variant')
 
