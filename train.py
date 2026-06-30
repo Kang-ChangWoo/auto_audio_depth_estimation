@@ -104,7 +104,7 @@ def make_config(args):
             w_dense=1.0,
             w_coarse_layout=1.0,
             w_low=0.5,
-            w_silog=0.5,
+            w_rel=0.13,
         ),
         mode=Cfg(
             mode=args.mode,
@@ -391,26 +391,17 @@ def masked_mae(D, gt, mask):
     return ((D - gt).abs() * mask).sum() / mask.sum().clamp(min=1e-6)
 
 
-def silog_loss(D, gt, mask, lam=0.85, eps=1e-6):
-    """Scale-invariant log loss (Eigen): sqrt(mean(g^2) - lam*mean(g)^2), g=log D - log gt.
-    Penalises log-error variance -> targets relative/ABS_REL accuracy while its quadratic
-    form is gentler on far pixels than |D-gt|/gt -> better RMSE balance."""
-    g = (torch.log(D.clamp(min=eps)) - torch.log(gt.clamp(min=eps))) * mask
-    n = mask.sum().clamp(min=1e-6)
-    var = (g ** 2).sum() / n - lam * ((g.sum() / n) ** 2)
-    return torch.sqrt(var.clamp(min=1e-8))
-
-
 def composite_loss(out, gt, mask, mcfg):
     """Band-limited objective: dense masked-MAE + coarse-layout + low-pass.
     gt / out['D'] are normalised depth in [0,1]. Returns (loss, parts)."""
     main = masked_mae(out["D"], gt, mask)
     loss = mcfg.w_dense * main
-    # scale-invariant log term: targets relative accuracy (ABS_REL) with a quadratic
-    # log-error penalty that is gentler on far pixels than |D-gt|/gt -> aims for BOTH
-    # lower ABS_REL and decent RMSE.
-    sil = silog_loss(out["D"], gt, mask)
-    loss = loss + mcfg.w_silog * sil
+    # relative-error term: directly targets the eval metric ABS_REL = mean(|D-gt|/gt).
+    # gt.clamp(0.01)=0.1m floor matches the metric's near-depth regime; max_depth cancels,
+    # so in normalised space this term equals ABS_REL. Pushes near-field (small-gt) accuracy
+    # that uniform MAE under-weights -> aims to break the ABS_REL<->RMSE LR tradeoff.
+    rel = (((out["D"] - gt).abs() / gt.clamp(min=0.01)) * mask).sum() / mask.sum().clamp(min=1e-6)
+    loss = loss + mcfg.w_rel * rel
     chh, chw = mcfg.coarse_head_h, mcfg.coarse_head_w
     gt_c = F.adaptive_avg_pool2d(gt, (chh, chw))
     m_c = F.adaptive_avg_pool2d(mask, (chh, chw))
@@ -421,7 +412,7 @@ def composite_loss(out, gt, mask, mcfg):
         lc = masked_mae(F.adaptive_avg_pool2d(out["D"], (chh, chw)), gt_c, m_c)
     ll = masked_mae(gaussian_blur_erp(out["D"], 3.0), gaussian_blur_erp(gt, 3.0), mask)
     loss = loss + mcfg.w_coarse_layout * lc + mcfg.w_low * ll
-    return loss, {"mae": float(main.detach()), "sil": float(sil.detach()),
+    return loss, {"mae": float(main.detach()), "rel": float(rel.detach()),
                   "lc": float(lc.detach()), "llow": float(ll.detach())}
 
 
@@ -587,7 +578,7 @@ def train(cfg):
                 prog = (i + 1) / n_batches * 100
                 print(f'  Epoch {epoch} [{i+1}/{n_batches} {prog:.0f}%] '
                       f'Loss: {accum["total"]/(i+1):.4f} '
-                      f'mae:{accum["mae"]/(i+1):.4f} sil:{accum["sil"]/(i+1):.4f} '
+                      f'mae:{accum["mae"]/(i+1):.4f} rel:{accum["rel"]/(i+1):.4f} '
                       f'lc:{accum["lc"]/(i+1):.4f} '
                       f'low:{accum["llow"]/(i+1):.4f}', flush=True)
 
