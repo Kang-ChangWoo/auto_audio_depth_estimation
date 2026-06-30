@@ -129,3 +129,15 @@ The idea is that you are a completely autonomous researcher trying things out. I
 **NEVER STOP**: Once the experiment loop has begun (after the initial setup), do NOT pause to ask the human if you should continue. Do NOT ask "should I keep going?" or "is this a good stopping point?". The human might be asleep, or gone from a computer and expects you to continue working *indefinitely* until you are manually stopped. You are autonomous. If you run out of ideas, think harder — read papers referenced in the code, re-read the in-scope files for new angles, try combining previous near-misses, try more radical architectural changes. The loop runs until the human interrupts you, period.
 
 As an example use case, a user might leave you running while they sleep. If each experiment takes you ~60 minutes then you can run approx 1/hour, for a total of about 8.5 over the duration of the average human sleep. The user then wakes up to experimental results, all completed by you while they slept!
+
+## Autonomous continuous operation (standing directive)
+
+Run **fully autonomously and indefinitely**. The moment one run finishes, record it and launch the next — never pause, never ask. Between launches the single GPU is busy ~1 hr/run; schedule a wakeup to poll and resume the loop so it self-continues across turns. Always have the next experiment staged.
+
+**Devise your own improvements** — you have full latitude over `train.py`: model layers, the ray↔audio **cross-attention** and ray↔ray **self/local attention** depth & width, attention heads, the loss terms/weights, optimizer, schedule, regularization, augmentation, etc. When ideas run low, re-read the in-scope files and the source repo (`test_for_audio_implicit_full`), combine prior near-misses, and try more radical restructurings — while keeping the ray-conditioning invariant.
+
+**Judge holistically (ABS_REL + RMSE + d1 together).** ABS_REL is directly optimizable by a relative loss, so it can be "gamed"; treat **RMSE and d1** as the honest quality signals and do not crown a config that only wins ABS_REL while RMSE/d1 regress. Select the best epoch/checkpoint by a multi-metric composite, not ABS_REL alone.
+
+**Respect the fixed 1-hour budget.** Heavy capacity (full-decode head, deeper cross-attn, more heads) slows epochs → fewer anneal steps → busts the budget and loses on RMSE/d1. Favor light/fast configs that fit ~7 epochs; prefer levers that don't slow training.
+
+**Keep `results.tsv` and `EXPERIMENTS.md` current** and `git push` to the remote (master) after each experiment, with multiple commits.
