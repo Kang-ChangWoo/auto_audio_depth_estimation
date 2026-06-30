@@ -11,3 +11,4 @@ dc7e61a	0.4594	1.5011	0.5447	30.9	discard	E_f full_decode+time-anneal: BEST RMSE
 50d48c7	0.3443	1.7311	0.5182	30.9	discard	E3 rel+full_decode combo: 0.3443/1.731 worse than E1 0.334/1.718 on BOTH. full_decode RMSE gain masked by rel loss (RMSE loss-limited); +overshoot 4300s
 9abedd5	0.3989	1.5468	0.5192	25.7	keep	E4 SILog w_silog=0.5: comprehensive win @ep7 0.3989/1.547 beats E0b on BOTH. but E2 (rel 0.1) better ABS_REL 0.3746. moderate loss + anneal final epoch = both good
 2f68091	0.3587	1.6377	0.5297	25.7	discard	E5 w_rel=0.13: ep7 0.3587/1.638. lower ABS_REL than E2 but RMSE 1.638>1.589 (no epoch keeps RMSE<=E0b). too heavy; w_rel=0.1 is the sweet spot
+bef1286	0.3570	1.5837	0.5337	25.7	keep	E6 CHAMPION lr4e-4+rel0.1 @ep7 (composite): 0.3570/1.5837 beats E2 0.3746/1.554 on ABS_REL & composite, RMSE still <=1.589. lr4e-4 lowers RMSE floor

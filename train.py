@@ -105,6 +105,7 @@ def make_config(args):
             w_coarse_layout=1.0,
             w_low=0.5,
             w_rel=0.1,
+            w_silog=0.3,
         ),
         mode=Cfg(
             mode=args.mode,
@@ -391,6 +392,16 @@ def masked_mae(D, gt, mask):
     return ((D - gt).abs() * mask).sum() / mask.sum().clamp(min=1e-6)
 
 
+def silog_loss(D, gt, mask, lam=0.85, eps=1e-6):
+    """Scale-invariant log loss (Eigen): sqrt(mean(g^2) - lam*mean(g)^2), g=log D - log gt.
+    Penalises log-error variance -> rewards correct relative STRUCTURE; complements the
+    relative term (which targets relative magnitude) with a far-pixel-gentle gradient."""
+    g = (torch.log(D.clamp(min=eps)) - torch.log(gt.clamp(min=eps))) * mask
+    n = mask.sum().clamp(min=1e-6)
+    var = (g ** 2).sum() / n - lam * ((g.sum() / n) ** 2)
+    return torch.sqrt(var.clamp(min=1e-8))
+
+
 def composite_loss(out, gt, mask, mcfg):
     """Band-limited objective: dense masked-MAE + coarse-layout + low-pass.
     gt / out['D'] are normalised depth in [0,1]. Returns (loss, parts)."""
@@ -402,6 +413,9 @@ def composite_loss(out, gt, mask, mcfg):
     # that uniform MAE under-weights -> aims to break the ABS_REL<->RMSE LR tradeoff.
     rel = (((out["D"] - gt).abs() / gt.clamp(min=0.01)) * mask).sum() / mask.sum().clamp(min=1e-6)
     loss = loss + mcfg.w_rel * rel
+    # scale-invariant log term (structure), stacked on the relative term (magnitude).
+    sil = silog_loss(out["D"], gt, mask)
+    loss = loss + mcfg.w_silog * sil
     chh, chw = mcfg.coarse_head_h, mcfg.coarse_head_w
     gt_c = F.adaptive_avg_pool2d(gt, (chh, chw))
     m_c = F.adaptive_avg_pool2d(mask, (chh, chw))
@@ -413,7 +427,8 @@ def composite_loss(out, gt, mask, mcfg):
     ll = masked_mae(gaussian_blur_erp(out["D"], 3.0), gaussian_blur_erp(gt, 3.0), mask)
     loss = loss + mcfg.w_coarse_layout * lc + mcfg.w_low * ll
     return loss, {"mae": float(main.detach()), "rel": float(rel.detach()),
-                  "lc": float(lc.detach()), "llow": float(ll.detach())}
+                  "sil": float(sil.detach()), "lc": float(lc.detach()),
+                  "llow": float(ll.detach())}
 
 
 # ============================================================
