@@ -104,7 +104,7 @@ def make_config(args):
             w_dense=1.0,
             w_coarse_layout=1.0,
             w_low=0.5,
-            w_rel=0.25,
+            w_rel=0.1,
         ),
         mode=Cfg(
             mode=args.mode,
