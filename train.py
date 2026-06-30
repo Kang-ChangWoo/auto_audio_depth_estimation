@@ -90,7 +90,6 @@ def make_config(args):
             raydpt_win32=5,
             raydpt_win64=3,
             raydpt_lite=args.raydpt_lite,
-            raydpt_full_decode=args.raydpt_full_decode,
             # ray-feature bank flags
             use_xyz=True,
             use_fourier_pe=True,
@@ -105,6 +104,7 @@ def make_config(args):
             w_dense=1.0,
             w_coarse_layout=1.0,
             w_low=0.5,
+            w_rel=0.25,
         ),
         mode=Cfg(
             mode=args.mode,
@@ -335,15 +335,6 @@ class RayDPT(nn.Module):
         self.coarse_head = nn.Conv2d(dim, 1, 1)
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
         self.lite = getattr(cfg, "raydpt_lite", False)        # 2-scale (32,64) lite variant
-        # full-decode: LEARNED upsample 64x128 -> 256x512 (+e1 skip), U-Net decoder tail
-        # instead of parameter-free bilinear x4. Closes the fairness gap vs pix2pix.
-        self.full_decode = getattr(cfg, "raydpt_full_decode", False)
-        if self.full_decode:
-            self.proj_fd = conv_bn(dim, ngf)                  # dim->ngf at 64x128
-            self.se1 = nn.Conv2d(ngf, ngf, 1)                 # e1 (128x256) DPT skip
-            self.dec1 = Refine(ngf)                           # at 128x256
-            self.dec2 = nn.Sequential(conv_bn(ngf, ngf), Refine(ngf))   # at 256x512
-            self.head_fd = nn.Conv2d(ngf, 1, 3, 1, 1)
 
     def _cross(self, rp, rf, blocks, kv, B, h, w):
         q = rp(rf)[None].expand(B, -1, -1)
@@ -372,14 +363,8 @@ class RayDPT(nn.Module):
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
             x = self.lsa32(self.refine32(self.up(m16) + F32 + self.se3(e3)))   # 32x64
             x = self.lsa64(self.refine64(self.up(x) + F64 + self.se2(e2)))     # 64x128
-        if self.full_decode:                                   # LEARNED upsample 64x128 -> 256x512
-            xf = self.up(self.proj_fd(x))                       # 128x256, ngf
-            xf = self.dec1(xf + self.se1(e1))                  # + e1 skip
-            xf = self.dec2(self.up(xf))                        # 256x512, ngf
-            D = torch.sigmoid(self.head_fd(xf))
-        else:
-            D = torch.sigmoid(self.head(x))                    # 64x128 head
-            D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
+        D = torch.sigmoid(self.head(x))
+        D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
         return {"D": D, "D0": D, "extras": {"D_coarse": d_c}}
 
 
@@ -411,6 +396,12 @@ def composite_loss(out, gt, mask, mcfg):
     gt / out['D'] are normalised depth in [0,1]. Returns (loss, parts)."""
     main = masked_mae(out["D"], gt, mask)
     loss = mcfg.w_dense * main
+    # relative-error term: directly targets the eval metric ABS_REL = mean(|D-gt|/gt).
+    # gt.clamp(0.01)=0.1m floor matches the metric's near-depth regime; max_depth cancels,
+    # so in normalised space this term equals ABS_REL. Pushes near-field (small-gt) accuracy
+    # that uniform MAE under-weights -> aims to break the ABS_REL<->RMSE LR tradeoff.
+    rel = (((out["D"] - gt).abs() / gt.clamp(min=0.01)) * mask).sum() / mask.sum().clamp(min=1e-6)
+    loss = loss + mcfg.w_rel * rel
     chh, chw = mcfg.coarse_head_h, mcfg.coarse_head_w
     gt_c = F.adaptive_avg_pool2d(gt, (chh, chw))
     m_c = F.adaptive_avg_pool2d(mask, (chh, chw))
@@ -421,8 +412,8 @@ def composite_loss(out, gt, mask, mcfg):
         lc = masked_mae(F.adaptive_avg_pool2d(out["D"], (chh, chw)), gt_c, m_c)
     ll = masked_mae(gaussian_blur_erp(out["D"], 3.0), gaussian_blur_erp(gt, 3.0), mask)
     loss = loss + mcfg.w_coarse_layout * lc + mcfg.w_low * ll
-    return loss, {"mae": float(main.detach()), "lc": float(lc.detach()),
-                  "llow": float(ll.detach())}
+    return loss, {"mae": float(main.detach()), "rel": float(rel.detach()),
+                  "lc": float(lc.detach()), "llow": float(ll.detach())}
 
 
 # ============================================================
@@ -517,18 +508,15 @@ def train(cfg):
     total_params = sum(p.numel() for p in model.parameters()) / 1e6
     print(f'Model: {cfg.model.name} ({total_params:.2f}M params)')
 
-    # Optimizer + TIME-based warmup-cosine schedule. The LR anneals by wall-clock
-    # fraction of TIME_BUDGET (not epoch count), so models that fit fewer epochs in
-    # the hour (e.g. the heavier full-decode head) still anneal fully -> fair budget.
+    # Optimizer + warmup-cosine schedule
     optimizer = _build_optimizer(model, cfg)
-    base_lr = cfg.mode.learning_rate
-    warm_frac = 0.1                                   # warmup over first 10% of the budget
-
-    def _lr_at(elapsed):
-        f = min(1.0, elapsed / TIME_BUDGET)
-        if f < warm_frac:
-            return base_lr * (f / warm_frac)
-        return base_lr * 0.5 * (1 + math.cos(math.pi * (f - warm_frac) / (1 - warm_frac)))
+    steps_per_epoch = max(1, len(train_loader))
+    total_steps = cfg.mode.epochs * steps_per_epoch
+    warm = steps_per_epoch
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer,
+        lambda s: (s + 1) / warm if s < warm
+        else 0.5 * (1 + math.cos(math.pi * (s - warm) / max(1, total_steps - warm))))
 
     # Output directories
     project_dir = os.path.dirname(os.path.abspath(__file__))
@@ -558,7 +546,6 @@ def train(cfg):
     depth_type = cfg.dataset.depth_type
 
     training_start = time.time()
-    cur_lr = base_lr
     for epoch in range(start_epoch, cfg.mode.epochs + 1):
         model.train()
         t0 = time.time()
@@ -580,10 +567,8 @@ def train(cfg):
                 loss, parts = composite_loss(out, gt, mask, mcfg)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            cur_lr = _lr_at(time.time() - training_start)
-            for pg in optimizer.param_groups:
-                pg['lr'] = cur_lr
             optimizer.step()
+            scheduler.step()
 
             accum['total'] = accum.get('total', 0.0) + float(loss.detach())
             for k, v in parts.items():
@@ -593,12 +578,13 @@ def train(cfg):
                 prog = (i + 1) / n_batches * 100
                 print(f'  Epoch {epoch} [{i+1}/{n_batches} {prog:.0f}%] '
                       f'Loss: {accum["total"]/(i+1):.4f} '
-                      f'mae:{accum["mae"]/(i+1):.4f} lc:{accum["lc"]/(i+1):.4f} '
+                      f'mae:{accum["mae"]/(i+1):.4f} rel:{accum["rel"]/(i+1):.4f} '
+                      f'lc:{accum["lc"]/(i+1):.4f} '
                       f'low:{accum["llow"]/(i+1):.4f}', flush=True)
 
         epoch_loss = accum['total'] / n_batches
         print(f'Epoch [{epoch}/{cfg.mode.epochs}] Loss: {epoch_loss:.4f} '
-              f'Time: {time.time()-t0:.1f}s LR: {cur_lr:.6f}')
+              f'Time: {time.time()-t0:.1f}s LR: {scheduler.get_last_lr()[0]:.6f}')
 
         # --- Validation ---
         if epoch % cfg.mode.validation_iter == 0:
@@ -703,8 +689,6 @@ def parse_args():
                    help='L/R mirror augmentation (depth width-flip + channel-aware audio swap)')
     p.add_argument('--raydpt-lite', type=lambda s: s == 'True', default=False,
                    help='2-scale (32,64) lite RayDPT variant')
-    p.add_argument('--raydpt-full-decode', type=lambda s: s == 'True', default=True,
-                   help='learned upsample 64x128->256x512 (+e1 skip) instead of bilinear x4')
 
     p.add_argument('--experiment-name', type=str, default='raydpt_5chflip')
     p.add_argument('--checkpoint', type=str, default=None,
