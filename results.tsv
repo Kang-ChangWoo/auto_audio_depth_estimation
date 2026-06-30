@@ -13,3 +13,4 @@ dc7e61a	0.4594	1.5011	0.5447	30.9	discard	E_f full_decode+time-anneal: BEST RMSE
 2f68091	0.3587	1.6377	0.5297	25.7	discard	E5 w_rel=0.13: ep7 0.3587/1.638. lower ABS_REL than E2 but RMSE 1.638>1.589 (no epoch keeps RMSE<=E0b). too heavy; w_rel=0.1 is the sweet spot
 bef1286	0.3570	1.5837	0.5337	25.7	keep	E6 lr4e-4+rel0.1 @ep7: best ABS_REL 0.357 but WORST RMSE 1.584 & d1 0.5337 of good group. ABS_REL directly optimized by rel-loss (gamed); honest metrics RMSE/d1 say E2/E0c better. NOT champion
 9d3dcbb	0.3750	1.5538	0.5252	25.7	discard	E7 rel0.1+SILog0.3 lr4e-4: 0.3750/1.554 ~tied E2 on ABS_REL/RMSE but d1 0.5252 WORSE (SILog hurts d1). no holistic gain; drop SILog
+12cdecd	0.3816	1.5520	0.5408	30.9	discard	E8 full_decode+lr4e-4+rel0.05: 0.3816/1.552/0.5408 ~TIED E2 on all 3 (tiny d1/RMSE edge, worse ABS_REL) but full_decode more complex+VRAM & overshoots 4310s/72min>limit. E2 simpler wins

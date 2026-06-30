@@ -86,7 +86,7 @@ def make_config(args):
             ngf=64,
             dim=192,
             n_heads=4,
-            ray_cross_layers=2,
+            ray_cross_layers=3,
             raydpt_win32=5,
             raydpt_win64=3,
             raydpt_lite=args.raydpt_lite,
@@ -105,7 +105,7 @@ def make_config(args):
             w_dense=1.0,
             w_coarse_layout=1.0,
             w_low=0.5,
-            w_rel=0.05,
+            w_rel=0.1,
             w_silog=0.0,
         ),
         mode=Cfg(
@@ -722,7 +722,7 @@ def parse_args():
 
     p.add_argument('--batch-size', type=int, default=32)
     p.add_argument('--epochs', type=int, default=10)
-    p.add_argument('--lr', type=float, default=4e-4)
+    p.add_argument('--lr', type=float, default=6e-4)
     p.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam', 'SGD'])
     p.add_argument('--num-workers', type=int, default=16)
     p.add_argument('--in-ch', type=int, default=5, choices=[2, 3, 5],
@@ -730,7 +730,7 @@ def parse_args():
                         '2=log-mag binaural; 3=[logL,logR,ILD]')
     p.add_argument('--flip-aug', type=lambda s: s == 'True', default=True,
                    help='L/R mirror augmentation (depth width-flip + channel-aware audio swap)')
-    p.add_argument('--raydpt-full-decode', type=lambda s: s == 'True', default=True,
+    p.add_argument('--raydpt-full-decode', type=lambda s: s == 'True', default=False,
                    help='learned upsample 64x128->256x512 (+e1 skip) instead of bilinear x4')
     p.add_argument('--raydpt-lite', type=lambda s: s == 'True', default=False,
                    help='2-scale (32,64) lite RayDPT variant')
