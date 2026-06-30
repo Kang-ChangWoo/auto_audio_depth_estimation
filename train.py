@@ -90,7 +90,6 @@ def make_config(args):
             raydpt_win32=5,
             raydpt_win64=3,
             raydpt_lite=args.raydpt_lite,
-            raydpt_full_decode=args.raydpt_full_decode,
             # ray-feature bank flags
             use_xyz=True,
             use_fourier_pe=True,
@@ -105,7 +104,7 @@ def make_config(args):
             w_dense=1.0,
             w_coarse_layout=1.0,
             w_low=0.5,
-            w_rel=0.25,
+            w_silog=0.5,
         ),
         mode=Cfg(
             mode=args.mode,
@@ -336,15 +335,6 @@ class RayDPT(nn.Module):
         self.coarse_head = nn.Conv2d(dim, 1, 1)
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
         self.lite = getattr(cfg, "raydpt_lite", False)        # 2-scale (32,64) lite variant
-        # full-decode: LEARNED upsample 64x128 -> 256x512 (+e1 skip), U-Net decoder tail
-        # instead of parameter-free bilinear x4. Improves RMSE (full-res detail).
-        self.full_decode = getattr(cfg, "raydpt_full_decode", False)
-        if self.full_decode:
-            self.proj_fd = conv_bn(dim, ngf)                  # dim->ngf at 64x128
-            self.se1 = nn.Conv2d(ngf, ngf, 1)                 # e1 (128x256) DPT skip
-            self.dec1 = Refine(ngf)                           # at 128x256
-            self.dec2 = nn.Sequential(conv_bn(ngf, ngf), Refine(ngf))   # at 256x512
-            self.head_fd = nn.Conv2d(ngf, 1, 3, 1, 1)
 
     def _cross(self, rp, rf, blocks, kv, B, h, w):
         q = rp(rf)[None].expand(B, -1, -1)
@@ -373,14 +363,8 @@ class RayDPT(nn.Module):
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
             x = self.lsa32(self.refine32(self.up(m16) + F32 + self.se3(e3)))   # 32x64
             x = self.lsa64(self.refine64(self.up(x) + F64 + self.se2(e2)))     # 64x128
-        if self.full_decode:                                   # LEARNED upsample 64x128 -> 256x512
-            xf = self.up(self.proj_fd(x))                       # 128x256, ngf
-            xf = self.dec1(xf + self.se1(e1))                  # + e1 skip
-            xf = self.dec2(self.up(xf))                        # 256x512, ngf
-            D = torch.sigmoid(self.head_fd(xf))
-        else:
-            D = torch.sigmoid(self.head(x))
-            D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
+        D = torch.sigmoid(self.head(x))
+        D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
         return {"D": D, "D0": D, "extras": {"D_coarse": d_c}}
 
 
@@ -407,17 +391,26 @@ def masked_mae(D, gt, mask):
     return ((D - gt).abs() * mask).sum() / mask.sum().clamp(min=1e-6)
 
 
+def silog_loss(D, gt, mask, lam=0.85, eps=1e-6):
+    """Scale-invariant log loss (Eigen): sqrt(mean(g^2) - lam*mean(g)^2), g=log D - log gt.
+    Penalises log-error variance -> targets relative/ABS_REL accuracy while its quadratic
+    form is gentler on far pixels than |D-gt|/gt -> better RMSE balance."""
+    g = (torch.log(D.clamp(min=eps)) - torch.log(gt.clamp(min=eps))) * mask
+    n = mask.sum().clamp(min=1e-6)
+    var = (g ** 2).sum() / n - lam * ((g.sum() / n) ** 2)
+    return torch.sqrt(var.clamp(min=1e-8))
+
+
 def composite_loss(out, gt, mask, mcfg):
     """Band-limited objective: dense masked-MAE + coarse-layout + low-pass.
     gt / out['D'] are normalised depth in [0,1]. Returns (loss, parts)."""
     main = masked_mae(out["D"], gt, mask)
     loss = mcfg.w_dense * main
-    # relative-error term: directly targets the eval metric ABS_REL = mean(|D-gt|/gt).
-    # gt.clamp(0.01)=0.1m floor matches the metric's near-depth regime; max_depth cancels,
-    # so in normalised space this term equals ABS_REL. Pushes near-field (small-gt) accuracy
-    # that uniform MAE under-weights -> aims to break the ABS_REL<->RMSE LR tradeoff.
-    rel = (((out["D"] - gt).abs() / gt.clamp(min=0.01)) * mask).sum() / mask.sum().clamp(min=1e-6)
-    loss = loss + mcfg.w_rel * rel
+    # scale-invariant log term: targets relative accuracy (ABS_REL) with a quadratic
+    # log-error penalty that is gentler on far pixels than |D-gt|/gt -> aims for BOTH
+    # lower ABS_REL and decent RMSE.
+    sil = silog_loss(out["D"], gt, mask)
+    loss = loss + mcfg.w_silog * sil
     chh, chw = mcfg.coarse_head_h, mcfg.coarse_head_w
     gt_c = F.adaptive_avg_pool2d(gt, (chh, chw))
     m_c = F.adaptive_avg_pool2d(mask, (chh, chw))
@@ -428,7 +421,7 @@ def composite_loss(out, gt, mask, mcfg):
         lc = masked_mae(F.adaptive_avg_pool2d(out["D"], (chh, chw)), gt_c, m_c)
     ll = masked_mae(gaussian_blur_erp(out["D"], 3.0), gaussian_blur_erp(gt, 3.0), mask)
     loss = loss + mcfg.w_coarse_layout * lc + mcfg.w_low * ll
-    return loss, {"mae": float(main.detach()), "rel": float(rel.detach()),
+    return loss, {"mae": float(main.detach()), "sil": float(sil.detach()),
                   "lc": float(lc.detach()), "llow": float(ll.detach())}
 
 
@@ -594,7 +587,7 @@ def train(cfg):
                 prog = (i + 1) / n_batches * 100
                 print(f'  Epoch {epoch} [{i+1}/{n_batches} {prog:.0f}%] '
                       f'Loss: {accum["total"]/(i+1):.4f} '
-                      f'mae:{accum["mae"]/(i+1):.4f} rel:{accum["rel"]/(i+1):.4f} '
+                      f'mae:{accum["mae"]/(i+1):.4f} sil:{accum["sil"]/(i+1):.4f} '
                       f'lc:{accum["lc"]/(i+1):.4f} '
                       f'low:{accum["llow"]/(i+1):.4f}', flush=True)
 
@@ -703,8 +696,6 @@ def parse_args():
                         '2=log-mag binaural; 3=[logL,logR,ILD]')
     p.add_argument('--flip-aug', type=lambda s: s == 'True', default=True,
                    help='L/R mirror augmentation (depth width-flip + channel-aware audio swap)')
-    p.add_argument('--raydpt-full-decode', type=lambda s: s == 'True', default=True,
-                   help='learned upsample 64x128->256x512 (+e1 skip) instead of bilinear x4')
     p.add_argument('--raydpt-lite', type=lambda s: s == 'True', default=False,
                    help='2-scale (32,64) lite RayDPT variant')
 
