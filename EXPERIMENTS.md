@@ -45,7 +45,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E23 | E22 + 2nd coarse self-attn block (deeper) | 0.3577 | 1.5437 | 0.5479 | discard (RMSE/d1 worse — 512-token grid saturates at 1 block) |
 | E24 | E22 + global self-attn at 32×64 | crash | | | discard (587s/ep busts budget, 31.8GB — 2048 tok too costly) |
 | E25 | E22 coarse self-attn, heads 4→8 | 0.3574 | 1.5406 | 0.5488 | discard (d1 worse → composite loses; 4 heads simpler) |
-| E26 | E22 + pooled 32×64 global attn (coarse cost) | running | | | — |
+| E26 | E22 + pooled 32×64 global attn (coarse cost) | 0.3569 | 1.5468 | 0.5484 | discard (RMSE/d1 worse — mid-scale global attn doesn't help) |
+| E27 | E22 coarse self-attn + angular-distance bias (geometry-aware) | running | | | — |
 
 (E0 fp16 AMP crashed: NaN at epoch 2 → fixed with bf16.)
 
