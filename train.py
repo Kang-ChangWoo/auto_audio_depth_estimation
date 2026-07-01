@@ -343,11 +343,10 @@ class RayDPT(nn.Module):
         mk_cr = lambda: nn.ModuleList([CrossBlock(dim, heads) for _ in range(nL)])
         self.cr16, self.cr32, self.cr64 = mk_cr(), mk_cr(), mk_cr()
         # E22: ray<->ray global self-attn on the 16x32 coarse grid (512 tokens, cheap) so the
-        # layout rays reason jointly after reading audio. E23 showed 1 block is enough (2 saturates).
-        # E24: add a global self-attn at 32x64 too (2048 tokens) — global reasoning at a scale that
-        # otherwise only sees LOCAL spherical attention.
-        self.rsa16 = SelfBlock(dim, heads)
-        self.rsa32 = SelfBlock(dim, heads)
+        # layout rays reason jointly after reading audio. E23 showed 1 block is enough (2 saturates),
+        # E24 showed 32x64 global attn (2048 tok) busts the budget. E25: give the winning coarse
+        # block more head diversity (8 vs 4) — width not depth, still cheap at 512 tokens.
+        self.rsa16 = SelfBlock(dim, 8)
         # DPT encoder skips (U-Net detail injection)
         self.se4 = nn.Conv2d(ngf * 8, dim, 1)
         self.se3 = nn.Conv2d(ngf * 4, dim, 1)
@@ -392,7 +391,7 @@ class RayDPT(nn.Module):
         else:
             kv3 = self.kv_e3(e3.flatten(2).transpose(1, 2))     # (B,2048,dim)
             F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4, B, 16, 32, self_attn=self.rsa16)
-            F32 = self._cross(self.rp32, self.rf32, self.cr32, kv3, B, 32, 64, self_attn=self.rsa32)
+            F32 = self._cross(self.rp32, self.rf32, self.cr32, kv3, B, 32, 64)
             F64 = self._cross(self.rp64, self.rf64, self.cr64, kv4, B, 64, 128)
             m16 = F16 + self.se4(e4)                             # 16x32
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
