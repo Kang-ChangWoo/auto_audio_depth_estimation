@@ -740,7 +740,7 @@ def parse_args():
 
     p.add_argument('--batch-size', type=int, default=32)
     p.add_argument('--epochs', type=int, default=10)
-    p.add_argument('--lr', type=float, default=6e-4)
+    p.add_argument('--lr', type=float, default=8e-4)   # E15: EMA smooths noise -> afford higher peak LR
     p.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam', 'SGD'])
     p.add_argument('--num-workers', type=int, default=16)
     p.add_argument('--in-ch', type=int, default=5, choices=[2, 3, 5],

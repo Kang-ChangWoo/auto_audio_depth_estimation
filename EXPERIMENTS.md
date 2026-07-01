@@ -33,25 +33,28 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E11 | disable low-pass (w_low=0) | 0.3403 | 1.6212 | 0.5385 | discard (RMSE↑, d1 tied — low-pass helps RMSE) |
 | E12 | w_low 0.5→1.0 | 0.3809 | 1.5754 | 0.5353 | discard (worse on all 3 → w_low=0.5 is optimal) |
 | E13 | weight EMA (decay 0.999) | 0.3732 | 1.5706 | 0.5324 | discard (ABS_REL~tied, RMSE/d1 worse — EMA lagged) |
-| E14 | weight EMA (decay 0.995) | running | | | — |
+| **E14** | **weight EMA (decay 0.995)** | **0.3606** | **1.5548** | **0.5438** | **KEEP — NEW CHAMPION (comp 2.234 < E2 2.253)** |
+| E15 | E14 + peak LR 6e-4→8e-4 | running | | | — |
 
 (E0 fp16 AMP crashed: NaN at epoch 2 → fixed with bf16.)
 
 ## Current best
-- **Balanced champion: E2** (bf16+bs32, lr6e-4, rel w_rel=0.1) — **0.3746 / 1.554 / 0.5395**. Strong on all three.
-- **Best honest metrics: E0c** (lr4e-4, no rel) — 0.4259 / **1.520 / 0.5471**.
+- **CHAMPION: E14** (E2 + weight EMA decay 0.995) — **0.3606 / 1.5548 / 0.5438**, honest composite **2.234**. Beats E2 on ABS_REL & d1 at equal RMSE. First clean frontier push in a while.
+- Prior balanced champion: E2 (bf16+bs32, lr6e-4, rel w_rel=0.1) — 0.3746 / 1.554 / 0.5395.
+- Best honest metrics (no rel loss): E0c (lr4e-4) — 0.4259 / 1.520 / 0.5471.
 
 ## What helped
 1. **bf16 AMP + batch 32 + LR cosine anneal (E0b)** — foundation. fp16→NaN, bf16 fixed it; more epochs/hr + real annealing → ABS_REL 0.4434→0.4151, RMSE flat.
 2. **lr 4e-4 (E0c)** — lifts the honest metrics (RMSE 1.520, d1 0.5471).
 3. **Light relative loss w_rel=0.1 (E2)** — `|D−gt|/gt` ≈ ABS_REL; at light weight + anneal, lowers ABS_REL to 0.3746 while keeping RMSE/d1 good.
+4. **Weight EMA decay=0.995 (E14)** — evaluate/checkpoint the temporal weight average, not the raw iterate. FREE (no epoch slowdown). Smooths late-training noise → better ABS_REL & d1 at equal RMSE. Decay must be fast enough (~200-step window) to track annealed weights in a 7-epoch run; 0.999 (E13) lagged and lost.
 
 ## What did NOT help
 - **fp16 AMP** → NaN. Use bf16.
 - **Heavy relative (w_rel≥0.13)** → best ABS_REL but RMSE breaks (over-weights near pixels). w_rel=0.1 is the sweet spot.
 - **Any capacity add** (full_decode, deeper cross-attn, more heads) → **slows epochs → fewer anneal steps → busts the 1-hour budget → worse RMSE/d1.** The model is at its budget-limited optimum with the light E2 config.
 - **SILog** → helps nothing, hurts d1 (optimizes scale-invariant structure, not absolute correctness).
-- **Weight EMA decay=0.999 (E13)** → ABS_REL ties E2 but RMSE/d1 regress. EMA was still climbing at epoch 7 → too slow to catch the annealed weights in a 7-epoch run. Retesting decay=0.995 (E14).
+- **Weight EMA decay=0.999 (E13)** → too slow: EMA still climbing at epoch 7, RMSE/d1 regress vs E2. Fix = faster decay 0.995 (E14, now champion). Lesson: EMA window must be << run length.
 - **shared ray_proj / time-anneal / disabling low-pass** → each loses on the honest metrics.
 
 ## Key principles
