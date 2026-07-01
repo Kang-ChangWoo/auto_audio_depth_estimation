@@ -113,7 +113,7 @@ def make_config(args):
             batch_size=args.batch_size,
             epochs=args.epochs,
             learning_rate=args.lr,
-            weight_decay=1e-4,
+            weight_decay=2e-4,   # E21: 2x weight decay (was 1e-4) -> more regularization, target generalization (d1/RMSE)
             optimizer=args.optimizer,
             validation_iter=1,
             num_threads=args.num_workers,
@@ -739,7 +739,7 @@ def parse_args():
                    help='Path to SoundSpaces dataset')
 
     p.add_argument('--batch-size', type=int, default=32)
-    p.add_argument('--epochs', type=int, default=7)    # E20: match the ~7 epochs that fit the 1hr budget so cosine LR anneals fully to ~0 (was 10 -> LR floored at 1e-4)
+    p.add_argument('--epochs', type=int, default=10)   # E20 confirmed 10 optimal: LR floor 1e-4 keeps the rel-loss learning (anneal->0 hurt ABS_REL/d1)
     p.add_argument('--lr', type=float, default=4e-4)   # E16 champion LR (4e-4 is the floor; 3e-4 U-turned worse)
     p.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam', 'SGD'])
     p.add_argument('--num-workers', type=int, default=16)
