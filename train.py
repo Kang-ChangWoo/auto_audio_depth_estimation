@@ -249,8 +249,8 @@ class GeoSelfBlock(nn.Module):
         self.to_qkv = nn.Linear(dim, dim * 3)
         self.proj = nn.Linear(dim, dim)
         self.ffn = FFN(dim)
-        self.register_buffer("geom", geom)                       # (N,N) cos angular dist
-        self.bias_mlp = nn.Sequential(nn.Linear(1, 32), nn.GELU(), nn.Linear(32, heads))
+        self.register_buffer("geom", geom)                       # (N,N,G) pairwise geom feats
+        self.bias_mlp = nn.Sequential(nn.Linear(geom.shape[-1], 32), nn.GELU(), nn.Linear(32, heads))
 
     def forward(self, q):
         B, N, C = q.shape
@@ -258,7 +258,7 @@ class GeoSelfBlock(nn.Module):
         qkv = self.to_qkv(x).reshape(B, N, 3, self.h, self.dh).permute(2, 0, 3, 1, 4)
         qq, kk, vv = qkv[0], qkv[1], qkv[2]                      # (B,h,N,dh)
         attn = (qq @ kk.transpose(-2, -1)) * self.scale          # (B,h,N,N)
-        bias = self.bias_mlp(self.geom.unsqueeze(-1)).permute(2, 0, 1)   # (h,N,N)
+        bias = self.bias_mlp(self.geom).permute(2, 0, 1)         # (h,N,N)
         attn = (attn + bias[None]).softmax(-1)
         o = (attn @ vv).transpose(1, 2).reshape(B, N, C)
         q = q + self.proj(o)
@@ -375,11 +375,18 @@ class RayDPT(nn.Module):
         # reason jointly after reading audio. Capacity saturates (E23 depth, E25 heads, E26 mid-scale).
         # E27: make it GEOMETRY-AWARE — add a learned bias on the cos angular distance between ray
         # pairs (the lsa blocks already do this locally). geom = (512,512) pairwise cos-ang-dist.
+        # E28: richer pairwise geom feats [cos-ang-dist, el_query, el_key] — absolute elevation
+        # strongly conditions ERP depth (floor below / ceiling above), not just relative angle.
         el16, az16 = erp_grid(16, 32)
         d16 = np.stack([np.cos(el16) * np.cos(az16), np.cos(el16) * np.sin(az16),
                         np.sin(el16)], -1).reshape(-1, 3).astype(np.float32)   # (512,3) unit dirs
-        geom16 = torch.from_numpy(np.clip(d16 @ d16.T, -1.0, 1.0))             # (512,512) cos ang dist
-        self.rsa16 = GeoSelfBlock(dim, heads, geom16)
+        elf = el16.reshape(-1).astype(np.float32)                             # (512,) elevation
+        N = elf.shape[0]
+        cosd = np.clip(d16 @ d16.T, -1.0, 1.0)                                # (512,512)
+        geom16 = np.stack([cosd,
+                           np.broadcast_to(elf[:, None], (N, N)),            # el of query ray
+                           np.broadcast_to(elf[None, :], (N, N))], -1)        # el of key ray
+        self.rsa16 = GeoSelfBlock(dim, heads, torch.from_numpy(geom16.astype(np.float32)))
         # DPT encoder skips (U-Net detail injection)
         self.se4 = nn.Conv2d(ngf * 8, dim, 1)
         self.se3 = nn.Conv2d(ngf * 4, dim, 1)
