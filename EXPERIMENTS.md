@@ -31,7 +31,9 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E9 | ray_cross_layers 2→3 | 0.3706 | 1.6044 | 0.5259 | discard (slower→6ep, worse RMSE/d1, over budget) |
 | E10 | n_heads 4→8 | 0.3887 | 1.6002 | 0.5224 | discard (slower→5ep, worse all 3) |
 | E11 | disable low-pass (w_low=0) | 0.3403 | 1.6212 | 0.5385 | discard (RMSE↑, d1 tied — low-pass helps RMSE) |
-| E12 | w_low 0.5→1.0 | running | | | — |
+| E12 | w_low 0.5→1.0 | 0.3809 | 1.5754 | 0.5353 | discard (worse on all 3 → w_low=0.5 is optimal) |
+| E13 | weight EMA (decay 0.999) | 0.3732 | 1.5706 | 0.5324 | discard (ABS_REL~tied, RMSE/d1 worse — EMA lagged) |
+| E14 | weight EMA (decay 0.995) | running | | | — |
 
 (E0 fp16 AMP crashed: NaN at epoch 2 → fixed with bf16.)
 
@@ -49,6 +51,7 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 - **Heavy relative (w_rel≥0.13)** → best ABS_REL but RMSE breaks (over-weights near pixels). w_rel=0.1 is the sweet spot.
 - **Any capacity add** (full_decode, deeper cross-attn, more heads) → **slows epochs → fewer anneal steps → busts the 1-hour budget → worse RMSE/d1.** The model is at its budget-limited optimum with the light E2 config.
 - **SILog** → helps nothing, hurts d1 (optimizes scale-invariant structure, not absolute correctness).
+- **Weight EMA decay=0.999 (E13)** → ABS_REL ties E2 but RMSE/d1 regress. EMA was still climbing at epoch 7 → too slow to catch the annealed weights in a 7-epoch run. Retesting decay=0.995 (E14).
 - **shared ray_proj / time-anneal / disabling low-pass** → each loses on the honest metrics.
 
 ## Key principles

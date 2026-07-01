@@ -541,8 +541,9 @@ def train(cfg):
 
     # Weight EMA (E13): a temporal average of the weights is evaluated/saved instead of the
     # raw SGD iterate. Free (per-step copy, no extra fwd/bwd) and typically improves the HONEST
-    # metrics (RMSE/d1) by smoothing the noisy late-training trajectory. decay=0.999 -> ~1-epoch window.
-    EMA_DECAY = 0.999
+    # metrics (RMSE/d1) by smoothing the noisy late-training trajectory. decay=0.995 -> ~200-step window
+    # (E13 decay=0.999 lagged too much on a 7-epoch run; faster decay tracks the annealed late weights).
+    EMA_DECAY = 0.995
     ema = {k: v.detach().clone() for k, v in model.state_dict().items()}
 
     # Optimizer + warmup-cosine schedule
