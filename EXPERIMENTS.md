@@ -47,7 +47,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E25 | E22 coarse self-attn, heads 4→8 | 0.3574 | 1.5406 | 0.5488 | discard (d1 worse → composite loses; 4 heads simpler) |
 | E26 | E22 + pooled 32×64 global attn (coarse cost) | 0.3569 | 1.5468 | 0.5484 | discard (RMSE/d1 worse — mid-scale global attn doesn't help) |
 | **E27** | **coarse self-attn + angular-dist bias (geometry-aware)** | **0.3581** | **1.5354** | **0.5528** | **KEEP — NEW CHAMPION (comp 2.201; best-ever RMSE & d1)** |
-| E28 | E27 + richer geom bias (add absolute ray elevation) | running | | | — |
+| E28 | E27 + richer geom bias (add absolute ray elevation) | 0.3555 | 1.5455 | 0.5474 | discard (RMSE/d1 worse — elevation biases toward gamed ABS_REL) |
+| E29 | E27 + gated DPT skips (ray features gate encoder detail) | running | | | — |
 
 (E0 fp16 AMP crashed: NaN at epoch 2 → fixed with bf16.)
 

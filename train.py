@@ -375,22 +375,19 @@ class RayDPT(nn.Module):
         # reason jointly after reading audio. Capacity saturates (E23 depth, E25 heads, E26 mid-scale).
         # E27: make it GEOMETRY-AWARE — add a learned bias on the cos angular distance between ray
         # pairs (the lsa blocks already do this locally). geom = (512,512) pairwise cos-ang-dist.
-        # E28: richer pairwise geom feats [cos-ang-dist, el_query, el_key] — absolute elevation
-        # strongly conditions ERP depth (floor below / ceiling above), not just relative angle.
+        # E27: geometry bias on the single cos-ang-dist between ray pairs (E28's richer feats w/
+        # absolute elevation biased toward the gamed ABS_REL and lost the honest metrics).
         el16, az16 = erp_grid(16, 32)
         d16 = np.stack([np.cos(el16) * np.cos(az16), np.cos(el16) * np.sin(az16),
                         np.sin(el16)], -1).reshape(-1, 3).astype(np.float32)   # (512,3) unit dirs
-        elf = el16.reshape(-1).astype(np.float32)                             # (512,) elevation
-        N = elf.shape[0]
-        cosd = np.clip(d16 @ d16.T, -1.0, 1.0)                                # (512,512)
-        geom16 = np.stack([cosd,
-                           np.broadcast_to(elf[:, None], (N, N)),            # el of query ray
-                           np.broadcast_to(elf[None, :], (N, N))], -1)        # el of key ray
-        self.rsa16 = GeoSelfBlock(dim, heads, torch.from_numpy(geom16.astype(np.float32)))
+        geom16 = np.clip(d16 @ d16.T, -1.0, 1.0)[..., None].astype(np.float32)  # (512,512,1) cos ang dist
+        self.rsa16 = GeoSelfBlock(dim, heads, torch.from_numpy(geom16))
         # DPT encoder skips (U-Net detail injection)
         self.se4 = nn.Conv2d(ngf * 8, dim, 1)
         self.se3 = nn.Conv2d(ngf * 4, dim, 1)
         self.se2 = nn.Conv2d(ngf * 2, dim, 1)
+        # E29: gated DPT skips — the ray features gate how much encoder detail to admit per scale.
+        self.g4 = nn.Conv2d(dim, dim, 1); self.g3 = nn.Conv2d(dim, dim, 1); self.g2 = nn.Conv2d(dim, dim, 1)
         self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False)
         self.refine32 = Refine(dim); self.refine64 = Refine(dim)
         self.lsa32 = LocalSphericalAttention(dim, heads, 32, 64, getattr(cfg, "raydpt_win32", 5))
@@ -433,10 +430,10 @@ class RayDPT(nn.Module):
             F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4, B, 16, 32, self_attn=self.rsa16)
             F32 = self._cross(self.rp32, self.rf32, self.cr32, kv3, B, 32, 64)
             F64 = self._cross(self.rp64, self.rf64, self.cr64, kv4, B, 64, 128)
-            m16 = F16 + self.se4(e4)                             # 16x32
+            m16 = F16 + torch.sigmoid(self.g4(F16)) * self.se4(e4)            # 16x32 (gated skip)
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
-            x = self.lsa32(self.refine32(self.up(m16) + F32 + self.se3(e3)))   # 32x64
-            x = self.lsa64(self.refine64(self.up(x) + F64 + self.se2(e2)))     # 64x128
+            x = self.lsa32(self.refine32(self.up(m16) + F32 + torch.sigmoid(self.g3(F32)) * self.se3(e3)))   # 32x64
+            x = self.lsa64(self.refine64(self.up(x) + F64 + torch.sigmoid(self.g2(F64)) * self.se2(e2)))     # 64x128
         if self.full_decode:                                   # LEARNED upsample 64x128 -> 256x512
             xf = self.up(self.proj_fd(x))                       # 128x256, ngf
             xf = self.dec1(xf + self.se1(e1))                  # + e1 skip
