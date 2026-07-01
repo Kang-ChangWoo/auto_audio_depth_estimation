@@ -41,12 +41,14 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E19 | E16 + EMA decay 0.995→0.99 | 0.3570 | 1.5532 | 0.5470 | discard (worse on all 3; EMA 0.995 is the sweet spot) |
 | E20 | LR anneal→0 over 7ep | 0.3582 | **1.5482** | 0.5477 | discard (best RMSE ever, but ABS_REL/d1 worse — frontier trade) |
 | E21 | E16 + weight_decay 1e-4→2e-4 | 0.3572 | 1.5520 | 0.5464 | discard (worse on all 3 — wd 1e-4 optimal) |
-| E22 | E16 + coarse ray↔ray self-attn (16×32) | running | | | — |
+| **E22** | **coarse 16×32 ray↔ray self-attn** | **0.3578** | **1.5414** | **0.5506** | **KEEP — NEW CHAMPION (comp 2.209; best-ever RMSE & d1)** |
+| E23 | E22 + 2nd coarse self-attn block (deeper) | running | | | — |
 
 (E0 fp16 AMP crashed: NaN at epoch 2 → fixed with bf16.)
 
 ## Current best
-- **CHAMPION: E16** (EMA decay 0.995 + lr **4e-4** + w_rel 0.1) — **0.3528 / 1.5504 / 0.5488**, honest composite **2.214**. Beats E14 on all three.
+- **CHAMPION: E22** (E16 + coarse 16×32 ray↔ray global self-attn) — **0.3578 / 1.5414 / 0.5506**, honest composite **2.209**. Wins the honest metrics (RMSE −0.009 = best ever, d1 +0.002) at a small ABS_REL cost. First architectural win; +6s/ep, +0.44M params.
+- E16 (EMA 0.995 + lr 4e-4 + w_rel 0.1) — 0.3528 / 1.5504 / 0.5488, comp 2.214.
 - E14 (EMA 0.995 + lr 6e-4) — 0.3606 / 1.5548 / 0.5438 (comp 2.234).
 - **LR × EMA interaction:** with EMA, honest metrics improve as peak LR drops **8e-4→6e-4→4e-4**, then **U-turn at 3e-4 (E17, worse)** → **4e-4 is the sweet spot**. EMA does the noise-averaging, so low LR keeps ABS_REL good AND wins RMSE/d1. LR axis now fully mapped.
 

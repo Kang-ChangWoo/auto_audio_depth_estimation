@@ -344,7 +344,8 @@ class RayDPT(nn.Module):
         self.cr16, self.cr32, self.cr64 = mk_cr(), mk_cr(), mk_cr()
         # E22: ray<->ray global self-attn on the 16x32 coarse grid (512 tokens, cheap) so the
         # layout rays reason jointly after reading audio. Finer scales use local spherical attn.
-        self.rsa16 = SelfBlock(dim, heads)
+        # E23: 2 stacked blocks (deeper coarse reasoning).
+        self.rsa16 = nn.Sequential(SelfBlock(dim, heads), SelfBlock(dim, heads))
         # DPT encoder skips (U-Net detail injection)
         self.se4 = nn.Conv2d(ngf * 8, dim, 1)
         self.se3 = nn.Conv2d(ngf * 4, dim, 1)
