@@ -113,7 +113,7 @@ def make_config(args):
             batch_size=args.batch_size,
             epochs=args.epochs,
             learning_rate=args.lr,
-            weight_decay=2e-4,   # E21: 2x weight decay (was 1e-4) -> more regularization, target generalization (d1/RMSE)
+            weight_decay=1e-4,   # E21 confirmed 1e-4 optimal (2e-4 lost on all 3)
             optimizer=args.optimizer,
             validation_iter=1,
             num_threads=args.num_workers,
@@ -216,6 +216,22 @@ class CrossBlock(nn.Module):
 
     def forward(self, q, kv):
         a, _ = self.attn(self.n1(q), kv, kv)
+        q = q + a
+        return q + self.ffn(self.n2(q))
+
+
+class SelfBlock(nn.Module):
+    """Ray<->ray global self-attention (pre-LN) + FFN. Used on the coarse 16x32 ray
+    grid so the layout rays exchange info globally before decoding (E22)."""
+    def __init__(self, dim, heads):
+        super().__init__()
+        self.n1, self.n2 = nn.LayerNorm(dim), nn.LayerNorm(dim)
+        self.attn = nn.MultiheadAttention(dim, heads, batch_first=True)
+        self.ffn = FFN(dim)
+
+    def forward(self, q):
+        qn = self.n1(q)
+        a, _ = self.attn(qn, qn, qn)
         q = q + a
         return q + self.ffn(self.n2(q))
 
@@ -326,6 +342,9 @@ class RayDPT(nn.Module):
         self.kv_e3 = nn.Linear(ngf * 4, dim)
         mk_cr = lambda: nn.ModuleList([CrossBlock(dim, heads) for _ in range(nL)])
         self.cr16, self.cr32, self.cr64 = mk_cr(), mk_cr(), mk_cr()
+        # E22: ray<->ray global self-attn on the 16x32 coarse grid (512 tokens, cheap) so the
+        # layout rays reason jointly after reading audio. Finer scales use local spherical attn.
+        self.rsa16 = SelfBlock(dim, heads)
         # DPT encoder skips (U-Net detail injection)
         self.se4 = nn.Conv2d(ngf * 8, dim, 1)
         self.se3 = nn.Conv2d(ngf * 4, dim, 1)
@@ -347,10 +366,12 @@ class RayDPT(nn.Module):
             self.dec2 = nn.Sequential(conv_bn(ngf, ngf), Refine(ngf))   # at 256x512
             self.head_fd = nn.Conv2d(ngf, 1, 3, 1, 1)
 
-    def _cross(self, rp, rf, blocks, kv, B, h, w):
+    def _cross(self, rp, rf, blocks, kv, B, h, w, self_attn=None):
         q = rp(rf)[None].expand(B, -1, -1)
         for blk in blocks:
             q = blk(q, kv)
+        if self_attn is not None:                          # ray<->ray global self-attn (E22)
+            q = self_attn(q)
         return q.transpose(1, 2).reshape(B, -1, h, w)
 
     def forward(self, spec, coarse_feat=None, sh_basis=None):
@@ -367,7 +388,7 @@ class RayDPT(nn.Module):
             x = self.lsa64(self.refine64(self.up(x) + self.se2(e2)))   # 64x128
         else:
             kv3 = self.kv_e3(e3.flatten(2).transpose(1, 2))     # (B,2048,dim)
-            F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4, B, 16, 32)
+            F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4, B, 16, 32, self_attn=self.rsa16)
             F32 = self._cross(self.rp32, self.rf32, self.cr32, kv3, B, 32, 64)
             F64 = self._cross(self.rp64, self.rf64, self.cr64, kv4, B, 64, 128)
             m16 = F16 + self.se4(e4)                             # 16x32

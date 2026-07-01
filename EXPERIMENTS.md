@@ -40,7 +40,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E18 | E16 + w_coarse_layout 1.0→0.5 | 0.3554 | 1.5552 | 0.5447 | discard (worse on all 3 — layout reg at 1.0 is right) |
 | E19 | E16 + EMA decay 0.995→0.99 | 0.3570 | 1.5532 | 0.5470 | discard (worse on all 3; EMA 0.995 is the sweet spot) |
 | E20 | LR anneal→0 over 7ep | 0.3582 | **1.5482** | 0.5477 | discard (best RMSE ever, but ABS_REL/d1 worse — frontier trade) |
-| E21 | E16 + weight_decay 1e-4→2e-4 | running | | | — |
+| E21 | E16 + weight_decay 1e-4→2e-4 | 0.3572 | 1.5520 | 0.5464 | discard (worse on all 3 — wd 1e-4 optimal) |
+| E22 | E16 + coarse ray↔ray self-attn (16×32) | running | | | — |
 
 (E0 fp16 AMP crashed: NaN at epoch 2 → fixed with bf16.)
 
