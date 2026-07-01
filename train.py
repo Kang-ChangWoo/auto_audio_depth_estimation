@@ -104,7 +104,7 @@ def make_config(args):
             coarse_head_w=32,
             w_dense=1.0,
             w_coarse_layout=1.0,
-            w_low=0.0,
+            w_low=1.0,
             w_rel=0.1,
             w_silog=0.0,
         ),
@@ -634,11 +634,11 @@ def train(cfg):
                 save_visualizations(vis_data, epoch, vis_dir, max_depth)
                 print(f'  Saved {len(vis_data)} visualizations')
 
-            rmse = mean_errors[1]
-            # COMPOSITE selection: balance ABS_REL and RMSE (normalised by typical scales,
-            # equal weight). ABS_REL alone systematically picks the epoch where RMSE spikes
-            # (the two anti-correlate epoch-to-epoch), so it saved RMSE-broken checkpoints.
-            score = abs_rel / 0.4 + rmse / 1.6
+            rmse = mean_errors[1]; d1 = mean_errors[2]
+            # HONEST-WEIGHTED selection: RMSE + d1 (NOT directly optimized -> trustworthy) drive
+            # selection; ABS_REL (directly optimized by the relative loss -> partly gamed) is only
+            # a small tiebreak. All normalised to ~1 scale. Lower is better.
+            score = rmse / 1.6 + (1.0 - d1) / 0.46 + 0.3 * (abs_rel / 0.4)
             if score < best_score:
                 best_score = score
                 best_abs_rel = abs_rel
