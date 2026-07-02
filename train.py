@@ -107,6 +107,7 @@ def make_config(args):
             w_low=0.5,
             w_rel=0.1,    # confirmed optimal (E32 0.08, E40 0.13 both worse)
             w_grad=0.05,  # champion (E34): edge-loss sweet spot (0.03 & 0.1 both worse)
+            w_logd=0.1,   # E46: log-depth L1 aux loss — multiplicative accuracy (targets d1)
             w_silog=0.0,
         ),
         mode=Cfg(
@@ -262,7 +263,7 @@ class GeoSelfBlock(nn.Module):
         self.n1, self.n2 = nn.LayerNorm(dim), nn.LayerNorm(dim)
         self.to_qkv = nn.Linear(dim, dim * 3)
         self.proj = nn.Linear(dim, dim)
-        self.ffn = SwiGLU(dim)                                    # E45: gated FFN in the winning coarse block
+        self.ffn = FFN(dim)                                      # E45 confirmed: SwiGLU no better (coarse block saturated)
         self.register_buffer("geom", geom)                       # (N,N,G) pairwise geom feats
         self.bias_mlp = nn.Sequential(nn.Linear(geom.shape[-1], 32), nn.GELU(), nn.Linear(32, heads))
 
@@ -516,6 +517,13 @@ def composite_loss(out, gt, mask, mcfg):
     # scale-invariant log term (structure), stacked on the relative term (magnitude).
     sil = silog_loss(out["D"], gt, mask)
     loss = loss + mcfg.w_silog * sil
+    # E46: log-depth L1 — penalises multiplicative (ratio) error, which is what d1 (<1.25 ratio)
+    # measures. Complements the linear MAE (absolute) with a scale-relative signal.
+    wl = getattr(mcfg, "w_logd", 0.0)
+    if wl:
+        ld = ((torch.log(out["D"].clamp(min=1e-3)) - torch.log(gt.clamp(min=1e-3))).abs() * mask).sum() \
+             / mask.sum().clamp(min=1e-6)
+        loss = loss + wl * ld
     # E33: edge-aware gradient-matching — match horizontal/vertical depth differences so predicted
     # depth EDGES land where the gt edges are (sharper boundaries -> better RMSE/d1). Masked to
     # valid pairs. w_grad=0 recovers the prior objective.
