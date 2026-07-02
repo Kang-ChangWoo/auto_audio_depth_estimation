@@ -383,6 +383,10 @@ class RayDPT(nn.Module):
                         np.sin(el16)], -1).reshape(-1, 3).astype(np.float32)   # (512,3) unit dirs
         geom16 = np.clip(d16 @ d16.T, -1.0, 1.0)[..., None].astype(np.float32)  # (512,512,1) cos ang dist
         self.rsa16 = GeoSelfBlock(dim, heads, torch.from_numpy(geom16))
+        # E37: a SECOND coarse read of the HI-RES audio tokens (kv_e3, 2048 tok) at the 16x32 ray grid,
+        # its own geometry-aware self-attn, fused into the layout — richer audio evidence for the rays.
+        self.cr16b = mk_cr()
+        self.rsa16b = GeoSelfBlock(dim, heads, torch.from_numpy(geom16.copy()))
         # DPT encoder skips (U-Net detail injection)
         self.se4 = nn.Conv2d(ngf * 8, dim, 1)
         self.se3 = nn.Conv2d(ngf * 4, dim, 1)
@@ -429,9 +433,10 @@ class RayDPT(nn.Module):
         else:
             kv3 = self.kv_e3(e3.flatten(2).transpose(1, 2))     # (B,2048,dim)
             F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4, B, 16, 32, self_attn=self.rsa16)
+            F16b = self._cross(self.rp16, self.rf16, self.cr16b, kv3, B, 16, 32, self_attn=self.rsa16b)  # E37: hi-res audio read
             F32 = self._cross(self.rp32, self.rf32, self.cr32, kv3, B, 32, 64)
             F64 = self._cross(self.rp64, self.rf64, self.cr64, kv4, B, 64, 128)
-            m16 = F16 + torch.sigmoid(self.g4(F16)) * self.se4(e4)            # 16x32 (gated skip)
+            m16 = F16 + F16b + torch.sigmoid(self.g4(F16)) * self.se4(e4)      # 16x32 (dual audio read + gated skip)
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
             x = self.lsa32(self.refine32(self.up(m16) + F32 + torch.sigmoid(self.g3(F32)) * self.se3(e3)))   # 32x64
             x = self.lsa64(self.refine64(self.up(x) + F64 + torch.sigmoid(self.g2(F64)) * self.se2(e2)))     # 64x128
