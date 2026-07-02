@@ -54,7 +54,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E32 | E29 + w_rel 0.1→0.08 (loss rebalance) | 0.3596 | 1.5295 | 0.5532 | discard (ABS_REL worse → composite loses; w_rel=0.1 optimal) |
 | E33 | E29 + edge-aware gradient-matching loss (w_grad=0.1) | 0.3495 | 1.5437 | 0.5533 | discard (best ABS_REL but RMSE +0.013 → composite loses) |
 | **E34** | **E29 + edge-aware gradient loss w_grad=0.05** | **0.3512** | **1.5313** | **0.5545** | **KEEP — NEW CHAMPION (comp 2.189)** |
-| E35 | E34 + gradient loss w_grad=0.03 (bracket) | running | | | — |
+| E35 | E34 + gradient loss w_grad=0.03 (bracket) | 0.3525 | 1.5448 | 0.5548 | discard (RMSE +0.014; non-monotonic sweep ⇒ ~0.01 RMSE noise) |
+| E36 | Confirmation rerun of E34 champion (noise gauge) | running | | | — |
 
 (E0 fp16 AMP crashed: NaN at epoch 2 → fixed with bf16.)
 
