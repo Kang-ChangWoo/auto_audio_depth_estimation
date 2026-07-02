@@ -394,7 +394,7 @@ class RayDPT(nn.Module):
         self.lsa32 = LocalSphericalAttention(dim, heads, 32, 64, getattr(cfg, "raydpt_win32", 5))
         self.lsa64 = LocalSphericalAttention(dim, heads, 64, 128, getattr(cfg, "raydpt_win64", 3))
         self.coarse_head = nn.Conv2d(dim, 1, 1)
-        self.dc_proj = nn.Conv2d(1, dim, 1)   # E43: coarse-to-fine guidance — inject predicted coarse depth into the fine decoder
+        self.film = nn.Linear(ngf * 8, dim * 2)   # E44: global-audio FiLM — modulate the fine decoder by a global audio embedding
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
         self.lite = getattr(cfg, "raydpt_lite", False)        # 2-scale (32,64) lite variant
         # full-decode: LEARNED upsample 64x128 -> 256x512 (+e1 skip) instead of bilinear x4.
@@ -436,9 +436,10 @@ class RayDPT(nn.Module):
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
             x = self.lsa32(self.refine32(self.up(m16) + F32 + torch.sigmoid(self.g3(F32)) * self.se3(e3)))   # 32x64
             x = self.lsa64(self.refine64(self.up(x) + F64 + torch.sigmoid(self.g2(F64)) * self.se2(e2)))     # 64x128
-        # E43: coarse-to-fine guidance — add the (upsampled) predicted coarse layout depth to the
-        # fine features so the head can anchor local depth to the global layout.
-        x = x + self.dc_proj(F.interpolate(d_c, size=x.shape[-2:], mode="bilinear", align_corners=False))
+        # E44: global-audio FiLM — a global audio embedding (mean-pooled e4) modulates the fine
+        # features (per-channel scale+shift) so the whole decode adapts to the scene's audio.
+        sc, sh = self.film(e4.mean(dim=(2, 3))).chunk(2, -1)   # (B,dim),(B,dim)
+        x = x * (1 + sc[..., None, None]) + sh[..., None, None]
         if self.full_decode:                                   # LEARNED upsample 64x128 -> 256x512
             xf = self.up(self.proj_fd(x))                       # 128x256, ngf
             xf = self.dec1(xf + self.se1(e1))                  # + e1 skip
