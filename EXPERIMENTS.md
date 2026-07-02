@@ -63,7 +63,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E39 | E34 + 0.5·MAE + 0.5·berHu blend | 0.3633 | 1.4999 | 0.5496 | discard (=tie E34; MAE↔berHu is a flat frontier slide) |
 | E40 | E39 blend + w_rel 0.1→0.13 (combine berHu+rel) | 0.3588 | 1.5240 | 0.5467 | discard (loses 0.018; combo compounds d1 damage — berHu exhausted) |
 | E41 | E34 + lsa64 window 3→5 | crash | | | discard (709s/ep — win25 einsum too costly; killed ep1) |
-| E42 | E34 + batch size 32→40 | running | | | — |
+| E42 | E34 + batch size 32→40 | 0.3507 | 1.5352 | 0.5552 | discard (=tie E34, within noise; batch size neutral) |
+| E43 | E34 + coarse-to-fine guidance (inject d_c into decoder) | running | | | — |
 
 (E0 fp16 AMP crashed: NaN at epoch 2 → fixed with bf16.)
 
