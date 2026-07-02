@@ -53,12 +53,14 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E31 | E29 + deeper coarse cross-attn (cr16: 2→3 blocks) | 0.3507 | 1.5397 | 0.5552 | discard (ABS_REL/d1 better but RMSE +0.009 → composite ~tied-loses) |
 | E32 | E29 + w_rel 0.1→0.08 (loss rebalance) | 0.3596 | 1.5295 | 0.5532 | discard (ABS_REL worse → composite loses; w_rel=0.1 optimal) |
 | E33 | E29 + edge-aware gradient-matching loss (w_grad=0.1) | 0.3495 | 1.5437 | 0.5533 | discard (best ABS_REL but RMSE +0.013 → composite loses) |
-| E34 | E29 + gradient loss w_grad=0.05 (lighter) | running | | | — |
+| **E34** | **E29 + edge-aware gradient loss w_grad=0.05** | **0.3512** | **1.5313** | **0.5545** | **KEEP — NEW CHAMPION (comp 2.189)** |
+| E35 | E34 + gradient loss w_grad=0.03 (bracket) | running | | | — |
 
 (E0 fp16 AMP crashed: NaN at epoch 2 → fixed with bf16.)
 
 ## Current best
-- **CHAMPION: E29** (E27 + gated DPT skips: ray features gate per-scale how much encoder detail to admit) — **0.3523 / 1.5307 / 0.5537**, honest composite **2.191**. Best-ever on all three.
+- **CHAMPION: E34** (E29 + edge-aware gradient-matching loss, w_grad=0.05) — **0.3512 / 1.5313 / 0.5545**, honest composite **2.189**. Light edge loss lifts ABS_REL & d1 at ~equal RMSE (w_grad=0.1 in E33 hurt RMSE).
+- E29 (E27 + gated DPT skips) — 0.3523 / 1.5307 / 0.5537, comp 2.191. Best-ever RMSE.
 - E27 (E22 + geometry-aware coarse self-attn, cos-ang-dist bias) — 0.3581 / 1.5354 / 0.5528, comp 2.201.
 - E22 (E16 + coarse 16×32 ray↔ray self-attn) — 0.3578 / 1.5414 / 0.5506, comp 2.209.
 - E16 (EMA 0.995 + lr 4e-4 + w_rel 0.1) — 0.3528 / 1.5504 / 0.5488, comp 2.214.
