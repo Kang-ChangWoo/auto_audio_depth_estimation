@@ -70,7 +70,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E46 | E34 + log-depth L1 aux loss (w_logd=0.1) | 0.3614 | 1.5234 | 0.5550 | discard (=tie, within noise; another RMSE↔ABS_REL frontier slide) |
 | E47 | E34 + learnable attention temperature (coarse block) | 0.3502 | 1.5368 | 0.5540 | discard (=tie, within noise; fixed scale fine) |
 | E48 | E34 + EMA warmup (skip averaging noisy 1st epoch) | 0.3515 | 1.5415 | 0.5522 | discard (loses 0.012; less averaging hurts — constant EMA better) |
-| E49 | E34 + EMA decay 0.995→0.997 (bracket fill) | running | | | — |
+| E49 | E34 + EMA decay 0.995→0.997 (bracket fill) | 0.3513 | 1.5364 | 0.5512 | discard (loses 0.010; 0.997 lags → 0.995 optimal, axis mapped) |
+| E50 | E34 + 2nd geo self-attn on fused coarse m16 | running | | | — |
 
 ## CONVERGED (after ~44 experiments)
 

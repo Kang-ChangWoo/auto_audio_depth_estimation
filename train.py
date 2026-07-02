@@ -396,6 +396,9 @@ class RayDPT(nn.Module):
                         np.sin(el16)], -1).reshape(-1, 3).astype(np.float32)   # (512,3) unit dirs
         geom16 = np.clip(d16 @ d16.T, -1.0, 1.0)[..., None].astype(np.float32)  # (512,512,1) cos ang dist
         self.rsa16 = GeoSelfBlock(dim, heads, torch.from_numpy(geom16))
+        # E50: a 2nd geometry-aware self-attn on the FUSED coarse features (post encoder-skip), so
+        # the assembled layout reasons geometrically once more before the coarse head / fine decode.
+        self.rsa16b = GeoSelfBlock(dim, heads, torch.from_numpy(geom16.copy()))
         # DPT encoder skips (U-Net detail injection)
         self.se4 = nn.Conv2d(ngf * 8, dim, 1)
         self.se3 = nn.Conv2d(ngf * 4, dim, 1)
@@ -445,6 +448,7 @@ class RayDPT(nn.Module):
             F32 = self._cross(self.rp32, self.rf32, self.cr32, kv3, B, 32, 64)
             F64 = self._cross(self.rp64, self.rf64, self.cr64, kv4, B, 64, 128)
             m16 = F16 + torch.sigmoid(self.g4(F16)) * self.se4(e4)            # 16x32 (gated skip)
+            m16 = self.rsa16b(m16.flatten(2).transpose(1, 2)).transpose(1, 2).reshape(B, -1, 16, 32)  # E50: geo self-attn on fused
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
             x = self.lsa32(self.refine32(self.up(m16) + F32 + torch.sigmoid(self.g3(F32)) * self.se3(e3)))   # 32x64
             x = self.lsa64(self.refine64(self.up(x) + F64 + torch.sigmoid(self.g2(F64)) * self.se2(e2)))     # 64x128
@@ -646,7 +650,7 @@ def train(cfg):
     # raw SGD iterate. Free (per-step copy, no extra fwd/bwd) and typically improves the HONEST
     # metrics (RMSE/d1) by smoothing the noisy late-training trajectory. decay=0.995 -> ~200-step window
     # (E13 decay=0.999 lagged too much on a 7-epoch run; faster decay tracks the annealed late weights).
-    EMA_DECAY = 0.997   # E49: bracket 0.995(champ) vs 0.999(too slow) — probe 0.997
+    EMA_DECAY = 0.995   # optimal (axis mapped: 0.99/0.997/0.999 all worse)
     ema = {k: v.detach().clone() for k, v in model.state_dict().items()}
 
     # Optimizer + warmup-cosine schedule
