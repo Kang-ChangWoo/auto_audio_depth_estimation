@@ -48,15 +48,17 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E26 | E22 + pooled 32×64 global attn (coarse cost) | 0.3569 | 1.5468 | 0.5484 | discard (RMSE/d1 worse — mid-scale global attn doesn't help) |
 | **E27** | **coarse self-attn + angular-dist bias (geometry-aware)** | **0.3581** | **1.5354** | **0.5528** | **KEEP — NEW CHAMPION (comp 2.201; best-ever RMSE & d1)** |
 | E28 | E27 + richer geom bias (add absolute ray elevation) | 0.3555 | 1.5455 | 0.5474 | discard (RMSE/d1 worse — elevation biases toward gamed ABS_REL) |
-| E29 | E27 + gated DPT skips (ray features gate encoder detail) | running | | | — |
+| **E29** | **E27 + gated DPT skips** | **0.3523** | **1.5307** | **0.5537** | **KEEP — NEW CHAMPION (comp 2.191; best-ever all 3)** |
+| E30 | E29 + light depth-head Refine (64×128) | running | | | — |
 
 (E0 fp16 AMP crashed: NaN at epoch 2 → fixed with bf16.)
 
 ## Current best
-- **CHAMPION: E27** (E22 + geometry-aware coarse self-attn: learned per-head bias on ray-pair cos angular distance) — **0.3581 / 1.5354 / 0.5528**, honest composite **2.201**. Best-ever RMSE & d1. Free (~0 params/time).
+- **CHAMPION: E29** (E27 + gated DPT skips: ray features gate per-scale how much encoder detail to admit) — **0.3523 / 1.5307 / 0.5537**, honest composite **2.191**. Best-ever on all three.
+- E27 (E22 + geometry-aware coarse self-attn, cos-ang-dist bias) — 0.3581 / 1.5354 / 0.5528, comp 2.201.
 - E22 (E16 + coarse 16×32 ray↔ray self-attn) — 0.3578 / 1.5414 / 0.5506, comp 2.209.
 - E16 (EMA 0.995 + lr 4e-4 + w_rel 0.1) — 0.3528 / 1.5504 / 0.5488, comp 2.214.
-- **Architecture lesson:** ray↔ray global self-attn at the COARSE layout scale helps (E22); making it GEOMETRY-AWARE helps more (E27). Capacity adds saturate (depth E23, heads E25); mid-scale/32×64 attn doesn't help or busts budget (E24/E26).
+- **Architecture lesson:** ray↔ray global self-attn at the COARSE layout scale helps (E22); geometry-aware (cos-ang-dist bias, E27) helps more; gated encoder skips (E29) help more still. Capacity adds saturate (depth E23, heads E25); mid-scale/32×64 attn (E24/E26), richer geom w/ elevation (E28) don't help.
 - E14 (EMA 0.995 + lr 6e-4) — 0.3606 / 1.5548 / 0.5438 (comp 2.234).
 - **LR × EMA interaction:** with EMA, honest metrics improve as peak LR drops **8e-4→6e-4→4e-4**, then **U-turn at 3e-4 (E17, worse)** → **4e-4 is the sweet spot**. EMA does the noise-averaging, so low LR keeps ABS_REL good AND wins RMSE/d1. LR axis now fully mapped.
 

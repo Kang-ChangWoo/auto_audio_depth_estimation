@@ -393,7 +393,9 @@ class RayDPT(nn.Module):
         self.lsa32 = LocalSphericalAttention(dim, heads, 32, 64, getattr(cfg, "raydpt_win32", 5))
         self.lsa64 = LocalSphericalAttention(dim, heads, 64, 128, getattr(cfg, "raydpt_win64", 3))
         self.coarse_head = nn.Conv2d(dim, 1, 1)
-        self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
+        # E30: prepend a Refine(dim) block — extra residual processing at the ray-decoded 64x128
+        # resolution before the depth head, for sharper full-res detail (honest metrics).
+        self.head = nn.Sequential(Refine(dim), conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
         self.lite = getattr(cfg, "raydpt_lite", False)        # 2-scale (32,64) lite variant
         # full-decode: LEARNED upsample 64x128 -> 256x512 (+e1 skip) instead of bilinear x4.
         # Improves RMSE/d1 (full-res detail) -- the honest-metric lever.
