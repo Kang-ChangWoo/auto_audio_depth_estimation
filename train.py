@@ -105,7 +105,7 @@ def make_config(args):
             w_dense=1.0,
             w_coarse_layout=1.0,   # E18 confirmed 1.0 optimal (0.5 lost on all 3, like w_low=0.5)
             w_low=0.5,
-            w_rel=0.1,    # confirmed optimal (E32 0.08 worse; 0.13+ worse on old arch)
+            w_rel=0.13,   # E40: berHu holds RMSE low, so afford heavier relative loss to recover d1/ABS_REL (combine near-misses)
             w_grad=0.05,  # champion (E34): edge-loss sweet spot (0.03 & 0.1 both worse)
             w_silog=0.0,
         ),
