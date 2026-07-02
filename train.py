@@ -106,7 +106,7 @@ def make_config(args):
             w_coarse_layout=1.0,   # E18 confirmed 1.0 optimal (0.5 lost on all 3, like w_low=0.5)
             w_low=0.5,
             w_rel=0.1,    # confirmed optimal (E32 0.08 worse; 0.13+ worse on old arch)
-            w_grad=0.1,   # E33: edge-aware gradient-matching loss (sharp, correctly-located depth boundaries)
+            w_grad=0.05,  # E34: lighter edge-aware grad loss (E33 0.1 hurt RMSE) — keep edge benefit, less RMSE cost
             w_silog=0.0,
         ),
         mode=Cfg(

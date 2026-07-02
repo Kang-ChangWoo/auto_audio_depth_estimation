@@ -52,7 +52,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E30 | E29 + light depth-head Refine (64×128) | 0.3483 | 1.5464 | 0.5567 | discard (composite ~tied, RMSE +0.016 from +20s/ep; simpler E29 wins) |
 | E31 | E29 + deeper coarse cross-attn (cr16: 2→3 blocks) | 0.3507 | 1.5397 | 0.5552 | discard (ABS_REL/d1 better but RMSE +0.009 → composite ~tied-loses) |
 | E32 | E29 + w_rel 0.1→0.08 (loss rebalance) | 0.3596 | 1.5295 | 0.5532 | discard (ABS_REL worse → composite loses; w_rel=0.1 optimal) |
-| E33 | E29 + edge-aware gradient-matching loss (w_grad=0.1) | running | | | — |
+| E33 | E29 + edge-aware gradient-matching loss (w_grad=0.1) | 0.3495 | 1.5437 | 0.5533 | discard (best ABS_REL but RMSE +0.013 → composite loses) |
+| E34 | E29 + gradient loss w_grad=0.05 (lighter) | running | | | — |
 
 (E0 fp16 AMP crashed: NaN at epoch 2 → fixed with bf16.)
 
