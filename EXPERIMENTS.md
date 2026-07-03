@@ -73,7 +73,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E49 | E34 + EMA decay 0.995→0.997 (bracket fill) | 0.3513 | 1.5364 | 0.5512 | discard (loses 0.010; 0.997 lags → 0.995 optimal, axis mapped) |
 | **E50** | **2nd geo self-attn on FUSED coarse m16** | **0.3455** | **1.5204** | **0.5619** | **KEEP — NEW CHAMPION (comp 2.162, beats E34 by 0.027 ≫ noise; best-ever all 3)** |
 | **E51** | **post-fusion geo-attn 2 blocks** | **0.3390** | **1.5105** | **0.5637** | **KEEP — NEW CHAMPION (comp 2.147, beats E50 by 0.015; best-ever all 3)** |
-| E52 | E51 + deepen post-fusion geo-attn to 3 blocks | running | | | — |
+| E52 | E51 + post-fusion geo-attn 3 blocks | 0.3433 | 1.5156 | 0.5618 | discard (saturates; loses 0.011) |
+| E53 | E51 + geo-aware pooled geo-attn at 32×64 (breadth) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
