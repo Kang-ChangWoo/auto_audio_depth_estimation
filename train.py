@@ -396,9 +396,11 @@ class RayDPT(nn.Module):
                         np.sin(el16)], -1).reshape(-1, 3).astype(np.float32)   # (512,3) unit dirs
         geom16 = np.clip(d16 @ d16.T, -1.0, 1.0)[..., None].astype(np.float32)  # (512,512,1) cos ang dist
         self.rsa16 = GeoSelfBlock(dim, heads, torch.from_numpy(geom16))
-        # E50: a 2nd geometry-aware self-attn on the FUSED coarse features (post encoder-skip), so
-        # the assembled layout reasons geometrically once more before the coarse head / fine decode.
-        self.rsa16b = GeoSelfBlock(dim, heads, torch.from_numpy(geom16.copy()))
+        # E50: geometry-aware self-attn on the FUSED coarse features (post encoder-skip), so the
+        # assembled layout reasons geometrically before the coarse head / fine decode.
+        # E51: 2 stacked blocks (post-fusion may not saturate like the pre-fusion stack E23 did).
+        self.rsa16b = nn.Sequential(GeoSelfBlock(dim, heads, torch.from_numpy(geom16.copy())),
+                                    GeoSelfBlock(dim, heads, torch.from_numpy(geom16.copy())))
         # DPT encoder skips (U-Net detail injection)
         self.se4 = nn.Conv2d(ngf * 8, dim, 1)
         self.se3 = nn.Conv2d(ngf * 4, dim, 1)

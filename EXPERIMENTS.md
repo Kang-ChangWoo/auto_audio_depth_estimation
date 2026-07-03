@@ -71,11 +71,14 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E47 | E34 + learnable attention temperature (coarse block) | 0.3502 | 1.5368 | 0.5540 | discard (=tie, within noise; fixed scale fine) |
 | E48 | E34 + EMA warmup (skip averaging noisy 1st epoch) | 0.3515 | 1.5415 | 0.5522 | discard (loses 0.012; less averaging hurts — constant EMA better) |
 | E49 | E34 + EMA decay 0.995→0.997 (bracket fill) | 0.3513 | 1.5364 | 0.5512 | discard (loses 0.010; 0.997 lags → 0.995 optimal, axis mapped) |
-| E50 | E34 + 2nd geo self-attn on fused coarse m16 | running | | | — |
+| **E50** | **2nd geo self-attn on FUSED coarse m16** | **0.3455** | **1.5204** | **0.5619** | **KEEP — NEW CHAMPION (comp 2.162, beats E34 by 0.027 ≫ noise; best-ever all 3)** |
+| E51 | E50 + deepen post-fusion geo-attn to 2 blocks | running | | | — |
 
-## CONVERGED (after ~44 experiments)
+## Current champion & summary (~50 experiments)
 
-Baseline **0.4434 / 1.5907 / 0.5236** → champion **E34 0.3512 / 1.5313 / 0.5545** (comp 2.189): **ABS_REL −21%, RMSE −3.7%, d1 +3.1 pts**. Noise floor ≈ **0.0045 composite** (E36 rerun) — only Δ>0.005 is real. E29 ≈ E34 (within noise).
+Baseline **0.4434 / 1.5907 / 0.5236** → champion **E50 0.3455 / 1.5204 / 0.5619** (comp **2.162**): **ABS_REL −22%, RMSE −4.4%, d1 +3.8 pts**. Noise floor ≈ **0.0045 composite** (E36 rerun) — only Δ>0.005 is real.
+
+**E50 (decisive, Δ0.027) reopened the frontier at apparent convergence** — a 2nd geometry-aware ray↔ray self-attn on the FUSED coarse layout m16 (post encoder-skip). Distinct from E23 (which stacked depth on the *pre-fusion* tokens and saturated): reasoning geometrically over the *assembled* layout is a fresh, productive axis. Lesson: keep probing novel architectural ideas even when micro-tweaks all tie.
 
 **Robust wins (each cleared the noise floor):**
 1. **bf16 AMP + batch 32 + cosine anneal** (E0b) — foundation; more epochs/hr + real annealing.
