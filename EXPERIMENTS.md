@@ -74,7 +74,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | **E50** | **2nd geo self-attn on FUSED coarse m16** | **0.3455** | **1.5204** | **0.5619** | **KEEP — NEW CHAMPION (comp 2.162, beats E34 by 0.027 ≫ noise; best-ever all 3)** |
 | **E51** | **post-fusion geo-attn 2 blocks** | **0.3390** | **1.5105** | **0.5637** | **KEEP — NEW CHAMPION (comp 2.147, beats E50 by 0.015; best-ever all 3)** |
 | E52 | E51 + post-fusion geo-attn 3 blocks | 0.3433 | 1.5156 | 0.5618 | discard (saturates; loses 0.011) |
-| E53 | E51 + geo-aware pooled geo-attn at 32×64 (breadth) | running | | | — |
+| E53 | E51 + geo-aware pooled geo-attn at 32×64 (breadth) | crash | | | discard (556s/ep > budget ceiling; killed — budget now binding) |
+| E54 | E51 − pre-fusion geo-attn (rsa16; test redundancy) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
@@ -97,34 +98,10 @@ Baseline **0.4434 / 1.5907 / 0.5236** → champion **E51 0.3390 / 1.5105 / 0.563
 
 (E0 fp16 AMP crashed: NaN at epoch 2 → fixed with bf16.)
 
-## Current best
-- **CHAMPION: E34** (E29 + edge-aware gradient-matching loss, w_grad=0.05) — **0.3512 / 1.5313 / 0.5545**, honest composite **2.189**. Light edge loss lifts ABS_REL & d1 at ~equal RMSE (w_grad=0.1 in E33 hurt RMSE).
-- E29 (E27 + gated DPT skips) — 0.3523 / 1.5307 / 0.5537, comp 2.191. Best-ever RMSE.
-- E27 (E22 + geometry-aware coarse self-attn, cos-ang-dist bias) — 0.3581 / 1.5354 / 0.5528, comp 2.201.
-- E22 (E16 + coarse 16×32 ray↔ray self-attn) — 0.3578 / 1.5414 / 0.5506, comp 2.209.
-- E16 (EMA 0.995 + lr 4e-4 + w_rel 0.1) — 0.3528 / 1.5504 / 0.5488, comp 2.214.
-- **Architecture lesson:** ray↔ray global self-attn at the COARSE layout scale helps (E22); geometry-aware (cos-ang-dist bias, E27) helps more; gated encoder skips (E29) help more still. Capacity adds saturate (depth E23, heads E25); mid-scale/32×64 attn (E24/E26), richer geom w/ elevation (E28) don't help.
-- E14 (EMA 0.995 + lr 6e-4) — 0.3606 / 1.5548 / 0.5438 (comp 2.234).
-- **LR × EMA interaction:** with EMA, honest metrics improve as peak LR drops **8e-4→6e-4→4e-4**, then **U-turn at 3e-4 (E17, worse)** → **4e-4 is the sweet spot**. EMA does the noise-averaging, so low LR keeps ABS_REL good AND wins RMSE/d1. LR axis now fully mapped.
-
-## What helped
-1. **bf16 AMP + batch 32 + LR cosine anneal (E0b)** — foundation. fp16→NaN, bf16 fixed it; more epochs/hr + real annealing → ABS_REL 0.4434→0.4151, RMSE flat.
-2. **lr 4e-4 (E0c)** — lifts the honest metrics (RMSE 1.520, d1 0.5471).
-3. **Light relative loss w_rel=0.1 (E2)** — `|D−gt|/gt` ≈ ABS_REL; at light weight + anneal, lowers ABS_REL to 0.3746 while keeping RMSE/d1 good.
-4. **Weight EMA decay=0.995 (E14)** — evaluate/checkpoint the temporal weight average, not the raw iterate. FREE (no epoch slowdown). Smooths late-training noise → better ABS_REL & d1 at equal RMSE. Decay must be fast enough (~200-step window) to track annealed weights in a 7-epoch run; 0.999 (E13) lagged and lost.
-
-## What did NOT help
-- **fp16 AMP** → NaN. Use bf16.
-- **Heavy relative (w_rel≥0.13)** → best ABS_REL but RMSE breaks (over-weights near pixels). w_rel=0.1 is the sweet spot.
-- **Any capacity add** (full_decode, deeper cross-attn, more heads) → **slows epochs → fewer anneal steps → busts the 1-hour budget → worse RMSE/d1.** The model is at its budget-limited optimum with the light E2 config.
-- **SILog** → helps nothing, hurts d1 (optimizes scale-invariant structure, not absolute correctness).
-- **Weight EMA decay=0.999 (E13)** → too slow: EMA still climbing at epoch 7, RMSE/d1 regress vs E2. Fix = faster decay 0.995 (E14, now champion). Lesson: EMA window must be << run length.
-- **shared ray_proj / time-anneal / disabling low-pass** → each loses on the honest metrics.
-
 ## Key principles
-- **ABS_REL ↔ RMSE anti-correlate** (across configs and epoch-to-epoch). Loss/schedule changes slide along a frontier; they don't push it in.
-- The frontier is governed by the **loss balance**, not architecture. And under a **fixed time budget, lighter/faster models win** (more epochs > more capacity).
-- **ABS_REL is gamable** → judge and select by **RMSE + d1** (honest), ABS_REL as a reported sanity-check.
+- **Judge by the honest-weighted composite** (RMSE + d1 dominate; ABS_REL is gamable). Require Δ > **0.005 noise floor** to crown a champion, and judge on the **fully-annealed final epoch** (E51 trailed at ep6, won at ep7).
+- **The 1-hour budget is now the binding constraint.** The champion runs ~546s/epoch, right at the 7-epoch ceiling; anything pushing epoch time >~555s drops to 6 epochs → under-anneals → auto-loses (E24/E37/E41/E53). So new wins must be **compute-neutral or cheaper**.
+- **The productive axis is ray-conditioned geometric reasoning over the coarse layout**, not loss/schedule tweaks (those slide along the ABS_REL↔RMSE frontier within noise) and not raw capacity (saturates or busts budget).
 
-## Ongoing / next (free levers that don't slow epochs)
-Aux-loss weights (`w_low`, `w_coarse_layout`), `weight_decay`, local-attention window sizes (`raydpt_win32/64`), and efficient attention restructurings — all judged holistically vs E2. Loop runs autonomously and indefinitely (see `program.md` → Autonomous continuous operation).
+## Ongoing / next
+Mine the geometry-on-fused-layout axis within the budget: cost-neutral variants (drop the now-redundant pre-fusion rsa16? E54), richer geometry features on the post-fusion blocks only, cheaper ways to bring geometric reasoning to finer scales. `results.tsv` is the authoritative append-only log. Loop runs autonomously and indefinitely (see `program.md`).
