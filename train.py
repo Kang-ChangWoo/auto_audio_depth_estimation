@@ -427,6 +427,9 @@ class RayDPT(nn.Module):
         self.lsa64 = LocalSphericalAttention(dim, heads, 64, 128, getattr(cfg, "raydpt_win64", 3))
         self.coarse_head = nn.Conv2d(dim, 1, 1)
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
+        # E66: light 128x256 learned decode (funded by F64's freed budget) — one upsample level at ngf
+        # (cheaper than full-decode's 256x512 convs), then bilinear x2 to 256x512. Targets fine RMSE.
+        self.proj_hi = nn.Conv2d(dim, ngf, 1); self.dec_hi = Refine(ngf); self.head_hi = nn.Conv2d(ngf, 1, 3, 1, 1)
         self.lite = getattr(cfg, "raydpt_lite", False)        # 2-scale (32,64) lite variant
         # full-decode: LEARNED upsample 64x128 -> 256x512 (+e1 skip) instead of bilinear x4.
         # Improves RMSE/d1 (full-res detail) -- the honest-metric lever.
@@ -475,8 +478,9 @@ class RayDPT(nn.Module):
             xf = self.dec2(self.up(xf))                        # 256x512, ngf
             D = torch.sigmoid(self.head_fd(xf))
         else:
-            D = torch.sigmoid(self.head(x))
-            D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
+            xh = self.dec_hi(self.up(self.proj_hi(x)))          # E66: 64x128 -> 128x256 learned (ngf)
+            D = torch.sigmoid(self.head_hi(xh))
+            D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)  # 128x256 -> 256x512
         return {"D": D, "D0": D, "extras": {"D_coarse": d_c}}
 
 
