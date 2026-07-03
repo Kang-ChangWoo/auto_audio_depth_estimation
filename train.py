@@ -398,12 +398,16 @@ class RayDPT(nn.Module):
         # post-fusion geometric reasoning (rsa16b, below) on the assembled layout is what matters.
         # E50/E51 champion: 2 stacked geometry-aware self-attn blocks on the FUSED coarse features m16
         # (post encoder-skip), so the assembled layout reasons geometrically before head/fine decode.
-        # E56: give those blocks RICHER geometry feats [cos-ang-dist, el_query, el_key] (absolute
-        # elevation strongly conditions ERP depth). E28 tried this on the now-removed pre-fusion block.
-        cosd = np.clip(d16 @ d16.T, -1.0, 1.0)                                  # (512,512)
-        elf = el16.reshape(-1).astype(np.float32); N = elf.shape[0]
+        # E56: RICHER geometry feats help the POST-fusion blocks (opposite of E28's pre-fusion loss):
+        # geometric reasoning over the ASSEMBLED layout wants richer conditioning. E57: also add the
+        # wrapped azimuth difference (cos/sin, since azimuth is circular) → 5 feats.
+        cosd = np.clip(d16 @ d16.T, -1.0, 1.0)                                  # (512,512) cos ang dist
+        elf = el16.reshape(-1).astype(np.float32); azf = az16.reshape(-1).astype(np.float32)
+        N = elf.shape[0]
+        daz = azf[None, :] - azf[:, None]                                       # (512,512) azimuth diff
         geom16b = np.stack([cosd, np.broadcast_to(elf[:, None], (N, N)),
-                            np.broadcast_to(elf[None, :], (N, N))], -1).astype(np.float32)  # (512,512,3)
+                            np.broadcast_to(elf[None, :], (N, N)),
+                            np.cos(daz), np.sin(daz)], -1).astype(np.float32)   # (512,512,5)
         self.rsa16b = nn.Sequential(GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy())),
                                     GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy())))
         # DPT encoder skips (U-Net detail injection)
