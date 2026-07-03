@@ -408,10 +408,9 @@ class RayDPT(nn.Module):
         geom16b = np.stack([cosd, np.broadcast_to(elf[:, None], (N, N)),
                             np.broadcast_to(elf[None, :], (N, N)),
                             np.cos(daz), np.sin(daz)], -1).astype(np.float32)   # (512,512,5)
-        # E59: re-test 3 blocks (E52's 3-block loss was on 1-feat geom + heavier E51 base; richer
-        # 5-feat geom on the lighter E54 base may now support more post-fusion depth).
-        self.rsa16b = nn.Sequential(*[GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy()))
-                                      for _ in range(3)])
+        # E59 confirmed 3 blocks bust budget (560s) & E52 showed they lose on quality: 2 is the sweet spot.
+        self.rsa16b = nn.Sequential(GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy())),
+                                    GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy())))
         # DPT encoder skips (U-Net detail injection)
         self.se4 = nn.Conv2d(ngf * 8, dim, 1)
         self.se3 = nn.Conv2d(ngf * 4, dim, 1)
