@@ -88,7 +88,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E64 | learned full-decode 64×128→256×512 | — | — | — | discard (BUDGET BUST 699s/epoch, +150s) |
 | **E65** | **drop finest-scale F64 cross-attn** | **0.3422** | **1.4795** | **0.5805** | **KEEP — NEW CHAMPION (comp 2.093; F64 redundant → 549→380s → 9 epochs/deeper anneal; best RMSE+d1; VRAM 30→17.5GB)** |
 | E66 | light 128×256 learned decode | 0.3471 | 1.4853 | 0.5743 | discard (0.021 worse, RMSE up — resolution not the bottleneck; audio→depth-limited) |
-| E67 | 3rd rsa16b geometry block (now affordable, F64 gone) | running | | | — |
+| E67 | 3rd rsa16b geometry block (affordable) | 0.3399 | 1.4812 | 0.5795 | discard (identical 2.0949; geometry saturates at 2 blocks even with budget) |
+| E68 | widen dim 192→256 (raw capacity, now affordable) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 

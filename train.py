@@ -84,7 +84,7 @@ def make_config(args):
         model=Cfg(
             name='raydpt',
             ngf=64,
-            dim=192,
+            dim=256,   # E68: widen 192->256 (raw capacity, now affordable since F64 dropped freed budget)
             n_heads=4,
             ray_cross_layers=2,
             raydpt_win32=5,
@@ -408,10 +408,10 @@ class RayDPT(nn.Module):
         geom16b = np.stack([cosd, np.broadcast_to(elf[:, None], (N, N)),
                             np.broadcast_to(elf[None, :], (N, N)),
                             np.cos(daz), np.sin(daz)], -1).astype(np.float32)   # (512,512,5)
-        # E67: re-test 3 geometry blocks — now AFFORDABLE (F64 dropped in E65 freed ~170s/epoch;
-        # E59's 3-block bust was only because F64 was present). Richer 5-feat geom + 9-epoch anneal.
-        self.rsa16b = nn.Sequential(*[GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy()))
-                                      for _ in range(3)])
+        # 2 geometry blocks is the CONFIRMED sweet spot: E67 re-tested 3 blocks WITH budget+deep-anneal
+        # (F64 gone) and it was identical (2.0949 vs 2.0934) — geometry saturates at 2, not a budget limit.
+        self.rsa16b = nn.Sequential(GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy())),
+                                    GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy())))
         # E61 tried a 2nd cross-attn round here (re-gather audio post-geo) — within-noise worse + budget
         # pressure; reverted. Post-fusion geometry (rsa16b) is the ceiling of this subsystem.
         # E63 tried FiLM global-audio modulation of m16 — within-noise worse; the per-ray cross-attn
