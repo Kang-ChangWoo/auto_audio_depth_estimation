@@ -395,13 +395,17 @@ class RayDPT(nn.Module):
         d16 = np.stack([np.cos(el16) * np.cos(az16), np.cos(el16) * np.sin(az16),
                         np.sin(el16)], -1).reshape(-1, 3).astype(np.float32)   # (512,3) unit dirs
         geom16 = np.clip(d16 @ d16.T, -1.0, 1.0)[..., None].astype(np.float32)  # (512,512,1) cos ang dist
-        self.rsa16 = GeoSelfBlock(dim, heads, torch.from_numpy(geom16))
+        # E54: pre-fusion geo-attn on raw ray tokens (rsa16) was REMOVED — it slightly hurt; the
+        # post-fusion geometric reasoning (rsa16b, below) on the assembled layout is what matters.
         # E50: geometry-aware self-attn on the FUSED coarse features (post encoder-skip), so the
         # assembled layout reasons geometrically before the coarse head / fine decode.
-        # E51 champion: 2 stacked blocks (post-fusion does NOT saturate like pre-fusion E23; but E52
+        # E51 champion: 2 stacked blocks (post-fusion does NOT saturate like pre-fusion E23; E52
         # showed 3 blocks over-saturate + strain the budget, so 2 is optimal).
         self.rsa16b = nn.Sequential(GeoSelfBlock(dim, heads, torch.from_numpy(geom16.copy())),
                                     GeoSelfBlock(dim, heads, torch.from_numpy(geom16.copy())))
+        # E55: geometry-aware self-attn on the fused 32x64, cheap via a 16x32 pooled bottleneck (512
+        # tok). Re-tried from E53 (which busted budget on the heavier E51 base); fits on E54's base.
+        self.rsa32p = GeoSelfBlock(dim, heads, torch.from_numpy(geom16.copy()))
         # DPT encoder skips (U-Net detail injection)
         self.se4 = nn.Conv2d(ngf * 8, dim, 1)
         self.se3 = nn.Conv2d(ngf * 4, dim, 1)
@@ -453,7 +457,10 @@ class RayDPT(nn.Module):
             m16 = F16 + torch.sigmoid(self.g4(F16)) * self.se4(e4)            # 16x32 (gated skip)
             m16 = self.rsa16b(m16.flatten(2).transpose(1, 2)).transpose(1, 2).reshape(B, -1, 16, 32)  # E50: geo self-attn on fused
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
-            x = self.lsa32(self.refine32(self.up(m16) + F32 + torch.sigmoid(self.g3(F32)) * self.se3(e3)))   # 32x64
+            f32 = self.refine32(self.up(m16) + F32 + torch.sigmoid(self.g3(F32)) * self.se3(e3))   # 32x64
+            gg = self.rsa32p(F.adaptive_avg_pool2d(f32, (16, 32)).flatten(2).transpose(1, 2))       # E55: pooled geo-attn
+            f32 = f32 + self.up(gg.transpose(1, 2).reshape(B, -1, 16, 32))                          # broadcast back to 32x64
+            x = self.lsa32(f32)
             x = self.lsa64(self.refine64(self.up(x) + F64 + torch.sigmoid(self.g2(F64)) * self.se2(e2)))     # 64x128
         if self.full_decode:                                   # LEARNED upsample 64x128 -> 256x512
             xf = self.up(self.proj_fd(x))                       # 128x256, ngf

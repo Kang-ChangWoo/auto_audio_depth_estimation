@@ -75,7 +75,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | **E51** | **post-fusion geo-attn 2 blocks** | **0.3390** | **1.5105** | **0.5637** | **KEEP — NEW CHAMPION (comp 2.147, beats E50 by 0.015; best-ever all 3)** |
 | E52 | E51 + post-fusion geo-attn 3 blocks | 0.3433 | 1.5156 | 0.5618 | discard (saturates; loses 0.011) |
 | E53 | E51 + geo-aware pooled geo-attn at 32×64 (breadth) | crash | | | discard (556s/ep > budget ceiling; killed — budget now binding) |
-| E54 | E51 − pre-fusion geo-attn (rsa16; test redundancy) | running | | | — |
+| **E54** | **E51 − pre-fusion geo-attn (rsa16)** | **0.3426** | **1.5085** | **0.5682** | **KEEP — NEW CHAMPION (comp 2.139, beats E51 by 0.008; best-ever RMSE & d1; simpler+faster)** |
+| E55 | E54 + geo-aware pooled geo-attn at 32×64 (freed budget) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
