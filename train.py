@@ -408,9 +408,10 @@ class RayDPT(nn.Module):
         geom16b = np.stack([cosd, np.broadcast_to(elf[:, None], (N, N)),
                             np.broadcast_to(elf[None, :], (N, N)),
                             np.cos(daz), np.sin(daz)], -1).astype(np.float32)   # (512,512,5)
-        # E59 confirmed 3 blocks bust budget (560s) & E52 showed they lose on quality: 2 is the sweet spot.
-        self.rsa16b = nn.Sequential(GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy())),
-                                    GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy())))
+        # E67: re-test 3 geometry blocks — now AFFORDABLE (F64 dropped in E65 freed ~170s/epoch;
+        # E59's 3-block bust was only because F64 was present). Richer 5-feat geom + 9-epoch anneal.
+        self.rsa16b = nn.Sequential(*[GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy()))
+                                      for _ in range(3)])
         # E61 tried a 2nd cross-attn round here (re-gather audio post-geo) — within-noise worse + budget
         # pressure; reverted. Post-fusion geometry (rsa16b) is the ceiling of this subsystem.
         # E63 tried FiLM global-audio modulation of m16 — within-noise worse; the per-ray cross-attn
@@ -427,9 +428,8 @@ class RayDPT(nn.Module):
         self.lsa64 = LocalSphericalAttention(dim, heads, 64, 128, getattr(cfg, "raydpt_win64", 3))
         self.coarse_head = nn.Conv2d(dim, 1, 1)
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
-        # E66: light 128x256 learned decode (funded by F64's freed budget) — one upsample level at ngf
-        # (cheaper than full-decode's 256x512 convs), then bilinear x2 to 256x512. Targets fine RMSE.
-        self.proj_hi = nn.Conv2d(dim, ngf, 1); self.dec_hi = Refine(ngf); self.head_hi = nn.Conv2d(ngf, 1, 3, 1, 1)
+        # E66 tried a learned 128x256 decode — RMSE got WORSE (1.485 vs 1.480); resolution is NOT the
+        # bottleneck (depth field smooth, bilinear adequate). Reverted. Accuracy is audio->depth-limited.
         self.lite = getattr(cfg, "raydpt_lite", False)        # 2-scale (32,64) lite variant
         # full-decode: LEARNED upsample 64x128 -> 256x512 (+e1 skip) instead of bilinear x4.
         # Improves RMSE/d1 (full-res detail) -- the honest-metric lever.
@@ -478,9 +478,8 @@ class RayDPT(nn.Module):
             xf = self.dec2(self.up(xf))                        # 256x512, ngf
             D = torch.sigmoid(self.head_fd(xf))
         else:
-            xh = self.dec_hi(self.up(self.proj_hi(x)))          # E66: 64x128 -> 128x256 learned (ngf)
-            D = torch.sigmoid(self.head_hi(xh))
-            D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)  # 128x256 -> 256x512
+            D = torch.sigmoid(self.head(x))
+            D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
         return {"D": D, "D0": D, "extras": {"D_coarse": d_c}}
 
 

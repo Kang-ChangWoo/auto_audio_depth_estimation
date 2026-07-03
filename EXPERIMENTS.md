@@ -87,7 +87,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E63 | FiLM global-audio modulates m16 | 0.3483 | 1.5119 | 0.5700 | discard (0.034 worse, within noise; cross-attn already supplies audio) |
 | E64 | learned full-decode 64×128→256×512 | — | — | — | discard (BUDGET BUST 699s/epoch, +150s) |
 | **E65** | **drop finest-scale F64 cross-attn** | **0.3422** | **1.4795** | **0.5805** | **KEEP — NEW CHAMPION (comp 2.093; F64 redundant → 549→380s → 9 epochs/deeper anneal; best RMSE+d1; VRAM 30→17.5GB)** |
-| E66 | light 128×256 learned decode (spend freed budget on resolution) | running | | | — |
+| E66 | light 128×256 learned decode | 0.3471 | 1.4853 | 0.5743 | discard (0.021 worse, RMSE up — resolution not the bottleneck; audio→depth-limited) |
+| E67 | 3rd rsa16b geometry block (now affordable, F64 gone) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
