@@ -414,6 +414,7 @@ class RayDPT(nn.Module):
         # (F64 gone) and it was identical (2.0949 vs 2.0934) — geometry saturates at 2, not a budget limit.
         self.rsa16b = nn.Sequential(GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy())),
                                     GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy())))
+        self.cr16b = CrossBlock(dim, heads)   # E72: iterative-refinement 2nd cross-attn (shares rsa16b for the 2nd geo pass)
         # E61 tried a 2nd cross-attn round here (re-gather audio post-geo) — within-noise worse + budget
         # pressure; reverted. Post-fusion geometry (rsa16b) is the ceiling of this subsystem.
         # E63 tried FiLM global-audio modulation of m16 — within-noise worse; the per-ray cross-attn
@@ -471,6 +472,10 @@ class RayDPT(nn.Module):
             # Ray-conditioning stays via 16/32-scale cross-attn; lsa64 local attn + e2 skip carry 64-scale.
             m16 = F16 + torch.sigmoid(self.g4(F16)) * self.se4(e4)            # 16x32 (gated skip)
             m16 = self.rsa16b(m16.flatten(2).transpose(1, 2)).transpose(1, 2).reshape(B, -1, 16, 32)  # E50: geo self-attn on fused
+            # E72: iterative ray refinement — a 2nd shared-weight pass (re-gather audio + geo reasoning)
+            r = m16.flatten(2).transpose(1, 2)
+            r = r + self.cr16b(r, kv4); r = self.rsa16b(r)
+            m16 = m16 + r.transpose(1, 2).reshape(B, -1, 16, 32)
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
             x = self.lsa32(self.refine32(self.up(m16) + F32 + torch.sigmoid(self.g3(F32)) * self.se3(e3)))   # 32x64
             x = self.lsa64(self.refine64(self.up(x) + self.se2(e2)))     # 64x128 (E65: F64 dropped)
