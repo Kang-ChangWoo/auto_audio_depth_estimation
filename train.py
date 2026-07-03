@@ -462,12 +462,13 @@ class RayDPT(nn.Module):
             kv3 = self.kv_e3(e3.flatten(2).transpose(1, 2))     # (B,2048,dim)
             F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4, B, 16, 32)   # E54: drop pre-fusion geo-attn (post-fusion rsa16b subsumes it?)
             F32 = self._cross(self.rp32, self.rf32, self.cr32, kv3, B, 32, 64)
-            F64 = self._cross(self.rp64, self.rf64, self.cr64, kv4, B, 64, 128)
+            # E65: drop the finest-scale F64 cross-attn (8192 ray queries — one of the biggest ops).
+            # Ray-conditioning stays via 16/32-scale cross-attn; lsa64 local attn + e2 skip carry 64-scale.
             m16 = F16 + torch.sigmoid(self.g4(F16)) * self.se4(e4)            # 16x32 (gated skip)
             m16 = self.rsa16b(m16.flatten(2).transpose(1, 2)).transpose(1, 2).reshape(B, -1, 16, 32)  # E50: geo self-attn on fused
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
             x = self.lsa32(self.refine32(self.up(m16) + F32 + torch.sigmoid(self.g3(F32)) * self.se3(e3)))   # 32x64
-            x = self.lsa64(self.refine64(self.up(x) + F64 + torch.sigmoid(self.g2(F64)) * self.se2(e2)))     # 64x128
+            x = self.lsa64(self.refine64(self.up(x) + self.se2(e2)))     # 64x128 (E65: F64 dropped)
         if self.full_decode:                                   # LEARNED upsample 64x128 -> 256x512
             xf = self.up(self.proj_fd(x))                       # 128x256, ngf
             xf = self.dec1(xf + self.se1(e1))                  # + e1 skip
@@ -871,8 +872,8 @@ def parse_args():
                         '2=log-mag binaural; 3=[logL,logR,ILD]')
     p.add_argument('--flip-aug', type=lambda s: s == 'True', default=True,
                    help='L/R mirror augmentation (depth width-flip + channel-aware audio swap)')
-    p.add_argument('--raydpt-full-decode', type=lambda s: s == 'True', default=True,
-                   help='E64: learned upsample 64x128->256x512 (+e1 skip) instead of bilinear x4 — targets fine-detail RMSE')
+    p.add_argument('--raydpt-full-decode', type=lambda s: s == 'True', default=False,
+                   help='E64 confirmed BUDGET BUST (699s/epoch, +150s) — bilinear x4 upsample stays')
     p.add_argument('--raydpt-lite', type=lambda s: s == 'True', default=False,
                    help='2-scale (32,64) lite RayDPT variant')
 

@@ -85,7 +85,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E61 | E57 + 2nd cross-attn round at m16 | 0.3382 | 1.4925 | 0.5717 | discard (0.011 worse, within noise; +complexity +budget) |
 | E62 | drop aux losses w_low=0 & w_coarse_layout=0 | 0.3333 | 1.5433 | 0.5572 | discard (0.070 WORSE — aux losses load-bearing for RMSE/d1; ABS_REL gamed) |
 | E63 | FiLM global-audio modulates m16 | 0.3483 | 1.5119 | 0.5700 | discard (0.034 worse, within noise; cross-attn already supplies audio) |
-| E64 | learned full-decode 64×128→256×512 (+e1 skip) — targets RMSE | running | | | — |
+| E64 | learned full-decode 64×128→256×512 | — | — | — | discard (BUDGET BUST 699s/epoch, +150s) |
+| E65 | drop finest-scale F64 cross-attn (simplify + free budget) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
