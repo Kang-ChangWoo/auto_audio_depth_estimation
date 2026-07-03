@@ -84,7 +84,7 @@ def make_config(args):
         model=Cfg(
             name='raydpt',
             ngf=64,
-            dim=256,   # E68: widen 192->256 (raw capacity, now affordable since F64 dropped freed budget)
+            dim=192,   # E68 confirmed NOT capacity-limited (256 was worse + cost an anneal epoch)
             n_heads=4,
             ray_cross_layers=2,
             raydpt_win32=5,
@@ -866,7 +866,7 @@ def parse_args():
                    help='Path to SoundSpaces dataset')
 
     p.add_argument('--batch-size', type=int, default=32)   # E42 confirmed: bs 40 tied bs 32 (neutral) — keep simpler default
-    p.add_argument('--epochs', type=int, default=10)   # E20 confirmed 10 optimal: LR floor 1e-4 keeps the rel-loss learning (anneal->0 hurt ABS_REL/d1)
+    p.add_argument('--epochs', type=int, default=9)   # E69: with F64 gone ~9 epochs run; anneal cosine fully to ~0 over them (re-test E20's anneal->0 in the deeper 9-epoch regime — model is anneal-limited)
     p.add_argument('--lr', type=float, default=4e-4)   # E16 champion LR (4e-4 is the floor; 3e-4 U-turned worse)
     p.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam', 'SGD'])
     p.add_argument('--num-workers', type=int, default=16)
