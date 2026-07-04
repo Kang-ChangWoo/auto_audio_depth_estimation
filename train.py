@@ -95,9 +95,9 @@ def make_config(args):
             use_xyz=True,
             use_fourier_pe=True,
             fourier_bands=6,
-            use_sh_pe=True,   # E80: add SH-basis (spherical harmonic) ray features to RayBank — untested ray-conditioning featurization
+            use_sh_pe=False,   # E80 confirmed neutral-worse (xyz+Fourier PE already sufficient)
             sh_order=4,
-            use_mic_pe=False,
+            use_mic_pe=True,   # E81: add mic-position PE to RayBank ray features — untested ray featurization
             head_r=0.0875,
             # composite-loss head / weights
             coarse_head_h=16,
