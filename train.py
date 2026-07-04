@@ -94,10 +94,10 @@ def make_config(args):
             # ray-feature bank flags
             use_xyz=True,
             use_fourier_pe=True,
-            fourier_bands=6,
+            fourier_bands=8,   # E82: richer Fourier PE of ray dirs (6->8 bands) — last untested ray-feature lever
             use_sh_pe=False,   # E80 confirmed neutral-worse (xyz+Fourier PE already sufficient)
             sh_order=4,
-            use_mic_pe=True,   # E81: add mic-position PE to RayBank ray features — untested ray featurization
+            use_mic_pe=False,   # E81 confirmed neutral (tied)
             head_r=0.0875,
             # composite-loss head / weights
             coarse_head_h=16,
