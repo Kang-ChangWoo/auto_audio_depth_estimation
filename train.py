@@ -855,7 +855,7 @@ def parse_args():
                    default='/home/rvi-lab/workspace/sound-spaces/dataset_simplified',
                    help='Path to SoundSpaces dataset')
 
-    p.add_argument('--batch-size', type=int, default=24)   # E91: smaller batch (32->24) = more steps/epoch = finer cosine anneal (proven more-steps axis; E42 tested larger bs40=tied)
+    p.add_argument('--batch-size', type=int, default=32)   # E42 (bs40 tied) + E91 (bs24 tied) confirm bs32 optimal; more-optimization-steps axis saturated
     p.add_argument('--epochs', type=int, default=10)   # E69 confirmed anneal DEPTH is neutral (epochs=9 LR->0 tied E65); 10 keeps the ~9-run + 1e-4 floor. E65's win was more epochs, not lower LR
     p.add_argument('--lr', type=float, default=4e-4)   # E16 champion LR (4e-4 is the floor; 3e-4 U-turned worse)
     p.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam', 'SGD'])

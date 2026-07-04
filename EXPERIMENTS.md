@@ -112,7 +112,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E88 | remove SwiGLU class + guard silog | 0.3405 | 1.4738 | 0.5810 | keep — cleanup (best draw 2.0873, provably equiv/RNG; +tiny speedup) |
 | E89 | champion confirmation rerun (6th) | 0.3442 | 1.4817 | 0.5755 | confirm (2.1070; 9-run mean 2.102±0.009) |
 | E90 | champion confirmation rerun (7th) | 0.3427 | 1.4786 | 0.5794 | confirm (2.0956; 10-run mean 2.101±0.009) |
-| E91 | smaller batch 32→24 (more anneal steps, proven axis) | running | | | — |
+| E91 | smaller batch 32→24 (finer anneal) | 0.3447 | 1.4754 | 0.5751 | discard (tied 2.1043; more-steps axis saturated — bs32 optimal) |
+| E92 | champion confirmation rerun (8th, bs32) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
