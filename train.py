@@ -561,8 +561,7 @@ def composite_loss(out, gt, mask, mcfg):
     ll = masked_mae(gaussian_blur_erp(out["D"], 3.0), gaussian_blur_erp(gt, 3.0), mask)
     loss = loss + mcfg.w_coarse_layout * lc + mcfg.w_low * ll
     return loss, {"mae": float(main.detach()), "rel": float(rel.detach()),
-                  "sil": float(sil.detach()), "lc": float(lc.detach()),
-                  "llow": float(ll.detach())}
+                  "lc": float(lc.detach()), "llow": float(ll.detach())}
 
 
 # ============================================================
