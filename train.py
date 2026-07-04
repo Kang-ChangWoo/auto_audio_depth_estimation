@@ -201,7 +201,7 @@ class Refine(nn.Module):
 class FFN(nn.Module):
     def __init__(self, dim, mult=4):
         super().__init__()
-        self.net = nn.Sequential(nn.Linear(dim, dim * mult), nn.GELU(),
+        self.net = nn.Sequential(nn.Linear(dim, dim * mult), nn.GELU(), nn.Dropout(0.1),   # E94: FFN dropout (regularization probe — untested; train/val gap suggests mild overfit)
                                  nn.Linear(dim * mult, dim))
 
     def forward(self, x):
