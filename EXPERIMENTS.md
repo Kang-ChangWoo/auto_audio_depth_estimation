@@ -98,7 +98,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E74 | input in-ch 5→3 (drop phase feats) | 0.3532 | 1.4882 | 0.5578 | discard (0.055 WORSE — IPD phase features load-bearing; 5ch optimal) |
 | E75 | richer kv projection (Linear→MLP) | 0.3538 | 1.4949 | 0.5741 | discard (0.032 worse; interface not capacity-limited) |
 | E76 | flip_aug OFF | 0.3472 | 1.4912 | 0.5732 | discard (0.027 worse all 3 — L/R mirror aug mildly load-bearing) |
-| E77 | encoder bottleneck refine on e4 (audio feature capacity) | running | | | — |
+| E77 | encoder bottleneck refine on e4 (+4.7M) | 0.3466 | 1.4802 | 0.5783 | discard (neutral 2.1019; encoder not feature-extraction-limited) |
+| E78 | 2nd E65 confirmation rerun (tighten champion estimate) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
