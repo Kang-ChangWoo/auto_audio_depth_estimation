@@ -381,10 +381,9 @@ class RayDPT(nn.Module):
         mk_rp = lambda: nn.Sequential(nn.Linear(fd, dim), nn.GELU(), nn.Linear(dim, dim))
         self.rp16, self.rp32, self.rp64 = mk_rp(), mk_rp(), mk_rp()
         # audio kv: e4 (512 tok), e3 (2048 tok). 64-scale reuses e4 (cheap global cue).
-        # E75: richer audio-token projection (Linear -> MLP) at the audio->ray interface — gives the
-        # audio keys/values a nonlinear transform before cross-attn (targets the audio->depth bottleneck).
-        self.kv_e4 = nn.Sequential(nn.Linear(ngf * 8, dim), nn.GELU(), nn.Linear(dim, dim))
-        self.kv_e3 = nn.Sequential(nn.Linear(ngf * 4, dim), nn.GELU(), nn.Linear(dim, dim))
+        # E75 confirmed the audio->ray interface is not capacity-limited (Linear->MLP was worse). Keep Linear.
+        self.kv_e4 = nn.Linear(ngf * 8, dim)
+        self.kv_e3 = nn.Linear(ngf * 4, dim)
         # E70 tried learned positional embeddings on the audio tokens — neutral (within noise); the conv
         # encoder already encodes position implicitly. Reverted.
         mk_cr = lambda: nn.ModuleList([CrossBlock(dim, heads) for _ in range(nL)])
@@ -878,7 +877,7 @@ def parse_args():
     p.add_argument('--in-ch', type=int, default=5, choices=[2, 3, 5],   # E74 confirmed 5ch optimal: dropping IPD phase feats cost 0.055 (phase encodes direction — load-bearing)
                    help='5=RIR spatial feature [logL,logR,ILD,cosIPD,sinIPD] (default); '
                         '2=log-mag binaural; 3=[logL,logR,ILD]')
-    p.add_argument('--flip-aug', type=lambda s: s == 'True', default=True,
+    p.add_argument('--flip-aug', type=lambda s: s == 'True', default=False,   # E76: test if L/R mirror aug is load-bearing (off=simpler if tied)
                    help='L/R mirror augmentation (depth width-flip + channel-aware audio swap)')
     p.add_argument('--raydpt-full-decode', type=lambda s: s == 'True', default=False,
                    help='E64 confirmed BUDGET BUST (699s/epoch, +150s) — bilinear x4 upsample stays')
