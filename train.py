@@ -384,6 +384,7 @@ class RayDPT(nn.Module):
         # E75 confirmed the audio->ray interface is not capacity-limited (Linear->MLP was worse). Keep Linear.
         self.kv_e4 = nn.Linear(ngf * 8, dim)
         self.kv_e3 = nn.Linear(ngf * 4, dim)
+        self.e4_ref = Refine(ngf * 8)   # E77: refine the audio bottleneck e4 (feature-extraction capacity at the encoder bottleneck)
         # E70 tried learned positional embeddings on the audio tokens — neutral (within noise); the conv
         # encoder already encodes position implicitly. Reverted.
         mk_cr = lambda: nn.ModuleList([CrossBlock(dim, heads) for _ in range(nL)])
@@ -455,6 +456,7 @@ class RayDPT(nn.Module):
     def forward(self, spec, coarse_feat=None, sh_basis=None):
         B = spec.size(0)
         e1 = self.enc.e1(spec); e2 = self.enc.e2(e1); e3 = self.enc.e3(e2); e4 = self.enc.e4(e3)
+        e4 = self.e4_ref(e4)   # E77: bottleneck audio-feature refinement
         kv4 = self.kv_e4(e4.flatten(2).transpose(1, 2))        # (B,512,dim)
         if self.lite:
             # 2-scale lite: ONE ray cross-attn at 32x64 (Q32 <- e4), e3/e2 projection
@@ -877,7 +879,7 @@ def parse_args():
     p.add_argument('--in-ch', type=int, default=5, choices=[2, 3, 5],   # E74 confirmed 5ch optimal: dropping IPD phase feats cost 0.055 (phase encodes direction — load-bearing)
                    help='5=RIR spatial feature [logL,logR,ILD,cosIPD,sinIPD] (default); '
                         '2=log-mag binaural; 3=[logL,logR,ILD]')
-    p.add_argument('--flip-aug', type=lambda s: s == 'True', default=False,   # E76: test if L/R mirror aug is load-bearing (off=simpler if tied)
+    p.add_argument('--flip-aug', type=lambda s: s == 'True', default=True,   # E76 confirmed load-bearing (off was 0.027 worse on all 3)
                    help='L/R mirror augmentation (depth width-flip + channel-aware audio swap)')
     p.add_argument('--raydpt-full-decode', type=lambda s: s == 'True', default=False,
                    help='E64 confirmed BUDGET BUST (699s/epoch, +150s) — bilinear x4 upsample stays')
