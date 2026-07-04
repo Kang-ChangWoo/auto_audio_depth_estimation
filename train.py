@@ -682,7 +682,7 @@ def train(cfg):
     optimizer = _build_optimizer(model, cfg)
     steps_per_epoch = max(1, len(train_loader))
     total_steps = cfg.mode.epochs * steps_per_epoch
-    warm = steps_per_epoch
+    warm = max(1, steps_per_epoch // 2)   # E79: shorter warmup (0.5 epoch) -> more cosine-anneal steps (deeper-anneal axis produced the E65 win)
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
         lambda s: (s + 1) / warm if s < warm

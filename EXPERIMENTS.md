@@ -99,7 +99,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E75 | richer kv projection (Linear→MLP) | 0.3538 | 1.4949 | 0.5741 | discard (0.032 worse; interface not capacity-limited) |
 | E76 | flip_aug OFF | 0.3472 | 1.4912 | 0.5732 | discard (0.027 worse all 3 — L/R mirror aug mildly load-bearing) |
 | E77 | encoder bottleneck refine on e4 (+4.7M) | 0.3466 | 1.4802 | 0.5783 | discard (neutral 2.1019; encoder not feature-extraction-limited) |
-| E78 | 2nd E65 confirmation rerun (tighten champion estimate) | running | | | — |
+| E78 | 2nd E65 confirmation rerun | 0.3418 | 1.4819 | 0.5793 | confirm (2.0971; 3 runs mean 2.097 ±0.004 — champion solid) |
+| E79 | shorter warmup 1→0.5 epoch (more anneal steps) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
