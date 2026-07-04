@@ -208,19 +208,6 @@ class FFN(nn.Module):
         return self.net(x)
 
 
-class SwiGLU(nn.Module):
-    """Gated SiLU FFN (SwiGLU): out = W2(SiLU(W1 x) * W3 x). E45: used in the coarse GeoSelfBlock."""
-    def __init__(self, dim, hidden=None):
-        super().__init__()
-        hidden = hidden or dim * 2
-        self.w = nn.Linear(dim, 2 * hidden)
-        self.o = nn.Linear(hidden, dim)
-
-    def forward(self, x):
-        a, b = self.w(x).chunk(2, -1)
-        return self.o(F.silu(a) * b)
-
-
 class CrossBlock(nn.Module):
     def __init__(self, dim, heads):
         super().__init__()
@@ -542,8 +529,8 @@ def composite_loss(out, gt, mask, mcfg):
     rel = (((out["D"] - gt).abs() / gt.clamp(min=0.01)) * mask).sum() / mask.sum().clamp(min=1e-6)
     loss = loss + mcfg.w_rel * rel
     # scale-invariant log term (structure), stacked on the relative term (magnitude).
-    sil = silog_loss(out["D"], gt, mask)
-    loss = loss + mcfg.w_silog * sil
+    if mcfg.w_silog:   # E88: guard — w_silog=0, so skip the unused silog compute each step
+        loss = loss + mcfg.w_silog * silog_loss(out["D"], gt, mask)
     # E46: log-depth L1 — penalises multiplicative (ratio) error, which is what d1 (<1.25 ratio)
     # measures. Complements the linear MAE (absolute) with a scale-relative signal.
     wl = getattr(mcfg, "w_logd", 0.0)
