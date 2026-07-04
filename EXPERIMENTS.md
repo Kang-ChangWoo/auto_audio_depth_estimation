@@ -109,7 +109,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E85 | 5th E65 confirmation rerun | 0.3435 | 1.4902 | 0.5774 | confirm (2.1077; 5-run mean ~2.102±0.006) |
 | E86 | drop dead g2 gate | 0.3424 | 1.4855 | 0.5718 | keep — simplification (provably equivalent, g2-free) |
 | E87 | drop dead F64 modules (~0.9M) | 0.3427 | 1.4801 | 0.5793 | keep — simplification (25.40→24.47M, provably equiv) |
-| E88 | remove unused SwiGLU class + guard dead silog term | running | | | — |
+| E88 | remove SwiGLU class + guard silog | 0.3405 | 1.4738 | 0.5810 | keep — cleanup (best draw 2.0873, provably equiv/RNG; +tiny speedup) |
+| E89 | champion confirmation rerun (6th, leaner base) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
