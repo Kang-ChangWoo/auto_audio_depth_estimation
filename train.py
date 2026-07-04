@@ -465,9 +465,8 @@ class RayDPT(nn.Module):
             x = self.lsa64(self.refine64(self.up(x) + self.se2(e2)))   # 64x128
         else:
             kv3 = self.kv_e3(e3.flatten(2).transpose(1, 2))     # (B,2048,dim)
-            # E73: coarse rays attend BOTH coarse (e4) AND fine (e3) audio tokens — direct fine-audio
-            # evidence at the coarse layout (previously fine audio only entered via F32).
-            F16 = self._cross(self.rp16, self.rf16, self.cr16, torch.cat([kv4, kv3], 1), B, 16, 32)
+            # E73 tried coarse rays attending fine audio (kv4+kv3) — neutral (fine audio already enters via F32). Reverted.
+            F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4, B, 16, 32)
             F32 = self._cross(self.rp32, self.rf32, self.cr32, kv3, B, 32, 64)
             # E65: drop the finest-scale F64 cross-attn (8192 ray queries — one of the biggest ops).
             # Ray-conditioning stays via 16/32-scale cross-attn; lsa64 local attn + e2 skip carry 64-scale.
@@ -874,7 +873,7 @@ def parse_args():
     p.add_argument('--lr', type=float, default=4e-4)   # E16 champion LR (4e-4 is the floor; 3e-4 U-turned worse)
     p.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam', 'SGD'])
     p.add_argument('--num-workers', type=int, default=16)
-    p.add_argument('--in-ch', type=int, default=5, choices=[2, 3, 5],
+    p.add_argument('--in-ch', type=int, default=3, choices=[2, 3, 5],   # E74: test if 3ch [logL,logR,ILD] ties 5ch (drop cosIPD/sinIPD phase feats — simpler input if tied)
                    help='5=RIR spatial feature [logL,logR,ILD,cosIPD,sinIPD] (default); '
                         '2=log-mag binaural; 3=[logL,logR,ILD]')
     p.add_argument('--flip-aug', type=lambda s: s == 'True', default=True,
