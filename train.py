@@ -95,7 +95,7 @@ def make_config(args):
             use_xyz=True,
             use_fourier_pe=True,
             fourier_bands=6,
-            use_sh_pe=False,
+            use_sh_pe=True,   # E80: add SH-basis (spherical harmonic) ray features to RayBank — untested ray-conditioning featurization
             sh_order=4,
             use_mic_pe=False,
             head_r=0.0875,
@@ -682,7 +682,7 @@ def train(cfg):
     optimizer = _build_optimizer(model, cfg)
     steps_per_epoch = max(1, len(train_loader))
     total_steps = cfg.mode.epochs * steps_per_epoch
-    warm = max(1, steps_per_epoch // 2)   # E79: shorter warmup (0.5 epoch) -> more cosine-anneal steps (deeper-anneal axis produced the E65 win)
+    warm = steps_per_epoch   # E79 confirmed 1-epoch warmup optimal (0.5 was worse)
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
         lambda s: (s + 1) / warm if s < warm
