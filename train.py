@@ -375,11 +375,10 @@ class RayDPT(nn.Module):
         def bank(h, w):
             pc = copy.copy(cfg); pc.img_h, pc.img_w = h, w
             b = RayBank(pc, device="cpu"); return b.feat, b.feat_dim
-        f16, fd = bank(16, 32); f32, _ = bank(32, 64); f64, _ = bank(64, 128)
+        f16, fd = bank(16, 32); f32, _ = bank(32, 64)   # E87: f64 bank dropped (F64 removed in E65)
         self.register_buffer("rf16", f16); self.register_buffer("rf32", f32)
-        self.register_buffer("rf64", f64)
         mk_rp = lambda: nn.Sequential(nn.Linear(fd, dim), nn.GELU(), nn.Linear(dim, dim))
-        self.rp16, self.rp32, self.rp64 = mk_rp(), mk_rp(), mk_rp()
+        self.rp16, self.rp32 = mk_rp(), mk_rp()
         # audio kv: e4 (512 tok), e3 (2048 tok). 64-scale reuses e4 (cheap global cue).
         # E75 confirmed the audio->ray interface is not capacity-limited (Linear->MLP was worse). Keep Linear.
         self.kv_e4 = nn.Linear(ngf * 8, dim)
@@ -388,7 +387,7 @@ class RayDPT(nn.Module):
         # E70 tried learned positional embeddings on the audio tokens — neutral (within noise); the conv
         # encoder already encodes position implicitly. Reverted.
         mk_cr = lambda: nn.ModuleList([CrossBlock(dim, heads) for _ in range(nL)])
-        self.cr16, self.cr32, self.cr64 = mk_cr(), mk_cr(), mk_cr()
+        self.cr16, self.cr32 = mk_cr(), mk_cr()   # E87: cr64 dropped (F64 removed in E65) — ~0.9M dead params
         # E22: ray<->ray global self-attn on the 16x32 coarse grid (512 tokens) so the layout rays
         # reason jointly after reading audio. Capacity saturates (E23 depth, E25 heads, E26 mid-scale).
         # E27: make it GEOMETRY-AWARE — add a learned bias on the cos angular distance between ray

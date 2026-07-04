@@ -107,7 +107,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E83 | 4th E65 confirmation rerun | 0.3406 | 1.4898 | 0.5750 | confirm (2.1105; 4-run mean ~2.100±0.006) |
 | E84 | 10th epoch via skip-early-evals | 0.3381 | 1.4848 | 0.5797 | discard (tied 2.0952; more-epochs saturated at 9 — model at ceiling) |
 | E85 | 5th E65 confirmation rerun | 0.3435 | 1.4902 | 0.5774 | confirm (2.1077; 5-run mean ~2.102±0.006) |
-| E86 | drop dead g2 gate (simplification — unused since F64 removed) | running | | | — |
+| E86 | drop dead g2 gate | 0.3424 | 1.4855 | 0.5718 | keep — simplification (provably equivalent, g2-free) |
+| E87 | drop dead F64 modules rp64/rf64/cr64 (~0.9M) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
