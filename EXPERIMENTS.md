@@ -116,7 +116,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E92 | champion confirmation rerun (8th) | 0.3421 | 1.4795 | 0.5776 | confirm (2.0995; 11-run mean 2.101±0.008) |
 | E93 | champion confirmation rerun (9th) | 0.3406 | 1.4732 | 0.5801 | confirm (2.0890; 12-run mean 2.100±0.008) |
 | E94 | FFN dropout 0.1 | 0.3418 | 1.4811 | 0.5785 | discard (tied 2.0985; not overfit-limited — dropout no help) |
-| E95 | champion confirmation rerun (10th) | running | | | — |
+| E95 | champion confirmation rerun (10th) | 0.3404 | 1.4759 | 0.5782 | confirm (2.0947; 13-run mean 2.100±0.008) |
+| E96 | champion confirmation rerun (11th) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
