@@ -299,8 +299,8 @@ class UNet8Encoder(nn.Module):
 # ---- local spherical window attention (ray <-> ray) -------------------------
 def _window_kv(t, win, dilation=1):
     """(B,C,H,W) -> (B,C,win*win,H,W): neighbours via circular-W / replicate-H pad.
-    E112: `dilation` spaces the taps out to enlarge the receptive field at IDENTICAL compute
-    (same win*win tap count) — F.unfold samples every `dilation`-th neighbour."""
+    E113: `dilation` spaces the taps out to enlarge the receptive field at the same tap count
+    (win*win) — F.unfold samples every `dilation`-th neighbour."""
     pad = (win // 2) * dilation
     t = torch.cat([t[..., -pad:], t, t[..., :pad]], dim=-1)        # circular azimuth wrap
     t = F.pad(t, (0, 0, pad, pad), mode="replicate")               # replicate elevation (poles)
@@ -359,16 +359,7 @@ class RayDPT(nn.Module):
         self.H, self.W = cfg.img_h, cfg.img_w
         ngf = getattr(cfg, "ngf", 64); dim = cfg.dim; heads = cfg.n_heads
         nL = getattr(cfg, "ray_cross_layers", 2)
-        # E109: CoordConv — append normalized row (=frequency) & col (=time-of-arrival/delay)
-        # coordinate channels to the encoder input. Physically: the time axis encodes delay↔distance
-        # (path = c·delay) and frequency is NOT translation-invariant (material/harmonic cues are
-        # freq-specific), yet the plain conv encoder is translation-equivariant with no absolute
-        # coordinate. This makes every conv layer delay- & freq-aware from layer 1 (distinct from
-        # E70/E80/E81 which added positional info POST-encoder on tokens/rays — all neutral).
-        rr = torch.linspace(-1, 1, self.H).view(1, 1, self.H, 1).expand(1, 1, self.H, self.W)
-        cc = torch.linspace(-1, 1, self.W).view(1, 1, 1, self.W).expand(1, 1, self.H, self.W)
-        self.register_buffer("coord", torch.cat([rr, cc], dim=1))    # (1,2,H,W)
-        self.enc = UNet8Encoder(getattr(cfg, "in_ch", 2) + 2, ngf)
+        self.enc = UNet8Encoder(getattr(cfg, "in_ch", 2), ngf)
 
         def bank(h, w):
             pc = copy.copy(cfg); pc.img_h, pc.img_w = h, w
@@ -425,10 +416,10 @@ class RayDPT(nn.Module):
         self.g4 = nn.Conv2d(dim, dim, 1); self.g3 = nn.Conv2d(dim, dim, 1)   # E86: dropped dead g2 (unused since E65 removed F64's 64-scale gated skip)
         self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False)
         self.refine32 = Refine(dim); self.refine64 = Refine(dim)
-        # E112: dilation=2 on both local spherical-attn blocks — doubles the receptive field at
-        # IDENTICAL compute (same tap count). Tests whether local ray<->ray attention is receptive-
-        # field-limited (walls/floors span many pixels) rather than tap-count-limited (E41: larger
-        # dense window too costly; dilation gets the range for free).
+        # E113: dilation=2 on both local spherical-attn blocks — doubles the receptive field at the
+        # same tap count (F.unfold dilation). CLEAN re-run of E112 (whose baseline was contaminated
+        # with CoordConv). Tests whether local ray<->ray attention is receptive-field-limited (walls/
+        # floors span many pixels) vs tap-count-limited (E41: larger dense window too costly).
         self.lsa32 = LocalSphericalAttention(dim, heads, 32, 64, getattr(cfg, "raydpt_win32", 5), dilation=2)
         self.lsa64 = LocalSphericalAttention(dim, heads, 64, 128, getattr(cfg, "raydpt_win64", 3), dilation=2)
         self.coarse_head = nn.Conv2d(dim, 1, 1)
@@ -456,7 +447,6 @@ class RayDPT(nn.Module):
 
     def forward(self, spec, coarse_feat=None, sh_basis=None):
         B = spec.size(0)
-        spec = torch.cat([spec, self.coord.expand(B, -1, -1, -1)], dim=1)   # E109: CoordConv channels
         e1 = self.enc.e1(spec); e2 = self.enc.e2(e1); e3 = self.enc.e3(e2); e4 = self.enc.e4(e3)
         kv4 = self.kv_e4(e4.flatten(2).transpose(1, 2))        # (B,512,dim)
         if self.lite:

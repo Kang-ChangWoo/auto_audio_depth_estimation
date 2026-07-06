@@ -131,9 +131,11 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E107 | absolute-elevation feat in lsa32/lsa64 local geom bias (E56-style enrichment at local scale) | 0.3465 | 1.4838 | 0.5781 | discard (2.1044, +0.005 within noise; local-scale geometry SATURATED — elevation helped coarse E56/E57 but not local. Geometry axis at ceiling all scales) |
 | E108 | input level-jitter aug (±0.3 common gain on lmag/rmag; ILD/IPD intact) — new augmentation axis for scene-generalization | 0.3610 | 1.5252 | 0.5601 | discard (2.1804, +0.081 LARGE loss + higher train loss → absolute level is a LOAD-BEARING depth cue, not a nuisance; jitter destroys signal) |
 | E109 | input CoordConv (append norm freq-row + time-col coords to encoder input) — delay↔distance & freq-aware from layer 1 | 0.3405 | 1.4926 | 0.5749 | discard (2.1124, +0.013 beyond noise; explicit coord/positional info neutral-to-harmful (cf E70/E80/E81) — conv encoder captures position implicitly) |
-| E110 | soft-d1 hinge loss w_d1=0.1 (relu(&#124;log(D/gt)&#124;−log1.25)) — gradient only on pixels outside the 1.25× band, targets dominant honest metric | 0.3663 | 1.5018 | 0.5585 | discard (2.1731, +0.074 ALL 3 worse incl d1; hinge zero-grad in-band + discontinuity destabilizes — d1-targeted loss shapes fail) |
-| E111 | coarse→fine layout cross-attn (32×64 rays cross-attend the 512 geo-reasoned m16 tokens) — extend winning geometric-reasoning axis to finer scale | 0.3596 | 1.5273 | 0.5606 | discard (2.1795, +0.081 all 3 worse; +399s/ep costs anneal + adds under-trained params. reasoned layout already propagates via additive skip) |
-| E112 | dilation=2 on lsa32 & lsa64 local spherical attn — 2× receptive field at IDENTICAL compute (F.unfold dilation); tests receptive-field vs tap-count limit | running | | | — |
+| E110 | soft-d1 hinge loss w_d1=0.1 | 0.3663 | 1.5018 | 0.5585 | ⚠️ CONTAMINATED (baseline accidentally still had E108 level-jitter → +0.074 mostly from level-jitter, NOT the hinge; conclusion INVALID. Not re-run: hinge compute-neutral but prior negative) |
+| E111 | coarse→fine layout cross-attn | 0.3596 | 1.5273 | 0.5606 | ⚠️ CONTAMINATED (baseline had E108 level-jitter too; conclusion INVALID. Not re-run: c2f also cost +21s/ep → budget-loses regardless) |
+| E112 | dilation=2 on lsa32 & lsa64 | 0.3411 | 1.4914 | 0.5732 | ⚠️ CONTAMINATED (baseline had E109 CoordConv too, +0.013 alone; dilation's true effect inconclusive). RE-RUN CLEANLY as E113 |
+| — | **PROCESS FIX (revert bug)** | | | | `git checkout <exp>~1` pointed at OTHER contaminated commits. NEW RULE: always `git checkout 2d668a5 -- train.py` (verified-clean champion) before staging each experiment |
+| E113 | dilation=2 on lsa32 & lsa64 — CLEAN re-run of E112 on verified champion (2× receptive field via F.unfold dilation) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
