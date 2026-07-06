@@ -128,7 +128,7 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E104 | champion confirmation rerun (19th) | 0.3416 | 1.4796 | 0.5775 | confirm (2.0995; 22-run mean 2.099±0.008) |
 | E105 | champion confirmation rerun (20th) | 0.3433 | 1.4787 | 0.5799 | confirm (2.0951; 23-run mean 2.099±0.008) |
 | E106 | champion confirmation rerun (21st) | 0.3425 | 1.4775 | 0.5807 | confirm (2.0919; 24-run mean 2.099±0.008 — halting rerun streak) |
-| E107 | absolute-elevation feat in lsa32/lsa64 local geom bias (E56-style enrichment at local scale) | running | | | — |
+| E107 | absolute-elevation feat in lsa32/lsa64 local geom bias (E56-style enrichment at local scale) | 0.3465 | 1.4838 | 0.5781 | discard (2.1044, +0.005 within noise; local-scale geometry SATURATED — elevation helped coarse E56/E57 but not local. Geometry axis at ceiling all scales) |
 
 ## Current champion & summary (~50 experiments)
 
