@@ -357,7 +357,16 @@ class RayDPT(nn.Module):
         self.H, self.W = cfg.img_h, cfg.img_w
         ngf = getattr(cfg, "ngf", 64); dim = cfg.dim; heads = cfg.n_heads
         nL = getattr(cfg, "ray_cross_layers", 2)
-        self.enc = UNet8Encoder(getattr(cfg, "in_ch", 2), ngf)
+        # E109: CoordConv — append normalized row (=frequency) & col (=time-of-arrival/delay)
+        # coordinate channels to the encoder input. Physically: the time axis encodes delay↔distance
+        # (path = c·delay) and frequency is NOT translation-invariant (material/harmonic cues are
+        # freq-specific), yet the plain conv encoder is translation-equivariant with no absolute
+        # coordinate. This makes every conv layer delay- & freq-aware from layer 1 (distinct from
+        # E70/E80/E81 which added positional info POST-encoder on tokens/rays — all neutral).
+        rr = torch.linspace(-1, 1, self.H).view(1, 1, self.H, 1).expand(1, 1, self.H, self.W)
+        cc = torch.linspace(-1, 1, self.W).view(1, 1, 1, self.W).expand(1, 1, self.H, self.W)
+        self.register_buffer("coord", torch.cat([rr, cc], dim=1))    # (1,2,H,W)
+        self.enc = UNet8Encoder(getattr(cfg, "in_ch", 2) + 2, ngf)
 
         def bank(h, w):
             pc = copy.copy(cfg); pc.img_h, pc.img_w = h, w
@@ -441,6 +450,7 @@ class RayDPT(nn.Module):
 
     def forward(self, spec, coarse_feat=None, sh_basis=None):
         B = spec.size(0)
+        spec = torch.cat([spec, self.coord.expand(B, -1, -1, -1)], dim=1)   # E109: CoordConv channels
         e1 = self.enc.e1(spec); e2 = self.enc.e2(e1); e3 = self.enc.e3(e2); e4 = self.enc.e4(e3)
         kv4 = self.kv_e4(e4.flatten(2).transpose(1, 2))        # (B,512,dim)
         if self.lite:
@@ -718,15 +728,6 @@ def train(cfg):
                     spec[fm] = swap_audio_lr(spec[fm])
                     gt[fm] = torch.flip(gt[fm], dims=[-1])
                     mask[fm] = torch.flip(mask[fm], dims=[-1])
-            # E108: input LEVEL-JITTER aug — random common gain on the log-mag channels (lmag,rmag)
-            # = simulated mic-gain variation. ILD (ch2) & IPD (ch3,4) are gain-invariant so left
-            # UNTOUCHED (preserves the load-bearing directional phase feats, E74). Split is by SCENE
-            # (72 train->9 unseen val rooms), so this tests whether absolute level is an
-            # overfit-to-training-rooms nuisance (helps room-generalization) or a real depth cue.
-            if spec.size(1) >= 2:
-                gain = (torch.rand(spec.size(0), 1, 1, 1, device=device) * 2 - 1) * 0.3
-                spec = spec.clone()
-                spec[:, 0:2] = spec[:, 0:2] + gain
             optimizer.zero_grad()
             with torch.amp.autocast('cuda', dtype=torch.bfloat16):
                 out = model(spec)

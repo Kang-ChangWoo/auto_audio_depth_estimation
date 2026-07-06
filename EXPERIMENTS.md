@@ -129,7 +129,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E105 | champion confirmation rerun (20th) | 0.3433 | 1.4787 | 0.5799 | confirm (2.0951; 23-run mean 2.099±0.008) |
 | E106 | champion confirmation rerun (21st) | 0.3425 | 1.4775 | 0.5807 | confirm (2.0919; 24-run mean 2.099±0.008 — halting rerun streak) |
 | E107 | absolute-elevation feat in lsa32/lsa64 local geom bias (E56-style enrichment at local scale) | 0.3465 | 1.4838 | 0.5781 | discard (2.1044, +0.005 within noise; local-scale geometry SATURATED — elevation helped coarse E56/E57 but not local. Geometry axis at ceiling all scales) |
-| E108 | input level-jitter aug (±0.3 common gain on lmag/rmag; ILD/IPD intact) — new augmentation axis for scene-generalization | running | | | — |
+| E108 | input level-jitter aug (±0.3 common gain on lmag/rmag; ILD/IPD intact) — new augmentation axis for scene-generalization | 0.3610 | 1.5252 | 0.5601 | discard (2.1804, +0.081 LARGE loss + higher train loss → absolute level is a LOAD-BEARING depth cue, not a nuisance; jitter destroys signal) |
+| E109 | input CoordConv (append norm freq-row + time-col coords to encoder input) — delay↔distance & freq-aware from layer 1 | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
