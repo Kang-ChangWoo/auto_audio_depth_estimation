@@ -137,7 +137,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | — | **PROCESS FIX (revert bug)** | | | | `git checkout <exp>~1` pointed at OTHER contaminated commits. NEW RULE: always `git checkout 2d668a5 -- train.py` (verified-clean champion) before staging each experiment |
 | E113 | dilation=2 on lsa32 & lsa64 — CLEAN re-run of E112 on verified champion (2× receptive field via F.unfold dilation) | 0.3387 | 1.4814 | 0.5804 | discard (2.0921 vs champion mean 2.099±0.008 → Δ−0.007 WITHIN NOISE, a middling-good champion-range draw; ALSO +16s/ep. VALID conclusion: local attn NOT receptive-field-limited) |
 | E114 | per-sample loss normalization (avg each loss term per-sample then over batch) — align training weighting with eval's per-sample averaging | 0.3536 | 1.4769 | 0.5743 | discard (2.1137, +0.015; FRONTIER SLIDE — RMSE↓1.4769 but ABS_REL↑0.3536; weighting mismatch not the bottleneck) |
-| E115 | QK-norm on GeoSelfBlock rsa16b (L2-norm q,k + learned per-head temp) — probe the winning geometric-attn subsystem, compute-neutral | running | | | — |
+| E115 | QK-norm on GeoSelfBlock rsa16b (L2-norm q,k + learned per-head temp) — probe the winning geometric-attn subsystem, compute-neutral | 0.3419 | 1.4734 | 0.5784 | discard (2.0940, Δ−0.005 at noise floor, within champion draw distribution — single sub-noise draw NOT a win; adds param) |
+| E116 | **drop vestigial encoder blocks e5-e8** (never reached by forward — pix2pix tail) — 24.47M→7.69M params (−16.8M dead), provably output-equiv (RNG-shift only) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 

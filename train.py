@@ -246,11 +246,6 @@ class GeoSelfBlock(nn.Module):
         super().__init__()
         self.h, self.dh = heads, dim // heads
         self.scale = self.dh ** -0.5
-        # E115: QK-norm — L2-normalize q,k then scale by a LEARNED per-head temperature (init to
-        # match the original 1/sqrt(dh) magnitude). Distinct from E47 (temperature only): also
-        # normalizes q/k magnitudes, decoupling "where to attend" from feature norm. Applied to the
-        # geometric self-attn (the subsystem behind every architectural win). Zero extra compute.
-        self.qk_temp = nn.Parameter(torch.full((heads, 1, 1), float(0.5 * math.log(self.dh))))
         self.n1, self.n2 = nn.LayerNorm(dim), nn.LayerNorm(dim)
         self.to_qkv = nn.Linear(dim, dim * 3)
         self.proj = nn.Linear(dim, dim)
@@ -263,8 +258,7 @@ class GeoSelfBlock(nn.Module):
         x = self.n1(q)
         qkv = self.to_qkv(x).reshape(B, N, 3, self.h, self.dh).permute(2, 0, 3, 1, 4)
         qq, kk, vv = qkv[0], qkv[1], qkv[2]                      # (B,h,N,dh)
-        qq = F.normalize(qq, dim=-1); kk = F.normalize(kk, dim=-1)   # E115: QK-norm
-        attn = (qq @ kk.transpose(-2, -1)) * self.qk_temp.exp()   # (B,h,N,N)
+        attn = (qq @ kk.transpose(-2, -1)) * self.scale          # (B,h,N,N)
         bias = self.bias_mlp(self.geom).permute(2, 0, 1)         # (h,N,N)
         attn = (attn + bias[None]).softmax(-1)
         o = (attn @ vv).transpose(1, 2).reshape(B, N, C)
@@ -288,18 +282,16 @@ class Down(nn.Module):
 
 
 class UNet8Encoder(nn.Module):
-    """Explicit pix2pix-style 8-down encoder (256x512 -> 1x2). Exposes e2/e3/e4
-    feature maps used as DPT tokens / skips."""
+    """pix2pix-style down-sampling encoder. RayDPT only consumes e2/e3/e4 (64x128, 32x64,
+    16x32) as DPT tokens/skips, so E116 drops the vestigial deep blocks e5-e8 (256x512 pix2pix
+    tail, never reached by forward) — ~16.9M dead params removed, provably output-equivalent
+    (they were never in the forward/backward path; only the init-RNG shift changes results)."""
     def __init__(self, in_ch, ngf=64):
         super().__init__()
         self.e1 = Down(in_ch,   ngf,     norm=False)   # 128x256
         self.e2 = Down(ngf,     ngf * 2)               # 64x128
         self.e3 = Down(ngf * 2, ngf * 4)               # 32x64
         self.e4 = Down(ngf * 4, ngf * 8)               # 16x32
-        self.e5 = Down(ngf * 8, ngf * 8)               # 8x16
-        self.e6 = Down(ngf * 8, ngf * 8)               # 4x8
-        self.e7 = Down(ngf * 8, ngf * 8)               # 2x4
-        self.e8 = Down(ngf * 8, ngf * 8, norm=False)   # 1x2
 
 
 # ---- local spherical window attention (ray <-> ray) -------------------------
