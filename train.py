@@ -108,7 +108,6 @@ def make_config(args):
             w_rel=0.1,    # confirmed optimal (E32 0.08, E40 0.13 both worse)
             w_grad=0.05,  # champion (E34): edge-loss sweet spot (0.03 & 0.1 both worse)
             w_silog=0.0,
-            w_d1=0.1,     # E110: soft-d1 hinge — put gradient only on pixels OUTSIDE the 1.25x ratio band
         ),
         mode=Cfg(
             mode=args.mode,
@@ -376,6 +375,12 @@ class RayDPT(nn.Module):
         # encoder already encodes position implicitly. Reverted.
         mk_cr = lambda: nn.ModuleList([CrossBlock(dim, heads) for _ in range(nL)])
         self.cr16, self.cr32 = mk_cr(), mk_cr()   # E87: cr64 dropped (F64 removed in E65) — ~0.9M dead params
+        # E111: coarse->fine LAYOUT cross-attn — the 32x64 fine rays cross-attend the 512 geo-reasoned
+        # m16 tokens, so each fine ray SELECTIVELY reads the assembled global room layout (richer than
+        # the uniform bilinear-upsample additive skip). Extends the winning "geometric reasoning over
+        # the assembled layout" axis (E50-E57) to finer scale. Distinct from E61 (re-read audio) / E43
+        # (inject scalar d_c). Cheap: 2048 queries x 512 keys < the existing cr32's 2048x2048.
+        self.c2f = CrossBlock(dim, heads)
         # E22: ray<->ray global self-attn on the 16x32 coarse grid (512 tokens) so the layout rays
         # reason jointly after reading audio. Capacity saturates (E23 depth, E25 heads, E26 mid-scale).
         # E27: make it GEOMETRY-AWARE — add a learned bias on the cos angular distance between ray
@@ -462,7 +467,10 @@ class RayDPT(nn.Module):
             m16 = F16 + torch.sigmoid(self.g4(F16)) * self.se4(e4)            # 16x32 (gated skip)
             m16 = self.rsa16b(m16.flatten(2).transpose(1, 2)).transpose(1, 2).reshape(B, -1, 16, 32)  # E50: geo self-attn on fused
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
-            x = self.lsa32(self.refine32(self.up(m16) + F32 + torch.sigmoid(self.g3(F32)) * self.se3(e3)))   # 32x64
+            x32 = self.up(m16) + F32 + torch.sigmoid(self.g3(F32)) * self.se3(e3)   # 32x64
+            m16_tok = m16.flatten(2).transpose(1, 2)            # (B,512,dim) reasoned coarse layout
+            x32 = self.c2f(x32.flatten(2).transpose(1, 2), m16_tok).transpose(1, 2).reshape(B, -1, 32, 64)  # E111
+            x = self.lsa32(self.refine32(x32))                  # 32x64
             x = self.lsa64(self.refine64(self.up(x) + self.se2(e2)))     # 64x128 (E65: F64 dropped)
         if self.full_decode:                                   # LEARNED upsample 64x128 -> 256x512
             xf = self.up(self.proj_fd(x))                       # 128x256, ngf
@@ -539,15 +547,6 @@ def composite_loss(out, gt, mask, mcfg):
         ld = ((torch.log(out["D"].clamp(min=1e-3)) - torch.log(gt.clamp(min=1e-3))).abs() * mask).sum() \
              / mask.sum().clamp(min=1e-6)
         loss = loss + wl * ld
-    # E110: soft-d1 hinge — directly targets the honest d1 metric (max(D/gt,gt/D)<1.25, i.e.
-    # |log(D/gt)|<log 1.25). Unlike E46's plain log-L1 (which keeps refining already-correct pixels,
-    # neutral), the hinge relu(|log ratio|-log1.25) gives gradient ONLY to pixels OUTSIDE the band,
-    # pushing near-misses across the 1.25x threshold. Aimed at the composite's dominant term.
-    wd1 = getattr(mcfg, "w_d1", 0.0)
-    if wd1:
-        lr_ratio = (torch.log(out["D"].clamp(min=1e-3)) - torch.log(gt.clamp(min=1e-3))).abs()
-        hinge = (F.relu(lr_ratio - math.log(1.25)) * mask).sum() / mask.sum().clamp(min=1e-6)
-        loss = loss + wd1 * hinge
     # E33: edge-aware gradient-matching — match horizontal/vertical depth differences so predicted
     # depth EDGES land where the gt edges are (sharper boundaries -> better RMSE/d1). Masked to
     # valid pairs. w_grad=0 recovers the prior objective.

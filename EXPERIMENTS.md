@@ -131,7 +131,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E107 | absolute-elevation feat in lsa32/lsa64 local geom bias (E56-style enrichment at local scale) | 0.3465 | 1.4838 | 0.5781 | discard (2.1044, +0.005 within noise; local-scale geometry SATURATED — elevation helped coarse E56/E57 but not local. Geometry axis at ceiling all scales) |
 | E108 | input level-jitter aug (±0.3 common gain on lmag/rmag; ILD/IPD intact) — new augmentation axis for scene-generalization | 0.3610 | 1.5252 | 0.5601 | discard (2.1804, +0.081 LARGE loss + higher train loss → absolute level is a LOAD-BEARING depth cue, not a nuisance; jitter destroys signal) |
 | E109 | input CoordConv (append norm freq-row + time-col coords to encoder input) — delay↔distance & freq-aware from layer 1 | 0.3405 | 1.4926 | 0.5749 | discard (2.1124, +0.013 beyond noise; explicit coord/positional info neutral-to-harmful (cf E70/E80/E81) — conv encoder captures position implicitly) |
-| E110 | soft-d1 hinge loss w_d1=0.1 (relu(&#124;log(D/gt)&#124;−log1.25)) — gradient only on pixels outside the 1.25× band, targets dominant honest metric | running | | | — |
+| E110 | soft-d1 hinge loss w_d1=0.1 (relu(&#124;log(D/gt)&#124;−log1.25)) — gradient only on pixels outside the 1.25× band, targets dominant honest metric | 0.3663 | 1.5018 | 0.5585 | discard (2.1731, +0.074 ALL 3 worse incl d1; hinge zero-grad in-band + discontinuity destabilizes — d1-targeted loss shapes fail) |
+| E111 | coarse→fine layout cross-attn (32×64 rays cross-attend the 512 geo-reasoned m16 tokens) — extend winning geometric-reasoning axis to finer scale | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
