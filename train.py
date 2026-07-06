@@ -246,6 +246,11 @@ class GeoSelfBlock(nn.Module):
         super().__init__()
         self.h, self.dh = heads, dim // heads
         self.scale = self.dh ** -0.5
+        # E115: QK-norm — L2-normalize q,k then scale by a LEARNED per-head temperature (init to
+        # match the original 1/sqrt(dh) magnitude). Distinct from E47 (temperature only): also
+        # normalizes q/k magnitudes, decoupling "where to attend" from feature norm. Applied to the
+        # geometric self-attn (the subsystem behind every architectural win). Zero extra compute.
+        self.qk_temp = nn.Parameter(torch.full((heads, 1, 1), float(0.5 * math.log(self.dh))))
         self.n1, self.n2 = nn.LayerNorm(dim), nn.LayerNorm(dim)
         self.to_qkv = nn.Linear(dim, dim * 3)
         self.proj = nn.Linear(dim, dim)
@@ -258,7 +263,8 @@ class GeoSelfBlock(nn.Module):
         x = self.n1(q)
         qkv = self.to_qkv(x).reshape(B, N, 3, self.h, self.dh).permute(2, 0, 3, 1, 4)
         qq, kk, vv = qkv[0], qkv[1], qkv[2]                      # (B,h,N,dh)
-        attn = (qq @ kk.transpose(-2, -1)) * self.scale          # (B,h,N,N)
+        qq = F.normalize(qq, dim=-1); kk = F.normalize(kk, dim=-1)   # E115: QK-norm
+        attn = (qq @ kk.transpose(-2, -1)) * self.qk_temp.exp()   # (B,h,N,N)
         bias = self.bias_mlp(self.geom).permute(2, 0, 1)         # (h,N,N)
         attn = (attn + bias[None]).softmax(-1)
         o = (attn @ vv).transpose(1, 2).reshape(B, N, C)
@@ -494,11 +500,7 @@ def gaussian_blur_erp(x, sigma):
 
 
 def masked_mae(D, gt, mask):
-    # E114: per-SAMPLE masked mean (avg within each sample, then over the batch) to match the
-    # eval harness, which averages compute_errors per sample then over samples. The prior global
-    # sum/sum weighted samples by their valid-pixel count; this weights every sample equally.
-    num = ((D - gt).abs() * mask).sum(dim=(1, 2, 3))
-    return (num / mask.sum(dim=(1, 2, 3)).clamp(min=1e-6)).mean()
+    return ((D - gt).abs() * mask).sum() / mask.sum().clamp(min=1e-6)
 
 
 def masked_berhu(D, gt, mask, c_frac=0.2, eps=1e-6):
@@ -530,8 +532,7 @@ def composite_loss(out, gt, mask, mcfg):
     # gt.clamp(0.01)=0.1m floor matches the metric's near-depth regime; max_depth cancels,
     # so in normalised space this term equals ABS_REL. Pushes near-field (small-gt) accuracy
     # that uniform MAE under-weights -> aims to break the ABS_REL<->RMSE LR tradeoff.
-    rel_num = (((out["D"] - gt).abs() / gt.clamp(min=0.01)) * mask).sum(dim=(1, 2, 3))   # E114: per-sample
-    rel = (rel_num / mask.sum(dim=(1, 2, 3)).clamp(min=1e-6)).mean()
+    rel = (((out["D"] - gt).abs() / gt.clamp(min=0.01)) * mask).sum() / mask.sum().clamp(min=1e-6)
     loss = loss + mcfg.w_rel * rel
     # scale-invariant log term (structure), stacked on the relative term (magnitude).
     if mcfg.w_silog:   # E88: guard — w_silog=0, so skip the unused silog compute each step
@@ -552,8 +553,8 @@ def composite_loss(out, gt, mask, mcfg):
         dyD = (D[:, :, 1:, :] - D[:, :, :-1, :]).abs(); dyg = (g[:, :, 1:, :] - g[:, :, :-1, :]).abs()
         dxD = (D[:, :, :, 1:] - D[:, :, :, :-1]).abs(); dxg = (g[:, :, :, 1:] - g[:, :, :, :-1]).abs()
         my = mask[:, :, 1:, :] * mask[:, :, :-1, :]; mx = mask[:, :, :, 1:] * mask[:, :, :, :-1]
-        gnum = ((dyD - dyg).abs() * my).sum(dim=(1, 2, 3)) + ((dxD - dxg).abs() * mx).sum(dim=(1, 2, 3))   # E114: per-sample
-        grad = (gnum / (my.sum(dim=(1, 2, 3)) + mx.sum(dim=(1, 2, 3))).clamp(min=1e-6)).mean()
+        grad = (((dyD - dyg).abs() * my).sum() + ((dxD - dxg).abs() * mx).sum()) \
+               / (my.sum() + mx.sum()).clamp(min=1e-6)
         loss = loss + wg * grad
     chh, chw = mcfg.coarse_head_h, mcfg.coarse_head_w
     gt_c = F.adaptive_avg_pool2d(gt, (chh, chw))
