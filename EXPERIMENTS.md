@@ -135,7 +135,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E111 | coarse→fine layout cross-attn | 0.3596 | 1.5273 | 0.5606 | ⚠️ CONTAMINATED (baseline had E108 level-jitter too; conclusion INVALID. Not re-run: c2f also cost +21s/ep → budget-loses regardless) |
 | E112 | dilation=2 on lsa32 & lsa64 | 0.3411 | 1.4914 | 0.5732 | ⚠️ CONTAMINATED (baseline had E109 CoordConv too, +0.013 alone; dilation's true effect inconclusive). RE-RUN CLEANLY as E113 |
 | — | **PROCESS FIX (revert bug)** | | | | `git checkout <exp>~1` pointed at OTHER contaminated commits. NEW RULE: always `git checkout 2d668a5 -- train.py` (verified-clean champion) before staging each experiment |
-| E113 | dilation=2 on lsa32 & lsa64 — CLEAN re-run of E112 on verified champion (2× receptive field via F.unfold dilation) | running | | | — |
+| E113 | dilation=2 on lsa32 & lsa64 — CLEAN re-run of E112 on verified champion (2× receptive field via F.unfold dilation) | 0.3387 | 1.4814 | 0.5804 | discard (2.0921 vs champion mean 2.099±0.008 → Δ−0.007 WITHIN NOISE, a middling-good champion-range draw; ALSO +16s/ep. VALID conclusion: local attn NOT receptive-field-limited) |
+| E114 | per-sample loss normalization (avg each loss term per-sample then over batch) — align training weighting with eval's per-sample averaging | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 

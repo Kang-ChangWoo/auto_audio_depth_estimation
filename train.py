@@ -297,24 +297,22 @@ class UNet8Encoder(nn.Module):
 
 
 # ---- local spherical window attention (ray <-> ray) -------------------------
-def _window_kv(t, win, dilation=1):
-    """(B,C,H,W) -> (B,C,win*win,H,W): neighbours via circular-W / replicate-H pad.
-    E113: `dilation` spaces the taps out to enlarge the receptive field at the same tap count
-    (win*win) — F.unfold samples every `dilation`-th neighbour."""
-    pad = (win // 2) * dilation
+def _window_kv(t, win):
+    """(B,C,H,W) -> (B,C,win*win,H,W): neighbours via circular-W / replicate-H pad."""
+    pad = win // 2
     t = torch.cat([t[..., -pad:], t, t[..., :pad]], dim=-1)        # circular azimuth wrap
     t = F.pad(t, (0, 0, pad, pad), mode="replicate")               # replicate elevation (poles)
     B, C, Hp, Wp = t.shape
-    cols = F.unfold(t, kernel_size=win, dilation=dilation)         # (B, C*win*win, H*W)
-    return cols.view(B, C, win * win, Hp - 2 * pad, Wp - 2 * pad)
+    H, W = Hp - 2 * pad, Wp - 2 * pad
+    cols = F.unfold(t, kernel_size=win)                            # (B, C*win*win, H*W)
+    return cols.view(B, C, win * win, H, W)
 
 
-def _geom_bias_feats(H, W, win, dilation=1):
-    """(H, win*win, 3): [wrapped dtheta, dphi, cos angular distance] per row/offset.
-    Tap offsets scale with `dilation` so the geometry bias reflects the true (wider) spacing."""
+def _geom_bias_feats(H, W, win):
+    """(H, win*win, 3): [wrapped dtheta, dphi, cos angular distance] per row/offset."""
+    pad = win // 2
     el = (math.pi / 2 - (torch.arange(H).float() + 0.5) / H * math.pi)     # (H,)
-    taps = [(k - win // 2) * dilation for k in range(win)]
-    offs = [(dr, dc) for dr in taps for dc in taps]
+    offs = [(dr, dc) for dr in range(-pad, pad + 1) for dc in range(-pad, pad + 1)]
     out = torch.zeros(H, len(offs), 3)
     dphi_u, dth_u = math.pi / H, 2 * math.pi / W
     for h in range(H):
@@ -329,20 +327,20 @@ def _geom_bias_feats(H, W, win, dilation=1):
 
 
 class LocalSphericalAttention(nn.Module):
-    def __init__(self, dim, heads, H, W, win=5, dilation=1):
+    def __init__(self, dim, heads, H, W, win=5):
         super().__init__()
-        self.h, self.dh, self.win, self.dil = heads, dim // heads, win, dilation
+        self.h, self.dh, self.win = heads, dim // heads, win
         self.scale = self.dh ** -0.5
         self.to_qkv = nn.Conv2d(dim, dim * 3, 1)
         self.proj = nn.Conv2d(dim, dim, 1)
-        self.register_buffer("geom", _geom_bias_feats(H, W, win, dilation))  # (H,K,3)
+        self.register_buffer("geom", _geom_bias_feats(H, W, win))          # (H,K,3)
         self.bias_mlp = nn.Sequential(nn.Linear(3, 64), nn.GELU(), nn.Linear(64, heads))
 
     def forward(self, x):
         B, C, H, W = x.shape
         q, k, v = self.to_qkv(x).chunk(3, 1)
-        kw = _window_kv(k, self.win, self.dil).view(B, self.h, self.dh, self.win * self.win, H, W)
-        vw = _window_kv(v, self.win, self.dil).view(B, self.h, self.dh, self.win * self.win, H, W)
+        kw = _window_kv(k, self.win).view(B, self.h, self.dh, self.win * self.win, H, W)
+        vw = _window_kv(v, self.win).view(B, self.h, self.dh, self.win * self.win, H, W)
         q = q.view(B, self.h, self.dh, H, W)
         attn = torch.einsum("bndhw,bndkhw->bnkhw", q, kw) * self.scale     # (B,nh,K,H,W)
         bias = self.bias_mlp(self.geom).permute(2, 1, 0)                   # (nh,K,H)
@@ -416,12 +414,8 @@ class RayDPT(nn.Module):
         self.g4 = nn.Conv2d(dim, dim, 1); self.g3 = nn.Conv2d(dim, dim, 1)   # E86: dropped dead g2 (unused since E65 removed F64's 64-scale gated skip)
         self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False)
         self.refine32 = Refine(dim); self.refine64 = Refine(dim)
-        # E113: dilation=2 on both local spherical-attn blocks — doubles the receptive field at the
-        # same tap count (F.unfold dilation). CLEAN re-run of E112 (whose baseline was contaminated
-        # with CoordConv). Tests whether local ray<->ray attention is receptive-field-limited (walls/
-        # floors span many pixels) vs tap-count-limited (E41: larger dense window too costly).
-        self.lsa32 = LocalSphericalAttention(dim, heads, 32, 64, getattr(cfg, "raydpt_win32", 5), dilation=2)
-        self.lsa64 = LocalSphericalAttention(dim, heads, 64, 128, getattr(cfg, "raydpt_win64", 3), dilation=2)
+        self.lsa32 = LocalSphericalAttention(dim, heads, 32, 64, getattr(cfg, "raydpt_win32", 5))
+        self.lsa64 = LocalSphericalAttention(dim, heads, 64, 128, getattr(cfg, "raydpt_win64", 3))
         self.coarse_head = nn.Conv2d(dim, 1, 1)
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
         # E66 tried a learned 128x256 decode — RMSE got WORSE (1.485 vs 1.480); resolution is NOT the
@@ -500,7 +494,11 @@ def gaussian_blur_erp(x, sigma):
 
 
 def masked_mae(D, gt, mask):
-    return ((D - gt).abs() * mask).sum() / mask.sum().clamp(min=1e-6)
+    # E114: per-SAMPLE masked mean (avg within each sample, then over the batch) to match the
+    # eval harness, which averages compute_errors per sample then over samples. The prior global
+    # sum/sum weighted samples by their valid-pixel count; this weights every sample equally.
+    num = ((D - gt).abs() * mask).sum(dim=(1, 2, 3))
+    return (num / mask.sum(dim=(1, 2, 3)).clamp(min=1e-6)).mean()
 
 
 def masked_berhu(D, gt, mask, c_frac=0.2, eps=1e-6):
@@ -532,7 +530,8 @@ def composite_loss(out, gt, mask, mcfg):
     # gt.clamp(0.01)=0.1m floor matches the metric's near-depth regime; max_depth cancels,
     # so in normalised space this term equals ABS_REL. Pushes near-field (small-gt) accuracy
     # that uniform MAE under-weights -> aims to break the ABS_REL<->RMSE LR tradeoff.
-    rel = (((out["D"] - gt).abs() / gt.clamp(min=0.01)) * mask).sum() / mask.sum().clamp(min=1e-6)
+    rel_num = (((out["D"] - gt).abs() / gt.clamp(min=0.01)) * mask).sum(dim=(1, 2, 3))   # E114: per-sample
+    rel = (rel_num / mask.sum(dim=(1, 2, 3)).clamp(min=1e-6)).mean()
     loss = loss + mcfg.w_rel * rel
     # scale-invariant log term (structure), stacked on the relative term (magnitude).
     if mcfg.w_silog:   # E88: guard — w_silog=0, so skip the unused silog compute each step
@@ -553,8 +552,8 @@ def composite_loss(out, gt, mask, mcfg):
         dyD = (D[:, :, 1:, :] - D[:, :, :-1, :]).abs(); dyg = (g[:, :, 1:, :] - g[:, :, :-1, :]).abs()
         dxD = (D[:, :, :, 1:] - D[:, :, :, :-1]).abs(); dxg = (g[:, :, :, 1:] - g[:, :, :, :-1]).abs()
         my = mask[:, :, 1:, :] * mask[:, :, :-1, :]; mx = mask[:, :, :, 1:] * mask[:, :, :, :-1]
-        grad = (((dyD - dyg).abs() * my).sum() + ((dxD - dxg).abs() * mx).sum()) \
-               / (my.sum() + mx.sum()).clamp(min=1e-6)
+        gnum = ((dyD - dyg).abs() * my).sum(dim=(1, 2, 3)) + ((dxD - dxg).abs() * mx).sum(dim=(1, 2, 3))   # E114: per-sample
+        grad = (gnum / (my.sum(dim=(1, 2, 3)) + mx.sum(dim=(1, 2, 3))).clamp(min=1e-6)).mean()
         loss = loss + wg * grad
     chh, chw = mcfg.coarse_head_h, mcfg.coarse_head_w
     gt_c = F.adaptive_avg_pool2d(gt, (chh, chw))
