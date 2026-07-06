@@ -309,11 +309,15 @@ def _window_kv(t, win):
 
 
 def _geom_bias_feats(H, W, win):
-    """(H, win*win, 3): [wrapped dtheta, dphi, cos angular distance] per row/offset."""
+    """(H, win*win, 4): [wrapped dtheta, dphi, cos angular distance, absolute elevation]
+    per row/offset. E107: the absolute row elevation is added (mirroring E56/E57's richer
+    post-fusion coarse geom) so the local window attention can learn pole-vs-equator-specific
+    behaviour — ERP's polar distortion means a fixed pixel window subtends a very different
+    solid angle near the poles than at the equator, which the relative-only feats can't express."""
     pad = win // 2
     el = (math.pi / 2 - (torch.arange(H).float() + 0.5) / H * math.pi)     # (H,)
     offs = [(dr, dc) for dr in range(-pad, pad + 1) for dc in range(-pad, pad + 1)]
-    out = torch.zeros(H, len(offs), 3)
+    out = torch.zeros(H, len(offs), 4)
     dphi_u, dth_u = math.pi / H, 2 * math.pi / W
     for h in range(H):
         ei = el[h]
@@ -322,7 +326,7 @@ def _geom_bias_feats(H, W, win):
             dth = dc * dth_u
             cosang = (torch.sin(ei) * torch.sin(ej)
                       + torch.cos(ei) * torch.cos(ej) * math.cos(dth))
-            out[h, k] = torch.tensor([dth, dr * dphi_u, float(cosang)])
+            out[h, k] = torch.tensor([dth, dr * dphi_u, float(cosang), float(ei)])
     return out
 
 
@@ -333,8 +337,8 @@ class LocalSphericalAttention(nn.Module):
         self.scale = self.dh ** -0.5
         self.to_qkv = nn.Conv2d(dim, dim * 3, 1)
         self.proj = nn.Conv2d(dim, dim, 1)
-        self.register_buffer("geom", _geom_bias_feats(H, W, win))          # (H,K,3)
-        self.bias_mlp = nn.Sequential(nn.Linear(3, 64), nn.GELU(), nn.Linear(64, heads))
+        self.register_buffer("geom", _geom_bias_feats(H, W, win))          # (H,K,4) E107: +abs elevation
+        self.bias_mlp = nn.Sequential(nn.Linear(4, 64), nn.GELU(), nn.Linear(64, heads))
 
     def forward(self, x):
         B, C, H, W = x.shape

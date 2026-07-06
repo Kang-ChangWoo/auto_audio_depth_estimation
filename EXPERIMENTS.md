@@ -127,7 +127,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E103 | champion confirmation rerun (18th) | 0.3444 | 1.4861 | 0.5739 | confirm (2.1135; 21-run mean 2.099±0.008) |
 | E104 | champion confirmation rerun (19th) | 0.3416 | 1.4796 | 0.5775 | confirm (2.0995; 22-run mean 2.099±0.008) |
 | E105 | champion confirmation rerun (20th) | 0.3433 | 1.4787 | 0.5799 | confirm (2.0951; 23-run mean 2.099±0.008) |
-| E106 | champion confirmation rerun (21st) | running | | | — |
+| E106 | champion confirmation rerun (21st) | 0.3425 | 1.4775 | 0.5807 | confirm (2.0919; 24-run mean 2.099±0.008 — halting rerun streak) |
+| E107 | absolute-elevation feat in lsa32/lsa64 local geom bias (E56-style enrichment at local scale) | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
