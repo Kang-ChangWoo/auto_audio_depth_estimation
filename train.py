@@ -495,6 +495,15 @@ def masked_mae(D, gt, mask):
     return ((D - gt).abs() * mask).sum() / mask.sum().clamp(min=1e-6)
 
 
+def masked_charbonnier(D, gt, mask, eps=0.02):
+    """Charbonnier (smooth-L1): sqrt(r^2+eps^2)-eps. ~L1 for large residuals (keeps MAE's outlier
+    robustness — NOT L2-far like berHu, so no ABS_REL<->RMSE frontier slide) but the gradient ->0
+    as r->0, letting already-close pixels settle precisely instead of oscillating under MAE's
+    constant gradient. E118: replaces the main-term MAE."""
+    r = torch.sqrt((D - gt) ** 2 + eps * eps) - eps
+    return (r * mask).sum() / mask.sum().clamp(min=1e-6)
+
+
 def masked_berhu(D, gt, mask, c_frac=0.2, eps=1e-6):
     """Reverse-Huber (berHu): L1 for small residuals, L2 for large ones (threshold c =
     c_frac * max valid residual). Up-weights large-depth errors -> targets RMSE, while
@@ -518,7 +527,7 @@ def silog_loss(D, gt, mask, lam=0.85, eps=1e-6):
 def composite_loss(out, gt, mask, mcfg):
     """Band-limited objective: dense masked-MAE + coarse-layout + low-pass.
     gt / out['D'] are normalised depth in [0,1]. Returns (loss, parts)."""
-    main = masked_mae(out["D"], gt, mask)   # E34 champion (berHu/blend E38-E40 = RMSE frontier slide, no composite gain)
+    main = masked_charbonnier(out["D"], gt, mask)   # E118: Charbonnier (smooth-L1) — MAE's near-optimum precision fix, keeps L1-far robustness (no frontier slide)
     loss = mcfg.w_dense * main
     # relative-error term: directly targets the eval metric ABS_REL = mean(|D-gt|/gt).
     # gt.clamp(0.01)=0.1m floor matches the metric's near-depth regime; max_depth cancels,
@@ -556,11 +565,7 @@ def composite_loss(out, gt, mask, mcfg):
         lc = masked_mae(dco, gt_c, m_c)
     else:
         lc = masked_mae(F.adaptive_avg_pool2d(out["D"], (chh, chw)), gt_c, m_c)
-    # E117: berHu (reverse-Huber) on the LOW-PASS term instead of MAE. berHu is a strong RMSE lever
-    # (E38: 1.4746 on the main term) but on the main term it slid the frontier (hurt ABS_REL/d1).
-    # Confining its L2-like large-residual emphasis to the blurred/low-freq depth targets far/global
-    # (RMSE-relevant) structure while the fine near-field detail stays MAE-driven (main term).
-    ll = masked_berhu(gaussian_blur_erp(out["D"], 3.0), gaussian_blur_erp(gt, 3.0), mask)
+    ll = masked_mae(gaussian_blur_erp(out["D"], 3.0), gaussian_blur_erp(gt, 3.0), mask)
     loss = loss + mcfg.w_coarse_layout * lc + mcfg.w_low * ll
     return loss, {"mae": float(main.detach()), "rel": float(rel.detach()),
                   "lc": float(lc.detach()), "llow": float(ll.detach())}
