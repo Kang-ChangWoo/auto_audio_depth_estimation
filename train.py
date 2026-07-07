@@ -373,6 +373,11 @@ class RayDPT(nn.Module):
         # encoder already encodes position implicitly. Reverted.
         mk_cr = lambda: nn.ModuleList([CrossBlock(dim, heads) for _ in range(nL)])
         self.cr16, self.cr32 = mk_cr(), mk_cr()   # E87: cr64 dropped (F64 removed in E65) — ~0.9M dead params
+        # E126: learnable "register"/summary KV tokens appended to the coarse cross-attn (cr16) audio KV.
+        # A small learned prior codebook / associative scratchpad the coarse rays can attend to (distinct
+        # from the mapped global-audio FiLM E44/E63 — these are free parameters, not an audio summary).
+        # Cheap (8 extra keys). Init small so it starts ~equivalent to champion.
+        self.reg16 = nn.Parameter(torch.randn(1, 8, dim) * 0.02)
         # E22: ray<->ray global self-attn on the 16x32 coarse grid (512 tokens) so the layout rays
         # reason jointly after reading audio. Capacity saturates (E23 depth, E25 heads, E26 mid-scale).
         # E27: make it GEOMETRY-AWARE — add a learned bias on the cos angular distance between ray
@@ -452,7 +457,8 @@ class RayDPT(nn.Module):
         else:
             kv3 = self.kv_e3(e3.flatten(2).transpose(1, 2))     # (B,2048,dim)
             # E73 tried coarse rays attending fine audio (kv4+kv3) — neutral (fine audio already enters via F32). Reverted.
-            F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4, B, 16, 32)
+            kv4_reg = torch.cat([kv4, self.reg16.expand(B, -1, -1)], dim=1)   # E126: +8 register tokens
+            F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4_reg, B, 16, 32)
             F32 = self._cross(self.rp32, self.rf32, self.cr32, kv3, B, 32, 64)
             # E65: drop the finest-scale F64 cross-attn (8192 ray queries — one of the biggest ops).
             # Ray-conditioning stays via 16/32-scale cross-attn; lsa64 local attn + e2 skip carry 64-scale.
