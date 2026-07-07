@@ -425,12 +425,7 @@ class RayDPT(nn.Module):
         # (16x32, same ERP grid) share the sphere, so a learned angular-distance bias conditions WHICH
         # audio token each ray reads (extends the productive geometry axis to the cross-attn subsystem).
         # cr32 stays vanilla (its 2048x2048 key grid would make a per-pair geom bias too costly).
-        # E124: 3rd geometry-aware cross block at cr16 (nL 2->3). Vanilla cr16 depth SATURATED (E31,
-        # 2->3 no help), but the E50->E51 precedent showed geometry-aware SELF-attn depth WON where
-        # vanilla self-attn depth had saturated (E23) — testing whether that pattern repeats for the
-        # cross-attn subsystem. Cheap (512 tokens, ~+8s/ep).
-        n_cr16 = nL + 1
-        self.cr16 = nn.ModuleList([GeoCrossBlock(dim, heads, geom16b_t()) for _ in range(n_cr16)])
+        self.cr16 = nn.ModuleList([GeoCrossBlock(dim, heads, geom16b_t()) for _ in range(nL)])
         self.cr32 = nn.ModuleList([CrossBlock(dim, heads) for _ in range(nL)])   # E87: cr64 dropped (F64 removed in E65)
         # E22/E27: ray<->ray self-attn on the fused coarse grid, geometry-aware via the cos-ang-dist bias.
         # 2 geometry blocks is the CONFIRMED sweet spot: E67 re-tested 3 blocks WITH budget+deep-anneal
