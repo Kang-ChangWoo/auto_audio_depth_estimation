@@ -145,7 +145,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E120 | GroupNorm instead of BatchNorm in all conv blocks — batch-independent norm removes EMA-eval/BN-running-stat mismatch, may generalize better to unseen rooms | 0.3560 | 1.5294 | 0.5610 | discard (2.1771, +0.078 LARGE loss — BN running-stats are load-bearing here; GN also slower → only 9 epochs, under-annealed) |
 | **E121** | **geometry-aware coarse cross-attn (GeoCrossBlock cr16: learned angular-dist bias on ray-query × audio-token, both on 16×32 ERP grid)** — extends the productive geometry axis to the cross-attn subsystem | **0.3424** | **1.4708** | **0.5806** | **KEEP — NEW CHAMPION** (comp 2.0878; confirmed by E122) |
 | **E122** | **E121 confirmation rerun (identical config)** | **0.3420** | **1.4748** | **0.5803** | **confirm — CROWNS E121** (comp 2.0906; 2-draw mean 2.0892 ≤ 2.091, both at/below champion best-edge, Δ−0.010 ~1.7σ vs mean 2.099. New revert-baseline `647bfc7`) |
-| E123 | extend geometry-aware cross-attn to the 32×64 scale (cr32 → GeoCrossBlock with geom32) — the natural next probe on the freshly-productive axis | running | | | — |
+| E123 | extend geometry-aware cross-attn to the 32×64 scale (cr32 → GeoCrossBlock with geom32) — the natural next probe on the freshly-productive axis | crash | | | discard (BUDGET BUST: epoch 1 = 784s, ~660s steady vs champion 380s — manual 2048×2048 attn ×2 ~2× slower → ~5 epochs, under-anneals → auto-loses; killed ep1. Geometry-cross-attn win confined to the cheap 512-token coarse scale) |
+| E124 | next: cost-neutral geometry-cross-attn extensions at the coarse scale only (cr16 already 2 blocks/saturated depth-wise; probe richer conditioning or a fresh axis) | staged | | | — |
 
 ## Current champion & summary (~120 experiments)
 

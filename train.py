@@ -410,29 +410,23 @@ class RayDPT(nn.Module):
         # Coarse 16x32 ERP pairwise geometry (E56/E57): [cos-ang-dist, elev_i, elev_j, cos(daz),
         # sin(daz)] between every pair of coarse directions. Built ONCE here — reused by both the
         # geometry-aware cross-attn (cr16, E121) and the post-fusion geo self-attn (rsa16b, E50/E56/E57).
-        def _pair_geom(h, w):
-            """(h*w, h*w, 5) pairwise ERP geometry: [cos-ang-dist, elev_i, elev_j, cos(daz), sin(daz)]."""
-            el, az = erp_grid(h, w)
-            d = np.stack([np.cos(el) * np.cos(az), np.cos(el) * np.sin(az), np.sin(el)],
-                         -1).reshape(-1, 3).astype(np.float32)
-            cosd = np.clip(d @ d.T, -1.0, 1.0)
-            elf = el.reshape(-1).astype(np.float32); azf = az.reshape(-1).astype(np.float32)
-            n = elf.shape[0]
-            daz = azf[None, :] - azf[:, None]
-            return np.stack([cosd, np.broadcast_to(elf[:, None], (n, n)),
-                             np.broadcast_to(elf[None, :], (n, n)),
-                             np.cos(daz), np.sin(daz)], -1).astype(np.float32)
-        geom16b = _pair_geom(16, 32)                                            # (512,512,5)
+        el16, az16 = erp_grid(16, 32)
+        d16 = np.stack([np.cos(el16) * np.cos(az16), np.cos(el16) * np.sin(az16),
+                        np.sin(el16)], -1).reshape(-1, 3).astype(np.float32)   # (512,3) unit dirs
+        cosd = np.clip(d16 @ d16.T, -1.0, 1.0)                                  # (512,512) cos ang dist
+        elf = el16.reshape(-1).astype(np.float32); azf = az16.reshape(-1).astype(np.float32)
+        N = elf.shape[0]
+        daz = azf[None, :] - azf[:, None]                                       # (512,512) azimuth diff
+        geom16b = np.stack([cosd, np.broadcast_to(elf[:, None], (N, N)),
+                            np.broadcast_to(elf[None, :], (N, N)),
+                            np.cos(daz), np.sin(daz)], -1).astype(np.float32)   # (512,512,5)
         geom16b_t = lambda: torch.from_numpy(geom16b.copy())
-        geom32 = _pair_geom(32, 64)                                             # (2048,2048,5) — E123
-        geom32_t = lambda: torch.from_numpy(geom32.copy())
         # E121: cr16 is GEOMETRY-AWARE cross-attn — the ray query (16x32) and the e4 audio token
         # (16x32, same ERP grid) share the sphere, so a learned angular-distance bias conditions WHICH
         # audio token each ray reads (extends the productive geometry axis to the cross-attn subsystem).
+        # cr32 stays vanilla (its 2048x2048 key grid would make a per-pair geom bias too costly).
         self.cr16 = nn.ModuleList([GeoCrossBlock(dim, heads, geom16b_t()) for _ in range(nL)])
-        # E123: extend the same geometry-aware cross-attn to the 32x64 scale (2048 ray queries x 2048
-        # e3 audio tokens, same ERP grid). Costlier (materialises 2048x2048 attn), watch the budget.
-        self.cr32 = nn.ModuleList([GeoCrossBlock(dim, heads, geom32_t()) for _ in range(nL)])   # E87: cr64 dropped (F64 removed in E65)
+        self.cr32 = nn.ModuleList([CrossBlock(dim, heads) for _ in range(nL)])   # E87: cr64 dropped (F64 removed in E65)
         # E22/E27: ray<->ray self-attn on the fused coarse grid, geometry-aware via the cos-ang-dist bias.
         # 2 geometry blocks is the CONFIRMED sweet spot: E67 re-tested 3 blocks WITH budget+deep-anneal
         # (F64 gone) and it was identical (2.0949 vs 2.0934) — geometry saturates at 2, not a budget limit.
