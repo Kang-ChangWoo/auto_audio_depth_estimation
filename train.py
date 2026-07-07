@@ -615,6 +615,12 @@ def evaluate(model, loader, mcfg, device, max_depth, collect_vis=None,
         spec = b["spec"].to(device, non_blocking=True)
         gt = b["depth"].to(device); mask = b["mask"].to(device)
         out = model(spec)
+        # E127: L/R-flip test-time augmentation. The model is trained L/R-equivariant (flip aug), so
+        # average its prediction with the mirrored-input prediction (swap audio L/R, flip depth width
+        # back). Deterministic honest ensembling over the horizontal symmetry -> lower RMSE variance.
+        # Eval-only (training loop unchanged); costs one extra forward per batch.
+        out_f = model(swap_audio_lr(spec))
+        out["D"] = 0.5 * (out["D"] + torch.flip(out_f["D"], dims=[-1]))
         loss, _ = composite_loss(out, gt, mask, mcfg)
         val_losses.append(float(loss.detach()))
         pred_m = (out["D"] * max_depth).cpu().numpy()
