@@ -556,7 +556,11 @@ def composite_loss(out, gt, mask, mcfg):
         lc = masked_mae(dco, gt_c, m_c)
     else:
         lc = masked_mae(F.adaptive_avg_pool2d(out["D"], (chh, chw)), gt_c, m_c)
-    ll = masked_mae(gaussian_blur_erp(out["D"], 3.0), gaussian_blur_erp(gt, 3.0), mask)
+    # E117: berHu (reverse-Huber) on the LOW-PASS term instead of MAE. berHu is a strong RMSE lever
+    # (E38: 1.4746 on the main term) but on the main term it slid the frontier (hurt ABS_REL/d1).
+    # Confining its L2-like large-residual emphasis to the blurred/low-freq depth targets far/global
+    # (RMSE-relevant) structure while the fine near-field detail stays MAE-driven (main term).
+    ll = masked_berhu(gaussian_blur_erp(out["D"], 3.0), gaussian_blur_erp(gt, 3.0), mask)
     loss = loss + mcfg.w_coarse_layout * lc + mcfg.w_low * ll
     return loss, {"mae": float(main.detach()), "rel": float(rel.detach()),
                   "lc": float(lc.detach()), "llow": float(ll.detach())}

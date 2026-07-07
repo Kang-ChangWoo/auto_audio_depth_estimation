@@ -138,7 +138,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E113 | dilation=2 on lsa32 & lsa64 — CLEAN re-run of E112 on verified champion (2× receptive field via F.unfold dilation) | 0.3387 | 1.4814 | 0.5804 | discard (2.0921 vs champion mean 2.099±0.008 → Δ−0.007 WITHIN NOISE, a middling-good champion-range draw; ALSO +16s/ep. VALID conclusion: local attn NOT receptive-field-limited) |
 | E114 | per-sample loss normalization (avg each loss term per-sample then over batch) — align training weighting with eval's per-sample averaging | 0.3536 | 1.4769 | 0.5743 | discard (2.1137, +0.015; FRONTIER SLIDE — RMSE↓1.4769 but ABS_REL↑0.3536; weighting mismatch not the bottleneck) |
 | E115 | QK-norm on GeoSelfBlock rsa16b (L2-norm q,k + learned per-head temp) — probe the winning geometric-attn subsystem, compute-neutral | 0.3419 | 1.4734 | 0.5784 | discard (2.0940, Δ−0.005 at noise floor, within champion draw distribution — single sub-noise draw NOT a win; adds param) |
-| E116 | **drop vestigial encoder blocks e5-e8** (never reached by forward — pix2pix tail) — 24.47M→7.69M params (−16.8M dead), provably output-equiv (RNG-shift only) | running | | | — |
+| E116 | **drop vestigial encoder blocks e5-e8** (never reached by forward — pix2pix tail) — 24.47M→7.69M params (−16.8M dead), provably output-equiv (RNG-shift only) | 0.3448 | 1.4721 | 0.5827 | **KEEP — major simplification** (comp 2.0859, within-noise-or-better vs 2.099, below best draws; −69% params). NEW BASELINE commit `fef2779` |
+| E117 | berHu on the low-pass term (llow) instead of MAE — capture berHu's strong RMSE lever (E38: 1.4746) confined to the low-freq/global term, avoiding the main-term frontier slide | running | | | — |
 
 ## Current champion & summary (~50 experiments)
 
