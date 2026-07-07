@@ -108,6 +108,7 @@ def make_config(args):
             w_rel=0.1,    # confirmed optimal (E32 0.08, E40 0.13 both worse)
             w_grad=0.05,  # champion (E34): edge-loss sweet spot (0.03 & 0.1 both worse)
             w_silog=0.0,
+            w_mid=0.5,    # E119: deep-supervision weight on the 64x128 depth head
         ),
         mode=Cfg(
             mode=args.mode,
@@ -415,6 +416,7 @@ class RayDPT(nn.Module):
         self.lsa32 = LocalSphericalAttention(dim, heads, 32, 64, getattr(cfg, "raydpt_win32", 5))
         self.lsa64 = LocalSphericalAttention(dim, heads, 64, 128, getattr(cfg, "raydpt_win64", 3))
         self.coarse_head = nn.Conv2d(dim, 1, 1)
+        self.mid_head = nn.Conv2d(dim, 1, 1)   # E119: deep-supervision head at the 64x128 ray features
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
         # E66 tried a learned 128x256 decode — RMSE got WORSE (1.485 vs 1.480); resolution is NOT the
         # bottleneck (depth field smooth, bilinear adequate). Reverted. Accuracy is audio->depth-limited.
@@ -461,6 +463,7 @@ class RayDPT(nn.Module):
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
             x = self.lsa32(self.refine32(self.up(m16) + F32 + torch.sigmoid(self.g3(F32)) * self.se3(e3)))   # 32x64
             x = self.lsa64(self.refine64(self.up(x) + self.se2(e2)))     # 64x128 (E65: F64 dropped)
+        d_mid = torch.sigmoid(self.mid_head(x))                # E119: deep supervision at 64x128
         if self.full_decode:                                   # LEARNED upsample 64x128 -> 256x512
             xf = self.up(self.proj_fd(x))                       # 128x256, ngf
             xf = self.dec1(xf + self.se1(e1))                  # + e1 skip
@@ -469,7 +472,7 @@ class RayDPT(nn.Module):
         else:
             D = torch.sigmoid(self.head(x))
             D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
-        return {"D": D, "D0": D, "extras": {"D_coarse": d_c}}
+        return {"D": D, "D0": D, "extras": {"D_coarse": d_c, "D_mid": d_mid}}
 
 
 def build_model(cfg):
@@ -495,15 +498,6 @@ def masked_mae(D, gt, mask):
     return ((D - gt).abs() * mask).sum() / mask.sum().clamp(min=1e-6)
 
 
-def masked_charbonnier(D, gt, mask, eps=0.02):
-    """Charbonnier (smooth-L1): sqrt(r^2+eps^2)-eps. ~L1 for large residuals (keeps MAE's outlier
-    robustness — NOT L2-far like berHu, so no ABS_REL<->RMSE frontier slide) but the gradient ->0
-    as r->0, letting already-close pixels settle precisely instead of oscillating under MAE's
-    constant gradient. E118: replaces the main-term MAE."""
-    r = torch.sqrt((D - gt) ** 2 + eps * eps) - eps
-    return (r * mask).sum() / mask.sum().clamp(min=1e-6)
-
-
 def masked_berhu(D, gt, mask, c_frac=0.2, eps=1e-6):
     """Reverse-Huber (berHu): L1 for small residuals, L2 for large ones (threshold c =
     c_frac * max valid residual). Up-weights large-depth errors -> targets RMSE, while
@@ -527,7 +521,7 @@ def silog_loss(D, gt, mask, lam=0.85, eps=1e-6):
 def composite_loss(out, gt, mask, mcfg):
     """Band-limited objective: dense masked-MAE + coarse-layout + low-pass.
     gt / out['D'] are normalised depth in [0,1]. Returns (loss, parts)."""
-    main = masked_charbonnier(out["D"], gt, mask)   # E118: Charbonnier (smooth-L1) — MAE's near-optimum precision fix, keeps L1-far robustness (no frontier slide)
+    main = masked_mae(out["D"], gt, mask)   # E34 champion (berHu/blend E38-E40 = RMSE frontier slide, no composite gain)
     loss = mcfg.w_dense * main
     # relative-error term: directly targets the eval metric ABS_REL = mean(|D-gt|/gt).
     # gt.clamp(0.01)=0.1m floor matches the metric's near-depth regime; max_depth cancels,
@@ -567,6 +561,15 @@ def composite_loss(out, gt, mask, mcfg):
         lc = masked_mae(F.adaptive_avg_pool2d(out["D"], (chh, chw)), gt_c, m_c)
     ll = masked_mae(gaussian_blur_erp(out["D"], 3.0), gaussian_blur_erp(gt, 3.0), mask)
     loss = loss + mcfg.w_coarse_layout * lc + mcfg.w_low * ll
+    # E119: deep supervision — a direct MAE loss on the 64x128 ray features (finest ray-conditioned
+    # scale, currently supervised only indirectly via the final head). Improves multi-scale gradient
+    # flow. gt/mask pooled to 64x128; cheap (1x1 head + one pooled MAE).
+    wm = getattr(mcfg, "w_mid", 0.0)
+    dmid = out["extras"].get("D_mid")
+    if wm and dmid is not None:
+        mh, mw = dmid.shape[-2:]
+        l_mid = masked_mae(dmid, F.adaptive_avg_pool2d(gt, (mh, mw)), F.adaptive_avg_pool2d(mask, (mh, mw)))
+        loss = loss + wm * l_mid
     return loss, {"mae": float(main.detach()), "rel": float(rel.detach()),
                   "lc": float(lc.detach()), "llow": float(ll.detach())}
 
