@@ -266,42 +266,6 @@ class GeoSelfBlock(nn.Module):
         return q + self.ffn(self.n2(q))
 
 
-class GeoCrossBlock(nn.Module):
-    """Ray<->audio cross-attention with a learned angular-distance bias between the ray
-    QUERY direction and the audio-token KEY direction. At the coarse scale the 512 ray
-    queries (16x32 ERP) and the 512 e4 audio tokens (16x32, same ERP grid) share the
-    sphere, so the same pairwise geometry (geom16b, E56/E57) applies to WHICH audio token
-    a ray reads — extends the geometry-aware reasoning (rsa16b self-attn) to the cross-attn
-    subsystem (E121). The bias is a learned MLP of the geom feats (init near 0 -> a soft,
-    optional locality prior over a global cross-attn; can learn to vanish if unhelpful).
-    geom: (Nq, Nkv, G)."""
-    def __init__(self, dim, heads, geom):
-        super().__init__()
-        self.h, self.dh = heads, dim // heads
-        self.scale = self.dh ** -0.5
-        self.n1, self.n2 = nn.LayerNorm(dim), nn.LayerNorm(dim)
-        self.to_q = nn.Linear(dim, dim)
-        self.to_kv = nn.Linear(dim, dim * 2)
-        self.proj = nn.Linear(dim, dim)
-        self.ffn = FFN(dim)
-        self.register_buffer("geom", geom)                       # (Nq,Nkv,G)
-        self.bias_mlp = nn.Sequential(nn.Linear(geom.shape[-1], 32), nn.GELU(), nn.Linear(32, heads))
-
-    def forward(self, q, kv):
-        B, Nq, C = q.shape
-        Nk = kv.shape[1]
-        x = self.n1(q)
-        qq = self.to_q(x).reshape(B, Nq, self.h, self.dh).permute(0, 2, 1, 3)      # (B,h,Nq,dh)
-        kv2 = self.to_kv(kv).reshape(B, Nk, 2, self.h, self.dh).permute(2, 0, 3, 1, 4)
-        kk, vv = kv2[0], kv2[1]                                                    # (B,h,Nk,dh)
-        attn = (qq @ kk.transpose(-2, -1)) * self.scale                            # (B,h,Nq,Nk)
-        bias = self.bias_mlp(self.geom).permute(2, 0, 1)                           # (h,Nq,Nk)
-        attn = (attn + bias[None]).softmax(-1)
-        o = (attn @ vv).transpose(1, 2).reshape(B, Nq, C)
-        q = q + self.proj(o)
-        return q + self.ffn(self.n2(q))
-
-
 class Down(nn.Module):
     """pix2pix encoder block: Conv(4,2,1) (/2) + optional BN + LeakyReLU."""
 
@@ -407,12 +371,24 @@ class RayDPT(nn.Module):
         # E77 confirmed the encoder is not feature-extraction-limited (bottleneck Refine was neutral). Reverted.
         # E70 tried learned positional embeddings on the audio tokens — neutral (within noise); the conv
         # encoder already encodes position implicitly. Reverted.
-        # Coarse 16x32 ERP pairwise geometry (E56/E57): [cos-ang-dist, elev_i, elev_j, cos(daz),
-        # sin(daz)] between every pair of coarse directions. Built ONCE here — reused by both the
-        # geometry-aware cross-attn (cr16, E121) and the post-fusion geo self-attn (rsa16b, E50/E56/E57).
+        mk_cr = lambda: nn.ModuleList([CrossBlock(dim, heads) for _ in range(nL)])
+        self.cr16, self.cr32 = mk_cr(), mk_cr()   # E87: cr64 dropped (F64 removed in E65) — ~0.9M dead params
+        # E22: ray<->ray global self-attn on the 16x32 coarse grid (512 tokens) so the layout rays
+        # reason jointly after reading audio. Capacity saturates (E23 depth, E25 heads, E26 mid-scale).
+        # E27: make it GEOMETRY-AWARE — add a learned bias on the cos angular distance between ray
+        # pairs (the lsa blocks already do this locally). geom = (512,512) pairwise cos-ang-dist.
+        # E27: geometry bias on the single cos-ang-dist between ray pairs (E28's richer feats w/
+        # absolute elevation biased toward the gamed ABS_REL and lost the honest metrics).
         el16, az16 = erp_grid(16, 32)
         d16 = np.stack([np.cos(el16) * np.cos(az16), np.cos(el16) * np.sin(az16),
                         np.sin(el16)], -1).reshape(-1, 3).astype(np.float32)   # (512,3) unit dirs
+        # E54: pre-fusion geo-attn on raw ray tokens (rsa16) was REMOVED — it slightly hurt; the
+        # post-fusion geometric reasoning (rsa16b, below) on the assembled layout is what matters.
+        # E50/E51 champion: 2 stacked geometry-aware self-attn blocks on the FUSED coarse features m16
+        # (post encoder-skip), so the assembled layout reasons geometrically before head/fine decode.
+        # E56: RICHER geometry feats help the POST-fusion blocks (opposite of E28's pre-fusion loss):
+        # geometric reasoning over the ASSEMBLED layout wants richer conditioning. E57: also add the
+        # wrapped azimuth difference (cos/sin, since azimuth is circular) → 5 feats.
         cosd = np.clip(d16 @ d16.T, -1.0, 1.0)                                  # (512,512) cos ang dist
         elf = el16.reshape(-1).astype(np.float32); azf = az16.reshape(-1).astype(np.float32)
         N = elf.shape[0]
@@ -420,18 +396,10 @@ class RayDPT(nn.Module):
         geom16b = np.stack([cosd, np.broadcast_to(elf[:, None], (N, N)),
                             np.broadcast_to(elf[None, :], (N, N)),
                             np.cos(daz), np.sin(daz)], -1).astype(np.float32)   # (512,512,5)
-        geom16b_t = lambda: torch.from_numpy(geom16b.copy())
-        # E121: cr16 is GEOMETRY-AWARE cross-attn — the ray query (16x32) and the e4 audio token
-        # (16x32, same ERP grid) share the sphere, so a learned angular-distance bias conditions WHICH
-        # audio token each ray reads (extends the productive geometry axis to the cross-attn subsystem).
-        # cr32 stays vanilla (its 2048x2048 key grid would make a per-pair geom bias too costly).
-        self.cr16 = nn.ModuleList([GeoCrossBlock(dim, heads, geom16b_t()) for _ in range(nL)])
-        self.cr32 = nn.ModuleList([CrossBlock(dim, heads) for _ in range(nL)])   # E87: cr64 dropped (F64 removed in E65)
-        # E22/E27: ray<->ray self-attn on the fused coarse grid, geometry-aware via the cos-ang-dist bias.
         # 2 geometry blocks is the CONFIRMED sweet spot: E67 re-tested 3 blocks WITH budget+deep-anneal
         # (F64 gone) and it was identical (2.0949 vs 2.0934) — geometry saturates at 2, not a budget limit.
-        self.rsa16b = nn.Sequential(GeoSelfBlock(dim, heads, geom16b_t()),
-                                    GeoSelfBlock(dim, heads, geom16b_t()))
+        self.rsa16b = nn.Sequential(GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy())),
+                                    GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy())))
         # E61 tried a 2nd cross-attn round here (re-gather audio post-geo) — within-noise worse + budget
         # pressure; reverted. Post-fusion geometry (rsa16b) is the ceiling of this subsystem.
         # E63 tried FiLM global-audio modulation of m16 — within-noise worse; the per-ray cross-attn
