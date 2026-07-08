@@ -1,6 +1,6 @@
 {
   "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E144",
+  "next_exp_id": "E145",
   "global_champion_commit": "828b9a3",
   "global_champion_note": "NEW CHAMPION (S19): 10ch multi-resolution STFT (n_fft 512+128) + TTA, 3-draw mean 2.0639. Old TTA 5ch (494b5e2, 2.082) demoted to lineage champion. To revert to a 5ch experiment: set prepare.FEATURE_FN=None + in_ch=5.",
   "concluded_studies": [
@@ -67,17 +67,26 @@
     "lineage": "acoustic-representation-v2",
     "parent": "S19 (multi-res champion)",
     "type": "new",
-    "status": "running",
+    "status": "confirming",
     "general_hypothesis": "More time-frequency RESOLUTION is now exhausted (S20/S21); the remaining representation headroom is a QUALITATIVELY new cue. Interaural COHERENCE separates direct/early sound (the two ears see a correlated wavefront) from diffuse late reverberation (decorrelated) - a direct-vs-diffuse ratio that encodes source distance and room size differently from the instantaneous ILD/IPD magnitude+phase cues.",
     "detailed_hypothesis": "Add interaural magnitude-squared coherence |smooth(L conj R)|^2 / (smooth(|L|^2) smooth(|R|^2)) per TF bin (smooth = ~3-tap moving average over STFT frames) as extra channel(s) appended to the 10ch multi-res champion. Coherence is L/R-SYMMETRIC (invariant under L<->R swap), so it maps to identity under the mirror.",
     "experiment_note": "E143: prepare.FEATURE_FN=multires_coh_feat (10ch champion + coherence at n_fft=512 -> 11ch); cfg.dataset.in_ch=11; GENERALIZE swap_lr_multi to swap leading 5ch blocks and pass trailing symmetric channels (coherence) through unchanged (identity), keeping flip-aug + TTA physically correct.",
-    "hpo_stage": "structural-screen",
+    "hpo_stage": "confirming-structural-screen",
     "hpo_runs_used": 0,
     "runs": [
       {
         "exp_id": "E143",
-        "status": "pending",
-        "config": "10ch multi-res + 1ch coherence(512) = 11ch"
+        "status": "done",
+        "comp": 2.0447,
+        "abs_rel": 0.3288,
+        "rmse": 1.4572,
+        "d1": 0.5918,
+        "verdict": "PROMISING - 0.015 below champion best draw; improves honest RMSE+d1"
+      },
+      {
+        "exp_id": "E144",
+        "status": "running",
+        "note": "confirmation rerun of E143 coherence (11ch) - do NOT crown on 1 draw"
       }
     ],
     "open_risks": [
