@@ -1,24 +1,28 @@
 {
   "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E133",
+  "next_exp_id": "E134",
   "global_champion_commit": "494b5e2",
   "concluded_studies": [
-    {"study_id": "S14", "lineage": "equivariance-training", "conclusion": "FAIL", "best_exp_id": "E132", "note": "L/R-equivariance training is redundant with the free eval-time TTA and costs an anneal epoch (E131 budget-bust; E132 comp 2.0925 > champion 2.079). See hypotheses.tsv."}
+    {"study_id": "S14", "lineage": "equivariance-training", "conclusion": "FAIL", "best_exp_id": "E132", "note": "L/R-equivariance training is redundant with the free eval-time TTA and costs an anneal epoch (E131 budget-bust; E132 comp 2.0925 > champion 2.079). See hypotheses.tsv."},
+    {"study_id": "S15", "lineage": "inference-time-tta", "conclusion": "PASS(confirm)", "best_exp_id": "E133", "note": "4th TTA draw E133=2.0935; 4-draw mean 2.0827 +-0.008, ~2 sigma below old baseline 2.099. Champion settled."}
   ],
   "active_study": {
-    "study_id": "S15",
+    "study_id": "S16",
     "lineage": "inference-time-tta",
     "parent": "S12 (inference-time-tta)",
-    "type": "confirm",
+    "type": "new",
     "status": "open",
-    "general_hypothesis": "The eval-time L/R-flip TTA champion (S12) is the current final method; after a run of FAILed exploratory studies (S10 geometry-cross-attn, S13 bins, S14 equivariance) the frontier looks saturated, so the champion's mean deserves one more confirming draw before it is treated as the settled final method.",
-    "detailed_hypothesis": "Repeat the exact TTA champion config to add a 4th draw; a consistent draw in the 2.07-2.09 band strengthens the ~2.079 mean and the conclusion that TTA is the settled final method.",
-    "experiment_note": "Re-run the champion (commit 494b5e2) unchanged; record E133 as a confirm draw of S12.",
-    "confirms": {"study_id": "S12", "exp_id": "E127", "commit": "494b5e2"},
-    "hpo_stage": "n/a-confirm",
+    "general_hypothesis": "Eval-time L/R-flip TTA (S12) averages the two symmetric views uniformly (50/50), but a model's error is spatially structured (near vs far, source-side vs shadow-side), so the two mirrored views are probably not equally reliable at every pixel; a per-pixel reliability weighting could beat uniform averaging without changing the depth model.",
+    "detailed_hypothesis": "Add a lightweight per-pixel confidence head trained (on the DETACHED depth, so it does not alter depth training) to predict the local depth error; at eval, blend the original and flipped-back predictions weighted by predicted precision instead of 50/50.",
+    "experiment_note": "E134: split the depth head into a shared trunk + a 1-ch confidence head; add a small aux loss regressing confidence to |D.detach()-gt|; in evaluate(), precision-weight the TTA blend by exp(-conf).",
+    "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
     "runs": [],
-    "decision_rule": "Record the 4th TTA draw and update the champion's mean/draw-list in archive.json. If it lands in the established 2.07-2.09 band -> champion confirmed as settled, then move to the backlog. If it is an outlier (>2.095) -> investigate before trusting the 2.079 mean."
+    "open_risks": [
+      "Symmetry argues uniform 50/50 is near-optimal for two equally-good views, so the expected gain is small; screen once and FAIL fast if within noise.",
+      "The confidence head + aux loss add complexity; per the simplicity criterion it must earn a clear >noise gain to keep."
+    ],
+    "decision_rule": "Structural screen (1 run). Judge honest composite vs champion 4-draw mean 2.083. Only a clear <~2.075 draw warrants confirmation; a within-noise (2.07-2.09) or worse result -> FAIL S16, revert `git checkout 494b5e2 -- train.py`, and surface PROPOSAL-01 (acoustic representation) as the recommended next major direction for the operator."
   },
   "backlog": [
     {"lineage": "acoustic-representation", "type": "new", "priority": "high", "idea": "PROPOSAL-01: the input STFT + spatial-cue construction is fixed inside prepare.py, so the audio representation (the one genuinely unexplored, physically-motivated axis: multi-resolution STFT, early/late echo split, cross-channel coherence) cannot be searched from train.py. This is the most promising path to a NEW real gain but requires the gated prepare.py refactor in program.md PROPOSAL-01 (keep split/target/metric fixed; verify baseline byte-equivalence). Flag for the operator.", "blocked_by": "prepare.py refactor (PROPOSAL-01)"},
