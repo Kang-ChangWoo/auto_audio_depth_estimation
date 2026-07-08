@@ -90,7 +90,7 @@ def multires_feat(wav, ds):
     localisation the single-resolution baseline cannot resolve) -> 10ch. Adds a genuinely new signal
     (time-frequency resolution tradeoff), unlike the temporal split (S18) which only truncated."""
     coarse = ds._specN(wav, 5)                                   # n_fft=512 (fine freq) — baseline
-    fine = _feat5_at(wav, 64, 20, 64, ds.H, ds.W)               # E140 (S20 HPO): n_fft=64 (even finer time); champion=128
+    fine = _feat5_at(wav, 256, 80, 256, ds.H, ds.W)            # E141 (S20 HPO): n_fft=256 (more freq, less-fine time); champion=128 (E140 n_fft=64 tied)
     return torch.cat([coarse, fine], dim=0)                      # (10,H,W)
 
 
