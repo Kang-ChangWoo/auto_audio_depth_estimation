@@ -145,6 +145,22 @@ def get_scene_split(dataset_dir, split_ratio, seed=42):
 _C = 340.0                       # speed of sound [m/s]
 _NFFT, _HOP, _WIN = 512, 160, 400
 
+# ------------------------------------------------------------------------------------------
+# PROPOSAL-01 acoustic-representation seam (research-editable; benchmark stays fixed).
+#
+# FIXED / reproducibility-critical (never change these to keep E0-E134 reproducible):
+#   get_scene_split (data split), SoundSpacesDataset._wave (waveform access), ._depth (target),
+#   compute_errors (metric), swap_audio_lr (L/R symmetry). These define the benchmark.
+#
+# EDITABLE research logic: the waveform -> input-feature mapping. Set `prepare.FEATURE_FN` from
+# train.py to research alternative acoustic representations (multi-resolution STFT, early/late echo
+# split, cross-channel coherence, ...). It receives the FIXED raw waveform and the dataset instance:
+#     def FEATURE_FN(wav, ds) -> Tensor (in_ch, ds.H, ds.W)
+# and may reuse ds._specN / ds._spec2 as building blocks. When FEATURE_FN is None (default) the
+# item pipeline is BYTE-IDENTICAL to the pre-refactor baseline (the 5ch [logL,logR,ILD,cosIPD,sinIPD]
+# representation), so no historical result is invalidated.
+FEATURE_FN = None
+
 
 class SoundSpacesDataset(Dataset):
     """Binaural echoes -> ERP depth, at cfg.dataset.images_size.
@@ -241,8 +257,11 @@ class SoundSpacesDataset(Dataset):
     def __getitem__(self, i):
         scene, idx = self.samples[i]
         try:
-            wav = self._wave(scene, idx)
-            spec = self._spec2(wav) if self.in_ch == 2 else self._specN(wav, self.in_ch)
+            wav = self._wave(scene, idx)                # FIXED waveform access
+            if FEATURE_FN is not None:                  # PROPOSAL-01 research representation
+                spec = FEATURE_FN(wav, self)
+            else:                                       # default: byte-identical baseline
+                spec = self._spec2(wav) if self.in_ch == 2 else self._specN(wav, self.in_ch)
             depth, mask = self._depth(scene, idx)
         except Exception as e:
             print(f"[skip {scene}/{idx}] {e}", flush=True)

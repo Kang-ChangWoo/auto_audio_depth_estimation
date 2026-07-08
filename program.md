@@ -38,9 +38,18 @@ Each experiment runs on a single GPU. The training script runs for a **fixed tim
 - Modify `train.py` — this is the only file you edit. Everything is fair game: model architecture, optimizer, hyperparameters, training loop, batch size, model size, etc.
 
 **What you CANNOT do:**
-- Modify `prepare.py`. It is read-only. It contains the fixed evaluation and data loading.
+- Modify the **FIXED** parts of `prepare.py`: `get_scene_split` (data split), `SoundSpacesDataset._wave`
+  (waveform access), `._depth` (target depth), `compute_errors` (metric), `swap_audio_lr` (L/R symmetry).
+  These define the benchmark and keep E0–E134 reproducible. Do not touch them.
 - Install new packages or add dependencies. You can only use what's already in `pyproject.toml`.
 - Modify the evaluation harness. The `compute_errors` function in `prepare.py` is the ground truth metric.
+
+**What you CAN now do (PROPOSAL-01, implemented):** research the **acoustic representation** — the
+waveform→input-feature mapping — via the `prepare.FEATURE_FN` seam, set from `train.py`. It receives the
+FIXED raw waveform and the dataset instance and returns `(in_ch, H, W)`. When `FEATURE_FN is None` the
+pipeline is byte-identical to the 5ch baseline (verified). This unblocks multi-resolution STFT, early/late
+echo split, cross-channel coherence, etc. Keep the default representation as the baseline; never change the
+fixed split/target/metric.
 
 **Training objective (RayDPT).** The model is trained with the composite loss in `composite_loss` (`train.py`):
 
@@ -243,7 +252,15 @@ keep following this file. The loop runs until externally stopped.
 
 ---
 
-# PROPOSAL-01 — acoustic-representation refactor (infrastructure, NOT yet implemented)
+# PROPOSAL-01 — acoustic-representation refactor (IMPLEMENTED, operator-approved)
+
+**Status: DONE.** The `prepare.FEATURE_FN` seam is implemented and baseline byte-equivalence is verified
+(FEATURE_FN=None reproduces the 5ch representation exactly). Fixed split/target/metric/waveform are
+untouched. Acoustic-representation research is now an open lineage — set `prepare.FEATURE_FN` from
+`train.py` and set the model `in_ch` to match the produced channel count. Original proposal below.
+
+---
+
 
 **Observation.** The audio representation (STFT + binaural spatial cues `[logL,logR,ILD,cosIPD,sinIPD]`)
 is constructed inside `prepare.py` (`SoundSpacesDataset._specN` / `_spec2`, with fixed `_NFFT/_WIN/_HOP`),
