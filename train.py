@@ -37,10 +37,37 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+import prepare
 from prepare import (
     make_dataloader, compute_errors, load_gt_rgb, erp_grid, sh_basis_matrix,
     swap_audio_lr,
 )
+
+
+# ============================================================
+# Acoustic representation (PROPOSAL-01 research via prepare.FEATURE_FN)
+# ============================================================
+
+def swap_lr_multi(spec):
+    """L/R mirror that applies the fixed 5ch swap to each consecutive 5-channel block, so
+    multi-block representations (e.g. E136 early/late = 10ch) mirror correctly. For a plain 5ch
+    input this is exactly swap_audio_lr, so the TTA/flip-aug behaviour of the champion is unchanged."""
+    C = spec.shape[1]
+    if C >= 5 and C % 5 == 0:
+        return torch.cat([swap_audio_lr(spec[:, i:i + 5]) for i in range(0, C, 5)], dim=1)
+    return swap_audio_lr(spec)
+
+
+def early_late_feat(wav, ds):
+    """E136 (S18): early/late echo split. The fixed echo waveform is split in time into an EARLY
+    window (direct sound + early reflections -> nearby-surface distances) and a LATE window
+    (reverberant tail -> far surfaces / room volume); the 5ch spatial feature is computed on each
+    and concatenated -> 10ch. Reuses the fixed ds._specN so each block is the exact baseline feature."""
+    T = wav.shape[1]
+    h = T // 2
+    early = ds._specN(wav[:, :h], 5)        # (5,H,W)
+    late = ds._specN(wav[:, h:], 5)         # (5,H,W)
+    return torch.cat([early, late], dim=0)  # (10,H,W)
 
 
 # ============================================================
@@ -619,7 +646,7 @@ def evaluate(model, loader, mcfg, device, max_depth, collect_vis=None,
         # average its prediction with the mirrored-input prediction (swap audio L/R, flip depth width
         # back). Deterministic honest ensembling over the horizontal symmetry -> lower RMSE variance.
         # Eval-only (training loop unchanged); costs one extra forward per batch.
-        out_f = model(swap_audio_lr(spec))
+        out_f = model(swap_lr_multi(spec))
         out["D"] = 0.5 * (out["D"] + torch.flip(out_f["D"], dims=[-1]))
         loss, _ = composite_loss(out, gt, mask, mcfg)
         val_losses.append(float(loss.detach()))
@@ -719,7 +746,7 @@ def train(cfg):
                 fm = torch.rand(spec.size(0), device=device) < 0.5
                 if fm.any():
                     spec = spec.clone(); gt = gt.clone(); mask = mask.clone()
-                    spec[fm] = swap_audio_lr(spec[fm])
+                    spec[fm] = swap_lr_multi(spec[fm])
                     gt[fm] = torch.flip(gt[fm], dims=[-1])
                     mask[fm] = torch.flip(mask[fm], dims=[-1])
             optimizer.zero_grad()
@@ -895,6 +922,11 @@ if __name__ == '__main__':
 
     args = parse_args()
     cfg = make_config(args)
+
+    # E136 (S18, acoustic-representation): early/late echo-split representation via the PROPOSAL-01
+    # prepare.FEATURE_FN seam. Produces 10ch = [early 5ch | late 5ch]; set model in_ch to match.
+    prepare.FEATURE_FN = early_late_feat
+    cfg.dataset.in_ch = 10
 
     print('=' * 60)
     print(f'RayDPT — mode={args.mode}')

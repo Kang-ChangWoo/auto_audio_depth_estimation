@@ -17,9 +17,9 @@
     "rmse": 1.4641,
     "d1": 0.5824,
     "composite_best_draw": 2.0720,
-    "composite_mean": 2.0827,
-    "draws": [2.0720, 2.0782, 2.0872, 2.0935],
-    "draws_note": "4 confirmation draws (E127/E128/E129/E133), mean 2.0827 +-0.008, ~2 sigma below old baseline 2.099. Settled final method.",
+    "composite_mean": 2.0821,
+    "draws": [2.0720, 2.0782, 2.0872, 2.0935, 2.0796],
+    "draws_note": "5 confirmation draws (E127/E128/E129/E133/E135), mean 2.0821 +-0.0075, ~2 sigma below old baseline 2.099. Robustly settled final method (for the fixed 5ch representation baseline).",
     "memory_gb": 16.9,
     "confirmed": true,
     "note": "Eval-time L/R-flip TTA on top of the fef2779 architecture. Deterministic honest ensembling; RMSE & d1 best-ever. This is the active train.py."
