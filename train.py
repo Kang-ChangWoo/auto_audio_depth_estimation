@@ -90,8 +90,18 @@ def multires_feat(wav, ds):
     localisation the single-resolution baseline cannot resolve) -> 10ch. Adds a genuinely new signal
     (time-frequency resolution tradeoff), unlike the temporal split (S18) which only truncated."""
     coarse = ds._specN(wav, 5)                                   # n_fft=512 (fine freq) — baseline
-    fine = _feat5_at(wav, 256, 80, 256, ds.H, ds.W)            # E141 (S20 HPO): n_fft=256 (more freq, less-fine time); champion=128 (E140 n_fft=64 tied)
+    fine = _feat5_at(wav, 128, 40, 128, ds.H, ds.W)             # n_fft=128 (fine time / echo delay)
     return torch.cat([coarse, fine], dim=0)                      # (10,H,W)
+
+
+def multires3_feat(wav, ds):
+    """E142 (S21): 3-scale multi-resolution STFT. The 512+128 champion plus a longest-window n_fft=1024
+    block (finest FREQUENCY, ~21ms -> room-mode / wall-material spectral detail) -> 15ch. Tests whether
+    more of the time-frequency plane beyond the two champion scales adds depth signal."""
+    coarse = ds._specN(wav, 5)                                   # n_fft=512  (fine freq) — baseline
+    fine = _feat5_at(wav, 128, 40, 128, ds.H, ds.W)             # n_fft=128  (fine time / echo delay)
+    vfreq = _feat5_at(wav, 1024, 256, 1024, ds.H, ds.W)        # n_fft=1024 (finest freq / room modes)
+    return torch.cat([coarse, fine, vfreq], dim=0)              # (15,H,W)
 
 
 # ============================================================
@@ -947,10 +957,11 @@ if __name__ == '__main__':
     args = parse_args()
     cfg = make_config(args)
 
-    # E137 (S19, acoustic-representation): multi-resolution STFT representation via the PROPOSAL-01
-    # prepare.FEATURE_FN seam. Produces 10ch = [n_fft512 5ch | n_fft128 5ch]; set model in_ch to match.
-    prepare.FEATURE_FN = multires_feat
-    cfg.dataset.in_ch = 10
+    # E142 (S21, acoustic-representation): 3-scale multi-resolution STFT via the PROPOSAL-01 seam.
+    # Produces 15ch = [n_fft512 | n_fft128 | n_fft1024]; set model in_ch to match. (Champion = 10ch
+    # multires_feat 512+128, commit 828b9a3; revert with git checkout 828b9a3 -- train.py.)
+    prepare.FEATURE_FN = multires3_feat
+    cfg.dataset.in_ch = 15
 
     print('=' * 60)
     print(f'RayDPT — mode={args.mode}')

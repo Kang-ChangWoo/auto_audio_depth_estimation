@@ -1,9 +1,16 @@
 {
   "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E142",
+  "next_exp_id": "E143",
   "global_champion_commit": "828b9a3",
   "global_champion_note": "NEW CHAMPION (S19): 10ch multi-resolution STFT (n_fft 512+128) + TTA, 3-draw mean 2.0639. Old TTA 5ch (494b5e2, 2.082) demoted to lineage champion. To revert to a 5ch experiment: set prepare.FEATURE_FN=None + in_ch=5.",
   "concluded_studies": [
+    {
+      "study_id": "S20",
+      "lineage": "acoustic-representation-v2",
+      "conclusion": "PASS(tune, no change)",
+      "best_exp_id": "E137",
+      "note": "Fine-block n_fft sweep {64:2.0652 tied, 128:2.064 best, 256:2.0815 worse}. n_fft=128 optimal; the win is fine-TIME resolution (echo timing), frequency not the lever. Champion unchanged 828b9a3."
+    },
     {
       "study_id": "S17",
       "lineage": "inference-time-tta",
@@ -49,35 +56,28 @@
   ],
   "strategic_note": "BREAKTHROUGH on the acoustic-representation axis (PROPOSAL-01, operator-approved & implemented). After the whole train.py architecture space was exhausted (S10/S13/S14/S16 FAILed; TTA 5ch settled at 2.082), the representation held the real signal: multi-resolution STFT (S19) is the NEW CHAMPION at 2.064 (commit 828b9a3). Now mining this productive axis: S20 tunes the fine-block resolution (E140 n_fft=64 tied 128); next explore a 3rd resolution scale / cross-channel coherence / per-band echo processing. The prepare.FEATURE_FN seam is the live research surface.",
   "active_study": {
-    "study_id": "S20",
+    "study_id": "S21",
     "lineage": "acoustic-representation-v2",
-    "parent": "S19 (multi-resolution STFT champion)",
-    "type": "tune",
+    "parent": "S19 (multi-res champion)",
+    "type": "new",
     "status": "running",
-    "general_hypothesis": "The multi-res STFT win (S19) comes from the fine-time-resolution block that sharpens echo-delay/distance cues; the resolution of that block is the crux hyperparameter, so tuning the fine-block n_fft (time-vs-frequency tradeoff) should map how far this lever goes.",
-    "detailed_hypothesis": "Sweep the fine block's n_fft: 64 (even finer time, coarser freq) and 256 (less-fine time, more freq), vs the champion's 128, to find the resolution that best localises echo delays without destroying the ILD/IPD spatial cues.",
-    "experiment_note": "E140: fine block n_fft=64 (multires_feat -> _feat5_at(wav, 64, 20, 64)). Later E141: n_fft=256. Each judged vs champion 3-draw mean 2.064.",
-    "hpo_stage": "hpo-3",
-    "hpo_runs_used": 1,
+    "general_hypothesis": "The multi-res champion spans two time-frequency scales (512 fine-freq + 128 fine-time). Room modes and wall materials leave fine SPECTRAL structure that a longer analysis window resolves better than n_fft=512; adding a third, longest-window scale may capture room/material cues the current two scales miss.",
+    "detailed_hypothesis": "Add a third 5ch block at n_fft=1024 (longest window -> finest FREQUENCY, ~21ms) on top of the 512+128 champion -> 15ch, testing whether more of the time-frequency plane (finer freq / room-mode detail) adds depth signal beyond the two-scale champion.",
+    "experiment_note": "E142: prepare.FEATURE_FN=multires3_feat (ds._specN 512 + _feat5_at 128 + _feat5_at 1024) -> 15ch; cfg.dataset.in_ch=15; swap_lr_multi handles 15 (3 blocks).",
+    "hpo_stage": "structural-screen",
+    "hpo_runs_used": 0,
     "runs": [
       {
-        "exp_id": "E140",
-        "status": "done",
-        "config": "n_fft=64",
-        "comp": 2.0652,
-        "verdict": "tied 128 (within noise); fine-block value is TIME res"
-      },
-      {
-        "exp_id": "E141",
+        "exp_id": "E142",
         "status": "running",
-        "config": "fine-block n_fft=256"
+        "config": "add n_fft=1024 3rd block, 15ch"
       }
     ],
     "open_risks": [
-      "n_fft=64 gives only ~33 freq bins -> ILD/IPD may lose the spectral detail that encodes direction; could hurt. If so, 128 stays optimal.",
-      "Tune gains will be small vs the S19 structural win (2.064); require >noise (>~0.006) AND a confirming draw before re-crowning within the lineage. Do not crown a tune on 1 draw."
+      "The fine-block sweep showed frequency is NOT the lever (256 worse), so a finer-freq 3rd block may be neutral/redundant with the 512 block; screen honestly vs 2.064.",
+      "15ch grows the first conv slightly; negligible."
     ],
-    "decision_rule": "HPO ladder 3->5->7. Judge each vs champion 3-draw mean 2.064. If a resolution clearly beats 2.064 (and replicates) -> new lineage champion, continue HPO. If 64 and 256 are both >= 128 -> 128 is the tuned optimum, conclude S20, then EXPLORE the next representation idea (3rd resolution block / cross-channel coherence / per-band echo processing). Champion stays multi-res-128 (828b9a3) unless beaten+confirmed."
+    "decision_rule": "Screen vs champion 2.064. Clearly better (<2.058) + replicates -> new champion (3-scale). Within noise (2.060-2.068) -> the third scale is redundant, two scales suffice; conclude, keep 828b9a3, and EXPLORE a qualitatively-NEW cue next (cross-channel coherence / direct-vs-diffuse) rather than more resolution. Worse -> the extra block dilutes; drop it."
   },
   "backlog": [
     {
