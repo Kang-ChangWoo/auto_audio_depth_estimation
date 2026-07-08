@@ -1,9 +1,16 @@
 {
   "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E143",
+  "next_exp_id": "E144",
   "global_champion_commit": "828b9a3",
   "global_champion_note": "NEW CHAMPION (S19): 10ch multi-resolution STFT (n_fft 512+128) + TTA, 3-draw mean 2.0639. Old TTA 5ch (494b5e2, 2.082) demoted to lineage champion. To revert to a 5ch experiment: set prepare.FEATURE_FN=None + in_ch=5.",
   "concluded_studies": [
+    {
+      "study_id": "S21",
+      "lineage": "acoustic-representation-v2",
+      "conclusion": "FAIL(redundant)",
+      "best_exp_id": "E137",
+      "note": "3rd finer-freq scale (n_fft=1024, 15ch, E142=2.0615) ties the 2-scale champion and is slower (8 epochs). Frequency not the lever (confirms S20). Keep 2-scale champion 828b9a3; gains need a NEW cue."
+    },
     {
       "study_id": "S20",
       "lineage": "acoustic-representation-v2",
@@ -56,28 +63,28 @@
   ],
   "strategic_note": "BREAKTHROUGH on the acoustic-representation axis (PROPOSAL-01, operator-approved & implemented). After the whole train.py architecture space was exhausted (S10/S13/S14/S16 FAILed; TTA 5ch settled at 2.082), the representation held the real signal: multi-resolution STFT (S19) is the NEW CHAMPION at 2.064 (commit 828b9a3). Now mining this productive axis: S20 tunes the fine-block resolution (E140 n_fft=64 tied 128); next explore a 3rd resolution scale / cross-channel coherence / per-band echo processing. The prepare.FEATURE_FN seam is the live research surface.",
   "active_study": {
-    "study_id": "S21",
+    "study_id": "S22",
     "lineage": "acoustic-representation-v2",
     "parent": "S19 (multi-res champion)",
     "type": "new",
     "status": "running",
-    "general_hypothesis": "The multi-res champion spans two time-frequency scales (512 fine-freq + 128 fine-time). Room modes and wall materials leave fine SPECTRAL structure that a longer analysis window resolves better than n_fft=512; adding a third, longest-window scale may capture room/material cues the current two scales miss.",
-    "detailed_hypothesis": "Add a third 5ch block at n_fft=1024 (longest window -> finest FREQUENCY, ~21ms) on top of the 512+128 champion -> 15ch, testing whether more of the time-frequency plane (finer freq / room-mode detail) adds depth signal beyond the two-scale champion.",
-    "experiment_note": "E142: prepare.FEATURE_FN=multires3_feat (ds._specN 512 + _feat5_at 128 + _feat5_at 1024) -> 15ch; cfg.dataset.in_ch=15; swap_lr_multi handles 15 (3 blocks).",
+    "general_hypothesis": "More time-frequency RESOLUTION is now exhausted (S20/S21); the remaining representation headroom is a QUALITATIVELY new cue. Interaural COHERENCE separates direct/early sound (the two ears see a correlated wavefront) from diffuse late reverberation (decorrelated) - a direct-vs-diffuse ratio that encodes source distance and room size differently from the instantaneous ILD/IPD magnitude+phase cues.",
+    "detailed_hypothesis": "Add interaural magnitude-squared coherence |smooth(L conj R)|^2 / (smooth(|L|^2) smooth(|R|^2)) per TF bin (smooth = ~3-tap moving average over STFT frames) as extra channel(s) appended to the 10ch multi-res champion. Coherence is L/R-SYMMETRIC (invariant under L<->R swap), so it maps to identity under the mirror.",
+    "experiment_note": "E143: prepare.FEATURE_FN=multires_coh_feat (10ch champion + coherence at n_fft=512 -> 11ch); cfg.dataset.in_ch=11; GENERALIZE swap_lr_multi to swap leading 5ch blocks and pass trailing symmetric channels (coherence) through unchanged (identity), keeping flip-aug + TTA physically correct.",
     "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
     "runs": [
       {
-        "exp_id": "E142",
-        "status": "running",
-        "config": "add n_fft=1024 3rd block, 15ch"
+        "exp_id": "E143",
+        "status": "pending",
+        "config": "10ch multi-res + 1ch coherence(512) = 11ch"
       }
     ],
     "open_risks": [
-      "The fine-block sweep showed frequency is NOT the lever (256 worse), so a finer-freq 3rd block may be neutral/redundant with the 512 block; screen honestly vs 2.064.",
-      "15ch grows the first conv slightly; negligible."
+      "cosIPD already captures per-bin phase alignment; coherence adds the STABILITY of that alignment over time (direct vs diffuse) - genuinely new but the net may be small. Screen vs 2.064.",
+      "Correctness: coherence channel must be treated as SYMMETRIC under L/R swap in swap_lr_multi (identity), else TTA/flip-aug become physically wrong. Smoke-test the swap."
     ],
-    "decision_rule": "Screen vs champion 2.064. Clearly better (<2.058) + replicates -> new champion (3-scale). Within noise (2.060-2.068) -> the third scale is redundant, two scales suffice; conclude, keep 828b9a3, and EXPLORE a qualitatively-NEW cue next (cross-channel coherence / direct-vs-diffuse) rather than more resolution. Worse -> the extra block dilutes; drop it."
+    "decision_rule": "Screen vs champion 2.064. Clearly better (<2.058) + replicates -> new champion. Within noise -> coherence redundant with ILD/IPD; conclude. Worse -> drop. If it helps, add coherence at the 128 scale too (2 coherence channels) as a refine."
   },
   "backlog": [
     {

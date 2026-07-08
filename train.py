@@ -49,13 +49,18 @@ from prepare import (
 # ============================================================
 
 def swap_lr_multi(spec):
-    """L/R mirror that applies the fixed 5ch swap to each consecutive 5-channel block, so
-    multi-block representations (e.g. E136 early/late = 10ch) mirror correctly. For a plain 5ch
-    input this is exactly swap_audio_lr, so the TTA/flip-aug behaviour of the champion is unchanged."""
+    """L/R mirror. Applies the fixed 5ch swap to each leading consecutive 5-channel block (so multi-scale
+    representations like the 10ch multi-res champion mirror correctly), and passes any TRAILING channels
+    through UNCHANGED — those are reserved for L/R-SYMMETRIC features (e.g. interaural coherence, E143)
+    that are invariant under the mirror. For a plain 5ch input this is exactly swap_audio_lr, so the
+    champion's TTA/flip-aug behaviour is unchanged. (Correctness invariant: trailing channels MUST be
+    L/R-symmetric by construction, else the physical mirror is wrong.)"""
     C = spec.shape[1]
-    if C >= 5 and C % 5 == 0:
-        return torch.cat([swap_audio_lr(spec[:, i:i + 5]) for i in range(0, C, 5)], dim=1)
-    return swap_audio_lr(spec)
+    nblk = (C // 5) * 5
+    parts = [swap_audio_lr(spec[:, i:i + 5]) for i in range(0, nblk, 5)]
+    if C > nblk:
+        parts.append(spec[:, nblk:])            # trailing L/R-symmetric channels -> identity
+    return torch.cat(parts, dim=1) if parts else swap_audio_lr(spec)
 
 
 def early_late_feat(wav, ds):
@@ -94,14 +99,29 @@ def multires_feat(wav, ds):
     return torch.cat([coarse, fine], dim=0)                      # (10,H,W)
 
 
-def multires3_feat(wav, ds):
-    """E142 (S21): 3-scale multi-resolution STFT. The 512+128 champion plus a longest-window n_fft=1024
-    block (finest FREQUENCY, ~21ms -> room-mode / wall-material spectral detail) -> 15ch. Tests whether
-    more of the time-frequency plane beyond the two champion scales adds depth signal."""
-    coarse = ds._specN(wav, 5)                                   # n_fft=512  (fine freq) — baseline
-    fine = _feat5_at(wav, 128, 40, 128, ds.H, ds.W)             # n_fft=128  (fine time / echo delay)
-    vfreq = _feat5_at(wav, 1024, 256, 1024, ds.H, ds.W)        # n_fft=1024 (finest freq / room modes)
-    return torch.cat([coarse, fine, vfreq], dim=0)              # (15,H,W)
+def _coherence_at(wav, n_fft, hop, win, H, W, smooth=3):
+    """Interaural magnitude-squared coherence per TF bin: |E[L conj(R)]|^2 / (E|L|^2 E|R|^2), with E[.]
+    a short (~smooth-tap) moving average over STFT time frames. ~1 near the direct/early (correlated)
+    wavefront, ~0 in diffuse late reverberation (decorrelated) -> a direct-vs-diffuse / distance cue.
+    L/R-SYMMETRIC (swapping ears leaves it invariant). Returns (1,H,W)."""
+    w = torch.hann_window(win, device=wav.device, dtype=wav.dtype)
+    st = torch.stft(wav, n_fft, hop, win, w, return_complex=True)   # (2,F,T)
+    L, R = st[0], st[1]
+    cross = L * torch.conj(R)
+    sm = lambda x: F.avg_pool1d(x.unsqueeze(0), smooth, 1, smooth // 2).squeeze(0)  # avg over time
+    sll = sm(L.abs() ** 2); srr = sm(R.abs() ** 2)
+    sxr = sm(cross.real); sxi = sm(cross.imag)
+    coh = (sxr ** 2 + sxi ** 2) / (sll * srr + 1e-6)               # (F,T) in [0,1]
+    return F.interpolate(coh[None, None], (H, W), mode='nearest').squeeze(0).float()  # (1,H,W)
+
+
+def multires_coh_feat(wav, ds):
+    """E143 (S22): the 10ch multi-res champion + interaural coherence (n_fft=512) as an 11th channel.
+    Coherence is a direct-vs-diffuse cue distinct from the instantaneous ILD/IPD; it is L/R-symmetric,
+    so it is APPENDED as a trailing channel that swap_lr_multi passes through unchanged."""
+    base = multires_feat(wav, ds)                                # (10,H,W)
+    coh = _coherence_at(wav, 512, 160, 512, ds.H, ds.W)         # (1,H,W) symmetric
+    return torch.cat([base, coh], dim=0)                         # (11,H,W)
 
 
 # ============================================================
@@ -957,11 +977,11 @@ if __name__ == '__main__':
     args = parse_args()
     cfg = make_config(args)
 
-    # E142 (S21, acoustic-representation): 3-scale multi-resolution STFT via the PROPOSAL-01 seam.
-    # Produces 15ch = [n_fft512 | n_fft128 | n_fft1024]; set model in_ch to match. (Champion = 10ch
-    # multires_feat 512+128, commit 828b9a3; revert with git checkout 828b9a3 -- train.py.)
-    prepare.FEATURE_FN = multires3_feat
-    cfg.dataset.in_ch = 15
+    # E143 (S22, acoustic-representation): multi-res champion (10ch) + interaural coherence (1ch) via the
+    # PROPOSAL-01 seam -> 11ch. The coherence channel is L/R-symmetric (swap_lr_multi passes it through).
+    # (Champion = 10ch multires_feat 512+128, commit 828b9a3; revert with git checkout 828b9a3 -- train.py.)
+    prepare.FEATURE_FN = multires_coh_feat
+    cfg.dataset.in_ch = 11
 
     print('=' * 60)
     print(f'RayDPT — mode={args.mode}')
