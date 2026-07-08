@@ -415,7 +415,13 @@ class RayDPT(nn.Module):
         self.lsa32 = LocalSphericalAttention(dim, heads, 32, 64, getattr(cfg, "raydpt_win32", 5))
         self.lsa64 = LocalSphericalAttention(dim, heads, 64, 128, getattr(cfg, "raydpt_win64", 3))
         self.coarse_head = nn.Conv2d(dim, 1, 1)
-        self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
+        # E130: soft-argmax / bin-expectation depth head (AdaBins-style). The head predicts n_bins
+        # logits per pixel; depth = softmax(logits) · fixed bin-centers. A radical decode paradigm
+        # (vs direct sigmoid regression) that can represent multi-modal per-ray depth. Ray-conditioning
+        # is untouched (still per-ray queries → cross-attn → decode). Fixed uniform bins in [0,1].
+        self.n_bins = 64
+        self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, self.n_bins, 3, 1, 1))
+        self.register_buffer("bin_centers", (torch.arange(self.n_bins).float() + 0.5) / self.n_bins)
         # E66 tried a learned 128x256 decode — RMSE got WORSE (1.485 vs 1.480); resolution is NOT the
         # bottleneck (depth field smooth, bilinear adequate). Reverted. Accuracy is audio->depth-limited.
         self.lite = getattr(cfg, "raydpt_lite", False)        # 2-scale (32,64) lite variant
@@ -467,7 +473,8 @@ class RayDPT(nn.Module):
             xf = self.dec2(self.up(xf))                        # 256x512, ngf
             D = torch.sigmoid(self.head_fd(xf))
         else:
-            D = torch.sigmoid(self.head(x))
+            p = self.head(x).softmax(dim=1)                       # (B, n_bins, 64,128) E130
+            D = (p * self.bin_centers.view(1, -1, 1, 1)).sum(1, keepdim=True)   # expected depth in [0,1]
             D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
         return {"D": D, "D0": D, "extras": {"D_coarse": d_c}}
 

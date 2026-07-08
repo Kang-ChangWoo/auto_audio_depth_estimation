@@ -151,7 +151,8 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E126 | learnable register/summary KV tokens (K=8) on coarse cross-attn cr16 (learned prior scratchpad) | 0.3432 | 1.4733 | 0.5791 | discard (comp 2.0933, within-noise champion draw; learned prior scratchpad neutral, cf global-audio mapped E44/E63) |
 | **E127** | **eval-time L/R-flip TTA** (average prediction with mirrored-input prediction; deterministic honest ensembling over the horizontal symmetry the model is trained to respect) | **0.3404** | **1.4618** | **0.5846** | **PROVISIONAL KEEP — BIG WIN** (comp **2.0720**, Δ−0.027 vs mean & 0.015 below best-ever champion draw 2.087; ALL 3 metrics best-ever). Deterministic (not noise). prepare.py/compute_errors untouched. Confirmation rerun E128 queued |
 | **E128** | **E127 confirmation rerun (identical TTA code)** | **0.3404** | **1.4641** | **0.5824** | **confirm — CROWNS E127/TTA** (comp 2.0782; 2-draw mean 2.0751, both draws BELOW old champion min 2.087 → real ~0.024 win. New champion `494b5e2`) |
-| E129 | 3rd TTA confirmation draw — tighten the new champion's mean before building on it | running | | | — |
+| E129 | 3rd TTA confirmation draw — tighten the new champion's mean | 0.3430 | 1.4698 | 0.5808 | confirm (comp 2.0872; TTA 3-draw {2.0720, 2.0782, 2.0872} mean **2.079**±0.008, ~2.6σ below old champion 2.099 — win robust) |
+| E130 | soft-argmax / bin-expectation depth head (N=64 fixed bins, softmax → expectation) instead of direct sigmoid regression — radical decode paradigm (AdaBins-style), keeps ray-conditioning | running | | | — |
 
 ## Current champion & summary (~128 experiments)
 
