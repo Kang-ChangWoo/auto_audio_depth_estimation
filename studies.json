@@ -1,6 +1,6 @@
 {
   "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E137",
+  "next_exp_id": "E138",
   "global_champion_commit": "494b5e2",
   "concluded_studies": [
     {"study_id": "S17", "lineage": "inference-time-tta", "conclusion": "PASS(confirm)", "best_exp_id": "E135", "note": "5th TTA draw E135=2.0796; 5-draw mean 2.0821 +-0.0075. Champion robustly settled. Holding action; operator then approved PROPOSAL-01."},
@@ -19,12 +19,15 @@
     "general_hypothesis": "The single-resolution STFT forces one time-vs-frequency tradeoff, but echo DELAYS (which directly encode distance) want fine TIME resolution while room modes/materials want fine FREQUENCY resolution; a multi-resolution representation could give the network sharper echo-delay localisation than the fixed baseline can resolve. Unlike the temporal split (S18, which only truncated the same STFT), this adds a genuinely new signal.",
     "detailed_hypothesis": "Concatenate the baseline 5ch (n_fft=512, fine frequency) with a short-window 5ch (n_fft=128, ~4x finer time resolution -> sharper direct/echo arrival times) into a 10ch input.",
     "experiment_note": "E137: prepare.FEATURE_FN = multires_feat (ds._specN default 512 + _feat5_at(wav,128,40,128)) -> 10ch; model in_ch=10; block-aware swap keeps flip-aug + TTA valid.",
-    "hpo_stage": "structural-screen",
+    "hpo_stage": "confirming-structural-screen",
     "hpo_runs_used": 0,
-    "runs": [{"exp_id": "E137", "status": "running"}],
+    "runs": [
+      {"exp_id": "E137", "status": "done", "comp": 2.0691, "abs_rel": 0.3263, "rmse": 1.4843, "d1": 0.5875, "verdict": "PROMISING - below champion best draw 2.072; ABS_REL 0.326 out-of-champion-dist (real effect), d1 up, RMSE slightly down"},
+      {"exp_id": "E138", "status": "running", "note": "confirmation rerun of E137 (same multi-res code) - do NOT crown on 1 draw (E121/E125 lesson)"}
+    ],
     "open_risks": [
-      "The short window (n_fft=128) may be too coarse in frequency to keep the ILD/IPD spatial cues informative; if the fine-res block hurts, tune n_fft (256) or feed it fewer channels (e.g. just log-mag for timing).",
-      "Baseline already resizes the STFT time axis to W=512, partially exposing timing; the marginal gain from finer time res may be small - screen honestly vs 2.082."
+      "E137 is a single draw only 0.003 below the champion best draw; the composite margin is thin and partly from ABS_REL (gameable). BUT d1 (honest) also improved and ABS_REL is far out of the champion distribution -> credible. Require E138 (and ideally a 3rd draw) to replicate <~2.072 before crowning.",
+      "The win is a Pareto shift (ABS_REL+d1 up, RMSE up ~0.02). Confirm the honest metrics (d1, and that RMSE regression stays small) hold across draws."
     ],
     "decision_rule": "Structural screen (1 run) vs champion 2.082. Clearly better (<~2.072) -> confirm + HPO n_fft of the fine block (3->5). Within noise -> HPO the fine-block resolution (n_fft 64/128/256) before concluding, since the resolution choice is the crux. Clearly worse (>~2.092) -> FAIL; then try cross-channel coherence features or conclude the representation axis is also mapped and the model is genuinely audio-information-limited (settle on the TTA champion)."
   },
