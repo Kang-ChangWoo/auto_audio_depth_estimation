@@ -1,28 +1,27 @@
 {
   "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E134",
+  "next_exp_id": "E135",
   "global_champion_commit": "494b5e2",
   "concluded_studies": [
     {"study_id": "S14", "lineage": "equivariance-training", "conclusion": "FAIL", "best_exp_id": "E132", "note": "L/R-equivariance training is redundant with the free eval-time TTA and costs an anneal epoch (E131 budget-bust; E132 comp 2.0925 > champion 2.079). See hypotheses.tsv."},
-    {"study_id": "S15", "lineage": "inference-time-tta", "conclusion": "PASS(confirm)", "best_exp_id": "E133", "note": "4th TTA draw E133=2.0935; 4-draw mean 2.0827 +-0.008, ~2 sigma below old baseline 2.099. Champion settled."}
+    {"study_id": "S15", "lineage": "inference-time-tta", "conclusion": "PASS(confirm)", "best_exp_id": "E133", "note": "4th TTA draw E133=2.0935; 4-draw mean 2.0827 +-0.008, ~2 sigma below old baseline 2.099. Champion settled."},
+    {"study_id": "S16", "lineage": "inference-time-tta", "conclusion": "FAIL", "best_exp_id": "E134", "note": "Confidence-weighted TTA (E134=2.0966) is worse than uniform 50/50 (2.083); uniform is near-optimal for two symmetric views, learned per-pixel confidence is noisy on held-out scenes. TTA blend already optimal."}
   ],
+  "strategic_note": "IN-SCOPE FRONTIER EXHAUSTED. Four consecutive exploratory studies have now FAILed (S10 geometry-cross-attn, S13 bins, S14 equivariance, S16 conf-TTA) and the champion (TTA, comp ~2.083) is settled over 4 draws. All train.py-editable axes are mapped: geometry (all scales), capacity/width/depth, resolution/decode, loss terms, register tokens, decode-paradigm, equivariance, inference ensembling. The ONE genuinely-unexplored, physically-motivated, high-value axis is the acoustic REPRESENTATION (PROPOSAL-01), which is GATED behind a deliberate refactor of the currently-read-only prepare.py (multi-resolution STFT / early-late echo split / cross-channel coherence, keeping split+target+metric byte-identical). This requires an explicit operator go/no-go before touching prepare.py. Surfaced to operator; awaiting decision. Meanwhile keeping the loop alive with a low-risk consolidation (S17).",
   "active_study": {
-    "study_id": "S16",
+    "study_id": "S17",
     "lineage": "inference-time-tta",
     "parent": "S12 (inference-time-tta)",
-    "type": "new",
+    "type": "confirm",
     "status": "open",
-    "general_hypothesis": "Eval-time L/R-flip TTA (S12) averages the two symmetric views uniformly (50/50), but a model's error is spatially structured (near vs far, source-side vs shadow-side), so the two mirrored views are probably not equally reliable at every pixel; a per-pixel reliability weighting could beat uniform averaging without changing the depth model.",
-    "detailed_hypothesis": "Add a lightweight per-pixel confidence head trained (on the DETACHED depth, so it does not alter depth training) to predict the local depth error; at eval, blend the original and flipped-back predictions weighted by predicted precision instead of 50/50.",
-    "experiment_note": "E134: split the depth head into a shared trunk + a 1-ch confidence head; add a small aux loss regressing confidence to |D.detach()-gt|; in evaluate(), precision-weight the TTA blend by exp(-conf).",
-    "hpo_stage": "structural-screen",
+    "general_hypothesis": "With the in-scope frontier exhausted and PROPOSAL-01 (representation) awaiting operator go/no-go, keep the loop alive with a low-risk consolidation: a 5th TTA champion draw further tightens the settled ~2.083 mean while the strategic decision is pending.",
+    "detailed_hypothesis": "Re-run the exact TTA champion (494b5e2); a 5th draw in the established 2.07-2.09 band confirms robustness.",
+    "experiment_note": "E135: re-run champion 494b5e2 unchanged; record as a 5th confirm draw of S12.",
+    "confirms": {"study_id": "S12", "exp_id": "E127", "commit": "494b5e2"},
+    "hpo_stage": "n/a-confirm",
     "hpo_runs_used": 0,
     "runs": [],
-    "open_risks": [
-      "Symmetry argues uniform 50/50 is near-optimal for two equally-good views, so the expected gain is small; screen once and FAIL fast if within noise.",
-      "The confidence head + aux loss add complexity; per the simplicity criterion it must earn a clear >noise gain to keep."
-    ],
-    "decision_rule": "Structural screen (1 run). Judge honest composite vs champion 4-draw mean 2.083. Only a clear <~2.075 draw warrants confirmation; a within-noise (2.07-2.09) or worse result -> FAIL S16, revert `git checkout 494b5e2 -- train.py`, and surface PROPOSAL-01 (acoustic representation) as the recommended next major direction for the operator."
+    "decision_rule": "Record the 5th draw; update champion mean in archive.json. This is a holding action. The REAL next move is the operator's go/no-go on PROPOSAL-01 (acoustic representation) — see strategic_note and program.md PROPOSAL-01. If approved, open a representation study (new lineage) with the gated prepare.py refactor + baseline byte-equivalence check."
   },
   "backlog": [
     {"lineage": "acoustic-representation", "type": "new", "priority": "high", "idea": "PROPOSAL-01: the input STFT + spatial-cue construction is fixed inside prepare.py, so the audio representation (the one genuinely unexplored, physically-motivated axis: multi-resolution STFT, early/late echo split, cross-channel coherence) cannot be searched from train.py. This is the most promising path to a NEW real gain but requires the gated prepare.py refactor in program.md PROPOSAL-01 (keep split/target/metric fixed; verify baseline byte-equivalence). Flag for the operator.", "blocked_by": "prepare.py refactor (PROPOSAL-01)"},

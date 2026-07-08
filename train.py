@@ -415,12 +415,7 @@ class RayDPT(nn.Module):
         self.lsa32 = LocalSphericalAttention(dim, heads, 32, 64, getattr(cfg, "raydpt_win32", 5))
         self.lsa64 = LocalSphericalAttention(dim, heads, 64, 128, getattr(cfg, "raydpt_win64", 3))
         self.coarse_head = nn.Conv2d(dim, 1, 1)
-        # E134 (S16): shared head trunk + depth head + per-pixel confidence head. The confidence head
-        # predicts the local log depth-error (trained on the DETACHED depth so it does not alter depth
-        # training); at eval the L/R-flip TTA blend is precision-weighted by exp(-conf) instead of 50/50.
-        self.head_trunk = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf))
-        self.head = nn.Conv2d(ngf, 1, 3, 1, 1)
-        self.conf_head = nn.Conv2d(ngf, 1, 3, 1, 1)
+        self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
         # E66 tried a learned 128x256 decode — RMSE got WORSE (1.485 vs 1.480); resolution is NOT the
         # bottleneck (depth field smooth, bilinear adequate). Reverted. Accuracy is audio->depth-limited.
         self.lite = getattr(cfg, "raydpt_lite", False)        # 2-scale (32,64) lite variant
@@ -471,14 +466,10 @@ class RayDPT(nn.Module):
             xf = self.dec1(xf + self.se1(e1))                  # + e1 skip
             xf = self.dec2(self.up(xf))                        # 256x512, ngf
             D = torch.sigmoid(self.head_fd(xf))
-            conf = None
         else:
-            h = self.head_trunk(x)
-            D = torch.sigmoid(self.head(h))
-            conf = self.conf_head(h)                                   # E134: per-pixel log depth-error
+            D = torch.sigmoid(self.head(x))
             D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
-            conf = F.interpolate(conf, (self.H, self.W), mode="bilinear", align_corners=False)
-        return {"D": D, "D0": D, "extras": {"D_coarse": d_c, "conf": conf}}
+        return {"D": D, "D0": D, "extras": {"D_coarse": d_c}}
 
 
 def build_model(cfg):
@@ -567,13 +558,6 @@ def composite_loss(out, gt, mask, mcfg):
         lc = masked_mae(F.adaptive_avg_pool2d(out["D"], (chh, chw)), gt_c, m_c)
     ll = masked_mae(gaussian_blur_erp(out["D"], 3.0), gaussian_blur_erp(gt, 3.0), mask)
     loss = loss + mcfg.w_coarse_layout * lc + mcfg.w_low * ll
-    # E134 (S16): confidence head predicts local log depth-error on the DETACHED depth (so it does
-    # not change depth training). Used at eval to precision-weight the L/R-flip TTA blend.
-    conf = out["extras"].get("conf")
-    if conf is not None:
-        logerr = torch.log((out["D"].detach() - gt).abs() + 1e-3)
-        lconf = ((conf - logerr) ** 2 * mask).sum() / mask.sum().clamp(min=1e-6)
-        loss = loss + 0.1 * lconf
     return loss, {"mae": float(main.detach()), "rel": float(rel.detach()),
                   "lc": float(lc.detach()), "llow": float(ll.detach())}
 
@@ -636,17 +620,7 @@ def evaluate(model, loader, mcfg, device, max_depth, collect_vis=None,
         # back). Deterministic honest ensembling over the horizontal symmetry -> lower RMSE variance.
         # Eval-only (training loop unchanged); costs one extra forward per batch.
         out_f = model(swap_audio_lr(spec))
-        D1, D2 = out["D"], torch.flip(out_f["D"], dims=[-1])
-        # E134 (S16): precision-weighted TTA blend — weight each L/R view by exp(-predicted-log-error)
-        # instead of a uniform 50/50, so the more-reliable view dominates per pixel. Falls back to
-        # uniform averaging (the E127 champion) when the confidence head is absent.
-        c1 = out["extras"].get("conf")
-        if c1 is not None:
-            w1 = torch.exp(-c1)
-            w2 = torch.exp(-torch.flip(out_f["extras"]["conf"], dims=[-1]))
-            out["D"] = (w1 * D1 + w2 * D2) / (w1 + w2 + 1e-6)
-        else:
-            out["D"] = 0.5 * (D1 + D2)
+        out["D"] = 0.5 * (out["D"] + torch.flip(out_f["D"], dims=[-1]))
         loss, _ = composite_loss(out, gt, mask, mcfg)
         val_losses.append(float(loss.detach()))
         pred_m = (out["D"] * max_depth).cpu().numpy()
