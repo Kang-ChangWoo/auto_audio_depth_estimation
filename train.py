@@ -59,15 +59,39 @@ def swap_lr_multi(spec):
 
 
 def early_late_feat(wav, ds):
-    """E136 (S18): early/late echo split. The fixed echo waveform is split in time into an EARLY
-    window (direct sound + early reflections -> nearby-surface distances) and a LATE window
-    (reverberant tail -> far surfaces / room volume); the 5ch spatial feature is computed on each
-    and concatenated -> 10ch. Reuses the fixed ds._specN so each block is the exact baseline feature."""
+    """E136 (S18, FAILED): early/late echo split. The fixed echo waveform is split in time into an
+    EARLY window (direct + early reflections) and a LATE window (reverberant tail); the 5ch spatial
+    feature is computed on each and concatenated -> 10ch. Result: +0.043 WORSE than champion (splitting
+    the waveform truncates each STFT / the baseline STFT time-axis already carries echo timing)."""
     T = wav.shape[1]
     h = T // 2
     early = ds._specN(wav[:, :h], 5)        # (5,H,W)
     late = ds._specN(wav[:, h:], 5)         # (5,H,W)
     return torch.cat([early, late], dim=0)  # (10,H,W)
+
+
+def _feat5_at(wav, n_fft, hop, win, H, W):
+    """The baseline 5ch spatial feature [logL,logR,ILD,cosIPD,sinIPD] computed at an ARBITRARY STFT
+    resolution (same math as prepare._specN, but parameterisable n_fft/hop/win)."""
+    w = torch.hann_window(win, device=wav.device, dtype=wav.dtype)
+    st = torch.stft(wav, n_fft, hop, win, w, return_complex=True)   # (2,F,T')
+    L, R = st[0], st[1]
+    eps = 1e-6
+    lmag = torch.log1p(L.abs()); rmag = torch.log1p(R.abs())
+    ild = torch.log(L.abs() + eps) - torch.log(R.abs() + eps)
+    ipd = torch.angle(L * torch.conj(R))
+    feat = torch.stack([lmag, rmag, ild, torch.cos(ipd), torch.sin(ipd)], 0)
+    return F.interpolate(feat.unsqueeze(0), (H, W), mode='nearest').squeeze(0).float()
+
+
+def multires_feat(wav, ds):
+    """E137 (S19): multi-resolution STFT. Concatenate the baseline 5ch (n_fft=512 -> fine FREQUENCY,
+    room-mode structure) with a short-window 5ch (n_fft=128 -> fine TIME, sharper echo-delay/distance
+    localisation the single-resolution baseline cannot resolve) -> 10ch. Adds a genuinely new signal
+    (time-frequency resolution tradeoff), unlike the temporal split (S18) which only truncated."""
+    coarse = ds._specN(wav, 5)                                   # n_fft=512 (fine freq) — baseline
+    fine = _feat5_at(wav, 128, 40, 128, ds.H, ds.W)             # n_fft=128 (fine time / echo delay)
+    return torch.cat([coarse, fine], dim=0)                      # (10,H,W)
 
 
 # ============================================================
@@ -923,9 +947,9 @@ if __name__ == '__main__':
     args = parse_args()
     cfg = make_config(args)
 
-    # E136 (S18, acoustic-representation): early/late echo-split representation via the PROPOSAL-01
-    # prepare.FEATURE_FN seam. Produces 10ch = [early 5ch | late 5ch]; set model in_ch to match.
-    prepare.FEATURE_FN = early_late_feat
+    # E137 (S19, acoustic-representation): multi-resolution STFT representation via the PROPOSAL-01
+    # prepare.FEATURE_FN seam. Produces 10ch = [n_fft512 5ch | n_fft128 5ch]; set model in_ch to match.
+    prepare.FEATURE_FN = multires_feat
     cfg.dataset.in_ch = 10
 
     print('=' * 60)
