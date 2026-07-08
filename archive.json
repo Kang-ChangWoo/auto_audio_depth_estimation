@@ -34,6 +34,7 @@
     "inference-time-tta": {"exp_id": "E127", "commit": "494b5e2", "note": "GLOBAL CHAMPION; eval-time L/R-flip TTA."}
   },
   "informative_failures": [
+    {"study_id": "S14", "lineage": "equivariance-training", "exp_ids": "E131,E132", "lesson": "Training-time L/R-equivariance self-distillation is REDUNDANT with the free eval-time TTA (S12) that already ensembles the symmetry; full-batch busts the budget (E131 552s/ep), quarter-batch (E132) scores 2.0925 > champion 2.079. Don't spend training compute to reproduce what TTA gives for free."},
     {"study_id": "S10", "lineage": "geometry-cross-attn", "exp_ids": "E121-E125", "lesson": "Geometry bias on ray<->audio cross-attn is WITHIN NOISE of baseline; crowned on 2 lucky draws then demoted when the 3rd draw (E125) exposed it. Never crown sub-0.015 candidates on <3 draws."},
     {"study_id": "S13", "lineage": "decode-paradigm", "exp_ids": "E130", "lesson": "Soft-argmax bin decode HURTS (d1 -0.014): the audio->depth field is smooth, so expectation-smoothing blurs it."},
     {"study_id": "S07", "lineage": "acoustic-representation", "exp_ids": "E74,E108,E109", "lesson": "5ch cues are load-bearing; absolute level is a depth cue (do not jitter); explicit positional info is neutral-to-harmful. Deeper representation search is gated by prepare.py (PROPOSAL-01)."},

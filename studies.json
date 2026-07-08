@@ -1,30 +1,28 @@
 {
   "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E131",
+  "next_exp_id": "E133",
   "global_champion_commit": "494b5e2",
+  "concluded_studies": [
+    {"study_id": "S14", "lineage": "equivariance-training", "conclusion": "FAIL", "best_exp_id": "E132", "note": "L/R-equivariance training is redundant with the free eval-time TTA and costs an anneal epoch (E131 budget-bust; E132 comp 2.0925 > champion 2.079). See hypotheses.tsv."}
+  ],
   "active_study": {
-    "study_id": "S14",
-    "lineage": "equivariance-training",
+    "study_id": "S15",
+    "lineage": "inference-time-tta",
     "parent": "S12 (inference-time-tta)",
-    "type": "new",
-    "status": "interrupted_resume",
-    "general_hypothesis": "If eval-time TTA helps because the base model is only approximately L/R-equivariant, then explicitly training for that equivariance could improve the base predictions (better held-out-scene generalisation) and tighten the TTA ensemble.",
-    "detailed_hypothesis": "A stop-gradient teacher forward on the L/R-flipped input, penalising disagreement between the model's prediction and its own mirrored prediction (self-distillation for equivariance).",
-    "experiment_note": "loss += 0.1 * masked|D - flip(model(swap_lr(x)).detach())|; one extra no_grad forward per training step (code staged at commit 25b7612).",
-    "hpo_stage": "structural-screen",
+    "type": "confirm",
+    "status": "open",
+    "general_hypothesis": "The eval-time L/R-flip TTA champion (S12) is the current final method; after a run of FAILed exploratory studies (S10 geometry-cross-attn, S13 bins, S14 equivariance) the frontier looks saturated, so the champion's mean deserves one more confirming draw before it is treated as the settled final method.",
+    "detailed_hypothesis": "Repeat the exact TTA champion config to add a 4th draw; a consistent draw in the 2.07-2.09 band strengthens the ~2.079 mean and the conclusion that TTA is the settled final method.",
+    "experiment_note": "Re-run the champion (commit 494b5e2) unchanged; record E133 as a confirm draw of S12.",
+    "confirms": {"study_id": "S12", "exp_id": "E127", "commit": "494b5e2"},
+    "hpo_stage": "n/a-confirm",
     "hpo_runs_used": 0,
-    "runs": [
-      {"exp_id": "E131", "status": "interrupted", "note": "stopped for migration; not evaluated"}
-    ],
-    "open_risks": [
-      "The extra teacher forward may push epoch time toward the ~555s budget ceiling -> verify epoch-1 time on resume; if it busts, reduce cost (e.g. apply consistency to a sub-batch) or FAIL the mechanism.",
-      "Equivariance training and TTA are partial substitutes: a more-equivariant base makes TTA add less on top; net effect must be measured, not assumed."
-    ],
-    "decision_rule": "Structural screen first (1 run, resume E131). If catastrophically worse or budget-busting and unfixable -> FAIL. If plausible/competitive -> enter 3-run HPO on w_cons in {0.05,0.1,0.2}. Judge on the honest composite vs champion 3-draw mean 2.079; only crown with a clear >noise gain AND >=2 confirming draws."
+    "runs": [],
+    "decision_rule": "Record the 4th TTA draw and update the champion's mean/draw-list in archive.json. If it lands in the established 2.07-2.09 band -> champion confirmed as settled, then move to the backlog. If it is an outlier (>2.095) -> investigate before trusting the 2.079 mean."
   },
   "backlog": [
-    {"lineage": "acoustic-representation", "type": "new", "idea": "PROPOSAL-01: safely expose STFT/spatial-cue construction so representation research (multi-resolution STFT, early/late echo split, cross-channel coherence) is possible without touching the fixed split/target/metric.", "blocked_by": "prepare.py refactor - see program.md PROPOSAL-01"},
-    {"lineage": "inference-time-tta", "type": "confirm", "idea": "Optional 4th-5th TTA draw to further tighten the champion mean if a future decision hinges on it."},
-    {"lineage": "post-fusion-geometry", "type": "combine", "idea": "Only if a NEW complementary mechanism appears; geometry axis is saturated at all cheap scales."}
+    {"lineage": "acoustic-representation", "type": "new", "priority": "high", "idea": "PROPOSAL-01: the input STFT + spatial-cue construction is fixed inside prepare.py, so the audio representation (the one genuinely unexplored, physically-motivated axis: multi-resolution STFT, early/late echo split, cross-channel coherence) cannot be searched from train.py. This is the most promising path to a NEW real gain but requires the gated prepare.py refactor in program.md PROPOSAL-01 (keep split/target/metric fixed; verify baseline byte-equivalence). Flag for the operator.", "blocked_by": "prepare.py refactor (PROPOSAL-01)"},
+    {"lineage": "inference-time-tta", "type": "new", "priority": "medium", "idea": "Confidence-weighted TTA: a lightweight per-pixel confidence head to blend the two L/R views non-uniformly instead of 50/50. Extends the winning TTA lineage. Symmetry argues uniform is near-optimal, so screen cheaply."},
+    {"lineage": "post-fusion-geometry", "type": "combine", "priority": "low", "idea": "Only if a NEW complementary mechanism appears; geometry axis is saturated at all cheap scales."}
   ]
 }
