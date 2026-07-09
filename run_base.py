@@ -89,6 +89,11 @@ def make_config(args):
             feat_ILD=args.feat_ILD,
             feat_cosIPD=args.feat_cosIPD,
             feat_sinIPD=args.feat_sinIPD,
+            # --- editable acoustic representation: STFT analysis window ---
+            # hop sets the time-of-flight quantum: depth resolution = c*hop/(2*sr).
+            stft_nfft=args.stft_nfft,
+            stft_hop=args.stft_hop,
+            stft_win=args.stft_win,
             audio_window_m=10.0,
         ),
         model=Cfg(
@@ -477,6 +482,12 @@ def parse_args():
     p.add_argument('--feat-sinIPD', type=_bool, default=True, help='include sin(IPD)')
     p.add_argument('--flip-aug', type=_bool, default=True,
                    help='L/R mirror augmentation (depth width-flip + channel-aware audio swap)')
+    # --- editable acoustic representation: STFT analysis window (defaults = historical) ---
+    p.add_argument('--stft-nfft', type=int, default=512, help='STFT n_fft')
+    p.add_argument('--stft-hop', type=int, default=160,
+                   help='STFT hop. Sets the time-of-flight quantum: depth res = c*hop/(2*sr). '
+                        '160 -> 0.567m; 40 -> 0.142m')
+    p.add_argument('--stft-win', type=int, default=400, help='STFT window length')
 
     p.add_argument('--experiment-name', type=str, default='batvision')
     p.add_argument('--checkpoint', type=str, default=None,

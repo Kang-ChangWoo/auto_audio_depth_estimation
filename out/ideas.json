@@ -12,10 +12,11 @@
       "detailed_hypothesis": "MEASURED: with _NFFT=512, _HOP=160 @48kHz over a 58.8ms (10m round-trip) window, the STFT yields only T=18 time frames, which _features() then nearest-neighbour interpolates 28.4x up to the 512-wide axis. One hop = 3.333ms = 1.133m round-trip = 0.567m of one-way depth. So the input QUANTISES depth at 0.567m while the best model's RMSE is 1.3116m -- the same order of magnitude. Shrinking _HOP (160 -> 40) raises T to 71 frames and the depth quantum to 0.142m, adding genuine information at nearly zero model cost, since the feature is resized to (256,512) either way.",
       "expected_metric_effect": "RMSE falls first and most (it is dominated by coarse distance error); d1 follows. If ABS_REL improves but RMSE does not, the gain is NOT time-of-flight and the mechanism is unsupported.",
       "main_falsification_condition": "Halving _HOP twice (160->80->40) produces no monotone RMSE improvement. That would mean the model was never bottlenecked by temporal resolution, and the 18-frame input already carried more information than the decoder could use.",
-      "minimal_falsifiable_test": "run_base.py (batvision reference, cheapest parent) with _HOP=40 vs _HOP=160, everything else fixed. One structural run each. Reference parent, not RayDPT: if the mechanism is real it must show up on the SIMPLEST model, and that isolates it from RayDPT's decoder.",
-      "budget_risk": "low. STFT cost only; the feature is interpolated to (256,512) regardless, so model FLOPs/VRAM are unchanged. Finer hop means more STFT frames -> slightly slower dataloading, which spends wall-clock TIME_BUDGET. Watch epochs-fit.",
+      "minimal_falsifiable_test": "run_base.py (batvision reference, cheapest parent) with --stft-hop 40 vs 160, everything else fixed. One structural run each. Reference parent, not RayDPT: if the mechanism is real it must show up on the SIMPLEST model, and that isolates it from RayDPT's decoder.",
+      "budget_risk": "low. STFT cost only; the feature is interpolated to (256,512) regardless, so model FLOPs/VRAM/in_ch are unchanged (verified). Finer hop means more STFT frames -> slightly slower dataloading, which spends wall-clock TIME_BUDGET. Report epochs_ran.",
       "evidence_required": "monotone RMSE improvement across two hop halvings, on a parent that is not the current champion.",
-      "next_action": "probe on run_base.py once the batvision grid frees the GPU"
+      "unblocked_by": "The STFT window is now editable research logic (--stft-hop), read from cfg.dataset. Defaults verified bit-identical to the historical representation; changing hop leaves cut/depth/in_ch/shape untouched.",
+      "next_action": "READY. Probe `run_base.py --stft-hop 40` vs the hop-160 control once the batvision grid frees the GPU."
     },
     {
       "id": "I2",

@@ -25,7 +25,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | Idea | Mechanism family | Causal distance | Target bottleneck | Status | Next test |
 |---|---|---|---|---|---|
-| `I1` | acoustic-representation / temporal resolution | far | time-of-flight quantisation in the input representation | backlog | probe on run_base.py once the batvision grid frees the GPU |
+| `I1` | acoustic-representation / temporal resolution | far | time-of-flight quantisation in the input representation | backlog | READY. Probe `run_base.py --stft-hop 40` vs the hop-160 control once the batvision grid fr |
 | `I2` | decoder resolution | near | output resolution: 4x bilinear upsample smears the target's sharp steps | backlog | run the upsample-bound diagnostic on the finished batvision checkpoint (CPU/GPU, seconds) |
 | `I3` | training-optimization | near | the 1h wall-clock budget is spent on epochs that make the model worse | backlog | queue after the RayDPT planar re-anchor (E4); this is a confound affecting EVERY future ru |
 
@@ -42,6 +42,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-10T03:19 | `synthesize` | infrastructure | Upgrade-plan section 15 (audio representation search-space): STFT analysis window moved from prepare.py module constants into cfg. |
 | 2026-07-10T03:20 | `synthesize` | infrastructure | Serial scored-evaluation lock added (utils/evallock.py). Our composite has no runtime term, but TIME_BUDGET is wall-clock, so over |
 | 2026-07-10T03:12 | `synthesize` | idea_added | Temporal resolution of the input (hop 160 -> 40). Causally FAR from the current decoder/attention lineage, grounded in sensing phy |
 | 2026-07-10T03:10 | `synthesize` | divergence_checkpoint | Abstraction levels reviewed: input representation / target geometry / decoder resolution / optimisation schedule / sensing physics |
@@ -49,7 +50,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | 2026-07-10T02:30 | `exploit` | discrepancy_recorded | log1p compression is a no-op at 2ch, contradicting the pre-registered prediction that it would help MORE at 2ch than 5ch. Await E2 |
 | 2026-07-10T02:23 | `exploit` | experiment_completed | batvision 2ch log: composite 1.8784, delta vs E0 = 0.0070 < sigma 0.008. Metrics split across the two runs. Crown neither. |
 | 2026-07-10T01:30 | `exploit` | discrepancy_recorded | Best at epoch 14/26 then 12 epochs of overfitting; val loss rises 0.1871->0.1925. Cosine sized for 40 epochs, only 26 fit the budg |
-| 2026-07-10T01:23 | `exploit` | experiment_completed | batvision 2ch nolog: composite 1.8854 (rmse 1.3186, d1 0.5785, abs_rel 0.4143), best epoch 14/26. |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->

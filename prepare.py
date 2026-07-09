@@ -83,8 +83,34 @@ def get_scene_split(dataset_dir, split_ratio, seed=42):
 # Dataset: binaural audio -> ERP planar (cubemap) depth
 # ============================================================
 
-_C = 340.0                       # speed of sound [m/s]
-_NFFT, _HOP, _WIN = 512, 160, 400
+_C = 340.0                       # speed of sound [m/s]  -- FIXED (physics; sets the waveform cut)
+
+# ------------------------------------------------------------------------------------------
+# RESPONSIBILITY BOUNDARY (see program.md).
+#
+#   FIXED (these ARE the benchmark; never edit):
+#       get_scene_split   split          _wave   waveform access + cut
+#       _depth            target         compute_errors   metric
+#   Note `_wave`'s cut depends only on (_C, audio_window_m, sample_rate) -- NOT on the STFT
+#   parameters below. Changing the analysis window therefore cannot change which samples
+#   exist, which audio is read, or what the target is.
+#
+#   EDITABLE research logic (the acoustic representation):
+#       the STFT analysis window, the cue set, and `_features` itself.
+#
+# STFT defaults reproduce the historical representation EXACTLY (512/160/400). They are now
+# read from cfg.dataset so that temporal-resolution research is possible without editing this
+# file. Physical meaning of the hop, which is what makes this a research knob and not a
+# nuisance parameter: an echo from a surface at depth d arrives at t = 2d/c, so one hop of H
+# samples quantises depth at c*H/(2*sr). At the default H=160, sr=48k that is 0.567 m, and the
+# 58.8 ms window yields only T=18 time frames -- which `_features` then interpolates up to W.
+# ------------------------------------------------------------------------------------------
+_NFFT, _HOP, _WIN = 512, 160, 400       # historical defaults; overridable via cfg.dataset
+
+
+def depth_quantum_m(hop, sample_rate=48000, c=_C):
+    """One-way depth resolution implied by an STFT hop, in metres: c*hop/(2*sr)."""
+    return c * hop / (2.0 * sample_rate)
 
 # ------------------------------------------------------------------------------------------
 # Input acoustic representation (research-editable; the benchmark split/target/metric/waveform
@@ -157,12 +183,16 @@ class SoundSpacesDataset(Dataset):
             raise ValueError("No input cues enabled: turn on at least one feat_* flag.")
         self.in_ch = len(self.channel_names)
         self.win_m = float(getattr(d, 'audio_window_m', 0) or self.max_depth)
-        self.cut = int(2.0 * self.win_m / _C * self.sr)
+        self.cut = int(2.0 * self.win_m / _C * self.sr)     # FIXED: independent of the STFT params
+        # --- editable acoustic representation: STFT analysis window ---
+        self.nfft = int(getattr(d, 'stft_nfft', _NFFT))
+        self.hop = int(getattr(d, 'stft_hop', _HOP))
+        self.stft_win = int(getattr(d, 'stft_win', _WIN))
 
         scene_split = get_scene_split(self.root_dir, d.split_ratio, seed=d.split_seed)
         self.scenes = scene_split[split]
 
-        self._win = torch.hann_window(_WIN)
+        self._win = torch.hann_window(self.stft_win)
 
         self.samples = []
         for scene in self.scenes:
@@ -176,8 +206,11 @@ class SoundSpacesDataset(Dataset):
                 if os.path.exists(depth_path):
                     self.samples.append((scene, idx))
 
+        n_frames = 1 + self.cut // self.hop
         print(f"[{split}] {len(self.samples)} samples from {len(self.scenes)} scenes "
-              f"({self.H}x{self.W}, in_ch={self.in_ch} [{','.join(self.channel_names)}])", flush=True)
+              f"({self.H}x{self.W}, in_ch={self.in_ch} [{','.join(self.channel_names)}]) "
+              f"stft(nfft={self.nfft},hop={self.hop},win={self.stft_win}) -> {n_frames} time frames, "
+              f"depth quantum {depth_quantum_m(self.hop, self.sr):.3f} m", flush=True)
 
     def __len__(self):
         return len(self.samples)
@@ -198,7 +231,8 @@ class SoundSpacesDataset(Dataset):
         logL/L, logR/R : STFT magnitude (log1p iff use_log); ILD = log|L|-log|R|;
         cosIPD/sinIPD  : cos/sin of the interaural phase difference angle(L*conj(R)).
         """
-        st = torch.stft(wav, _NFFT, _HOP, _WIN, self._win, return_complex=True)  # (2,F,T')
+        st = torch.stft(wav, self.nfft, self.hop, self.stft_win, self._win,
+                        return_complex=True)                                     # (2,F,T')
         L, R = st[0], st[1]
         la, ra = L.abs(), R.abs()
         eps = 1e-6

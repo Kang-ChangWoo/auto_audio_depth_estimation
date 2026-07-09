@@ -26,9 +26,21 @@ depth). Nothing measured before commit `87b3047` (the radial→planar switch) is
 (dense masked-MAE, `w_dense=1`) is required; `lc`/`llow` are auxiliary and free to tune or zero.
 
 ### Editable / fixed boundary
-**Never edit** (these *are* the benchmark): `get_scene_split`, `_wave`, `_depth`, `compute_errors`, the
-score formula, the held-out split. Don't add packages — use the conda `ss` env. Everything else in
-`train.py` is fair game. **Infrastructure changes are never recorded as research results.**
+**Never edit** (these *are* the benchmark): `get_scene_split` (split), `_wave` (waveform access + cut),
+`_depth` (target), `compute_errors` (metric), the score formula. Don't add packages — use the conda `ss`
+env. **Infrastructure changes are never recorded as research results.**
+
+**Editable research logic**, including inside `prepare.py`: the **acoustic representation** — the STFT
+analysis window (`--stft-nfft/--stft-hop/--stft-win`, defaults 512/160/400 reproduce the historical
+representation bit-identically), the cue set, `_features`, and the `FEATURE_FN` hook (multi-resolution
+STFT, early/late echo split, coherence, …). Everything in `train.py` is fair game.
+
+`_wave`'s cut depends only on `(c, audio_window_m, sample_rate)`, **not** on the STFT parameters, so
+changing the analysis window cannot alter which samples exist, which audio is read, or the target. Any
+representation change must keep `in_ch` and the `(256,512)` feature shape, or it is also a model change —
+that would be two hypotheses in one experiment. **Physics worth remembering:** an echo from depth `d`
+arrives at `t = 2d/c`, so a hop of `H` samples quantises depth at `c·H/(2·sr)` (default: **0.567 m**, from
+only **18 time frames**, nearest-upsampled to the 512-wide axis).
 
 ## 2. Metric interpretation
 
@@ -153,6 +165,7 @@ difference rests mainly on how many epochs fit, re-measure parent and candidate 
 - `out/results.tsv` — authoritative per-run log: `commit  abs_rel  rmse  d1  memory_gb  status  description`.
 - `out/hypothesis.tsv` / `out/hypothesis_details.tsv` — per-study conclusions and full reasoning.
 - `studies.json` — mode, active study, HPO stage, `next_exp_id`, champion, backlog.
+- `out/archive.json` — global + lineage champions, specialists, informative failures with their **scope**.
 - `out/ideas.json` — the live research portfolio + open discrepancies. Prune it; it is not a brainstorm dump.
 - `out/decision_log.jsonl` — append-only meaningful transitions.
 - `utils/research.py` — `status` · `composite` · `next-id` · `mode` · `log`.

@@ -1,0 +1,54 @@
+{
+  "_comment": "Lightweight multi-lineage archive. A lineage is defined by its CORE MECHANISM, never by parameter values ('geometry-aware ray reasoning', not 'lr_3e4'). A method may FAIL to become global champion yet PASS as a hypothesis if it shows a clear effect, a reproducible metric specialisation, a meaningful trade-off, or recombination value. Conversely a tiny metric gain does not make a hypothesis scientifically strong. Per-run results stay in out/results.tsv; study-level conclusions in out/hypothesis*.tsv; this file only tracks champions and lineage state.",
+  "phase": "2026-July RayDPT-validation (planar depth)",
+  "comparability_note": "The depth target changed RADIAL -> PLANAR at commit 87b3047. Metrics recorded before that commit are NOT comparable to metrics after it. The 2026-June champion below is retained as historical evidence under the OLD target and must never be compared numerically against this phase's runs.",
+
+  "global_champion": null,
+
+  "lineages": {
+    "batvision-reference": {
+      "mechanism": "plain pix2pix/CycleGAN unet_256 encoder-decoder; the reference number my model must beat",
+      "role": "reference (not a candidate for global champion; it is the bar, not the runner)",
+      "status": "active",
+      "champion": {
+        "exp_id": "E1", "name": "batvision_2ch_log", "commit": "209c6e8",
+        "abs_rel": 0.4211, "rmse": 1.3116, "d1": 0.5808, "composite": 1.8784,
+        "best_epoch": 14, "epochs_ran": 26, "vram_gb": 2.4,
+        "provisional": true,
+        "caveat": "E1 leads E0 (1.8854) by only 0.0070, BELOW the sigma~0.008 noise floor, and the two runs split the underlying metrics. This is a placeholder, not a crowned champion. E2/E3 (5ch) pending."
+      }
+    },
+    "raydpt-baseline": {
+      "mechanism": "ray-conditioned DPT: per-ray RayBank queries x audio cross-attention, depth decoded per ray direction",
+      "role": "my model; the architectural invariant of this project",
+      "status": "pending re-anchor under the planar target (E4)",
+      "champion": null
+    }
+  },
+
+  "specialists": [],
+
+  "historical": {
+    "2026-June-RayDPT-improvement": {
+      "branch": "2026-June-RayDPT-improvement",
+      "target": "RADIAL depth (superseded)",
+      "best_composite": 2.03,
+      "mechanisms": "multi-res STFT + interaural coherence + eval-time L/R-flip TTA",
+      "status": "archived, read-only",
+      "note": "Historical evidence only. Recorded under the radial target and the pre-fix coarse/low loss; NOT numerically comparable to the current phase. Its mechanisms are candidates for re-validation, not established results."
+    }
+  },
+
+  "informative_failures": [
+    {
+      "idea_id": "I4",
+      "lineage": "geometric-head",
+      "mechanism": "predict the smooth radial field, multiply by the fixed linf = max(|dx|,|dy|,|dz|) field to recover planar depth",
+      "verdict": "DROP (refuted before any GPU time was spent)",
+      "classification": "mechanism unsupported -- the premise itself is false",
+      "evidence": "grad-energy over 24 samples / 6 scenes: planar 0.01618 vs radial 0.01677; radial smoother in only 17% of samples (mean ratio 1.035).",
+      "scope": "Refutes THIS reparameterisation under the planar target on SoundSpaces rooms, which are mostly axis-aligned (a wall perpendicular to a cube face has constant planar depth, while radial curves as 1/cos). It does NOT license the conclusion that geometry-conditioned heads are useless in general, and says nothing about non-axis-aligned scenes.",
+      "recombination_value": "The measurement itself is the asset: it establishes that the planar target is piecewise-constant, which is what makes decoder output resolution (I2) worth testing."
+    }
+  ]
+}
