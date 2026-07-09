@@ -14,8 +14,7 @@ the scientific finding, and continues indefinitely. This file is the agent's ope
 > The **June improvement phase** (champion 12ch multi-res+coherence+TTA, composite ~2.030, ABS_REL −26% /
 > RMSE ~−9% / d1 +7pts vs baseline) is fully archived on branch **`2026-June-RayDPT-improvement`** (commit
 > `ff22f23`, 164 runs / 29 studies) — read it for the prior findings to re-test.
-> The framework is unchanged (hypothesis-driven workflow below; `research.py`, `hypotheses.tsv`,
-> `archive.json`, `studies.json`). **Start from E0 (baseline) this phase.** Run `python research.py status`.
+> The framework is unchanged (hypothesis-driven workflow below; `utils/research.py`, `out/hypothesis.tsv`, `studies.json`). **Start from E0 (baseline) this phase.** Run `python utils/research.py status`.
 
 ## Setup
 
@@ -28,7 +27,7 @@ To set up a new experiment, work with the user to:
    - `prepare.py` — fixed constants, data prep, dataloader, evaluation. Do not modify.
    - `train.py` — the file you modify. Model architecture, optimizer, training loop.
 4. **Verify data exists**: Check that the dataset directory exists. If not, tell the human to run `conda activate ss && python prepare.py`.
-5. **Initialize results.tsv**: Create `results.tsv` with just the header row. The baseline will be recorded after the first run.
+5. **Initialize out/results.tsv**: Create `out/results.tsv` with just the header row. The baseline will be recorded after the first run.
 6. **Confirm and go**: Confirm setup looks good.
 
 Once you get confirmation, kick off the experimentation.
@@ -44,7 +43,7 @@ Each experiment runs on a single GPU. The training script runs for a **fixed tim
 - Modify the **FIXED** parts of `prepare.py`: `get_scene_split` (data split), `SoundSpacesDataset._wave`
   (waveform access), `._depth` (target depth), `compute_errors` (metric), `swap_audio_lr` (L/R symmetry).
   These define the benchmark and keep E0–E134 reproducible. Do not touch them.
-- Install new packages or add dependencies. You can only use what's already in `pyproject.toml`.
+- Install new packages or add dependencies. You can only use what's already in the conda `ss` env.
 - Modify the evaluation harness. The `compute_errors` function in `prepare.py` is the ground truth metric.
 
 **What you CAN now do (PROPOSAL-01, implemented):** research the **acoustic representation** — the
@@ -102,9 +101,7 @@ grep "ABS_REL\|RMSE" run.log
 
 ## Logging results
 
-When an experiment is done, log it to `results.tsv` (tab-separated, NOT comma-separated — commas break in descriptions).
-
-The TSV has a header row and 7 columns:
+When an experiment is done, log it to **`out/results.tsv`** (tab-separated). The TSV has a header row and 7 columns:
 
 ```
 commit	abs_rel	rmse	d1	memory_gb	status	description
@@ -116,7 +113,9 @@ commit	abs_rel	rmse	d1	memory_gb	status	description
 4. d1 (delta < 1.25) accuracy (e.g. 0.4782) — use 0.0000 for crashes
 5. peak memory in GB, round to .1f (e.g. 12.3 — divide peak_vram_mb by 1024) — use 0.0 for crashes
 6. status: `keep`, `discard`, or `crash`
-7. short text description of what this experiment tried
+7. **SHORT description (≤ ~120 chars): `Exx [Sxx type] <what changed>: <comp> vs champ <val> -> keep/discard`.**
+   Keep it terse — one line, the change + the verdict number. Put any long reasoning/mechanism in the
+   study record (`out/hypothesis_details.tsv`), NOT here.
 
 Example:
 
@@ -140,7 +139,7 @@ LOOP FOREVER:
 4. Run the experiment: `conda activate ss && python train.py --mode train > run.log 2>&1` (redirect everything — do NOT use tee or let output flood your context)
 5. Read out the results: `grep "ABS_REL\|RMSE\|Best" run.log`
 6. If the grep output is empty, the run crashed. Run `tail -n 50 run.log` to read the Python stack trace and attempt a fix. If you can't get things to work after more than a few attempts, give up.
-7. Record the results in the tsv (NOTE: do not commit the results.tsv file, leave it untracked by git)
+7. Record the results in `out/results.tsv`
 8. If ABS_REL improved (lower), you "advance" the branch, keeping the git commit
 9. If ABS_REL is equal or worse, you git reset back to where you started
 
@@ -164,7 +163,7 @@ Run **fully autonomously and indefinitely**. The moment one run finishes, record
 
 **Respect the fixed 1-hour budget.** Heavy capacity (full-decode head, deeper cross-attn, more heads) slows epochs → fewer anneal steps → busts the budget and loses on RMSE/d1. Favor light/fast configs that fit ~7 epochs; prefer levers that don't slow training.
 
-**Keep `results.tsv` and `EXPERIMENTS.md` current** and `git push` to the remote (master) after each experiment, with multiple commits.
+**Keep `out/results.tsv` and the hypothesis TSVs current** and `git push` after each experiment.
 
 ---
 
@@ -174,17 +173,23 @@ The keep/discard loop above still runs each experiment. This section adds lightw
 structure* around it so research explores real mechanisms instead of collapsing into endless
 hyperparameter tuning. Keep it simple — it is four small files plus `research.py`, not a framework.
 
-## State files (all human-readable; edit by hand)
-- **`results.tsv`** — authoritative per-run log. Format UNCHANGED. One row per training run. Never
-  rewrite history, renumber experiments, or change past scores.
-- **`hypotheses.tsv`** — one row per *study* (a mechanism, not a single run): the general + detailed
-  hypothesis, experiment type, exp IDs, best composite, HPO count, confirmation, PASS/FAIL, and the
-  scientific conclusion. Historical studies are reconstructed and marked `provenance=reconstructed`.
-- **`archive.json`** — global champion, per-lineage champions, informative failures, specialists,
-  recombination candidates. Champions are keyed by **mechanism (lineage)**, not parameter values.
-- **`studies.json`** — the *active* study, its adaptive-HPO stage, `next_exp_id`, and the backlog.
-- **`research.py`** — `python research.py status` prints the state; `... composite --abs_rel A
+## Repo layout & state files (all human-readable; edit by hand)
+```
+train.py        prepare.py(FIXED)   program.md   README.md(status display)   studies.json
+utils/research.py            out/results.tsv  out/hypothesis.tsv  out/hypothesis_details.tsv
+```
+- **`out/results.tsv`** — authoritative per-run log, one SHORT row per run (see "Logging results").
+- **`out/hypothesis.tsv`** — one SHORT row per *study* (mechanism, not a single run): `study_id, lineage,
+  type, conclusion (PASS/FAIL/NEUTRAL), best_comp, best_exp_id, best_commit, one-line summary`.
+- **`out/hypothesis_details.tsv`** — the LONG per-study content (general + detailed hypothesis, experiment
+  note, exp IDs, HPO count, scientific conclusion, failure mode), keyed by `study_id`. Keep the verbose
+  reasoning HERE so results.tsv / hypothesis.tsv stay terse.
+- **`studies.json`** — the *active* study, its adaptive-HPO stage, `next_exp_id`, the current
+  `global_champion` (mechanism-keyed), and the backlog.
+- **`utils/research.py`** — `python utils/research.py status` prints the state; `... composite --abs_rel A
   --rmse R --d1 D` computes the honest composite; `... next-id` prints the next experiment id.
+(No `archive.json` / `EXPERIMENTS.md` — the champion lives in `studies.json`; per-study findings live in the
+two hypothesis TSVs.)
 
 ## Three-level hypothesis (every NEW/refine/combine study must state all three)
 1. **General hypothesis** — WHY this direction matters (a problem, limitation, or principle). Not a
@@ -220,7 +225,7 @@ plausible / competitive / ambiguous / promising / a useful specialist → begin 
 Do not jump straight from one structural run to ten tuning runs.
 
 ## Decision policy (prospective only — never rewrite past decisions)
-Judge on the **honest composite** `rmse/1.6 + (1-d1)/0.46 + 0.3·abs_rel/0.4` (lower better), with
+Judge on the **honest composite** `rmse/1.6 + (1-d1)/0.46 + 0.35·abs_rel` (lower better), with
 RMSE + d1 dominant and ABS_REL discounted (it is directly optimised → gameable). Also weigh:
 individual-metric regressions, Pareto behaviour, estimated noise, model complexity, VRAM/compute,
 and interpretability. Never let a method win one metric while badly regressing the others.
@@ -234,7 +239,7 @@ crowned on two lucky low draws, demoted when the 3rd draw exposed it as noise; a
 
 ## Multi-lineage archive
 The repo is no longer a single champion trajectory. Maintain lineages (mechanism families) with their
-own champions in `archive.json`. A method may FAIL to become global champion yet PASS as a hypothesis
+own champions in `studies.json`. A method may FAIL to become global champion yet PASS as a hypothesis
 if it shows a clear, reproducible effect, a useful specialist profile, or a meaningful tradeoff worth
 recombining later. A tiny metric gain is not automatically a strong result.
 
@@ -243,8 +248,8 @@ recombining later. A tiny metric gain is not automatically a strong result.
 incomplete implementation/wrong location) · `tune` (viable mechanism, unmapped param range) ·
 `combine` (two lineages address different failure modes, compatible, interaction explainable) ·
 `confirm` (near noise / conflicting / champion candidate / conclusion rests on one run).
-Then append the study conclusion to `hypotheses.tsv`, update `archive.json`, bump `next_exp_id` in
-`studies.json`, `git push`, and launch the next run.
+Then append the study conclusion to `out/hypothesis.tsv` (+ `out/hypothesis_details.tsv`), update
+`global_champion`/`next_exp_id` in `studies.json`, `git push`, and launch the next run.
 
 ## Continue indefinitely
 Do not stop after a failed run, an eval error, a failed hypothesis, a completed HPO stage, a finished

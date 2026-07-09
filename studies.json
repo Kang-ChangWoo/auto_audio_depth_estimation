@@ -1,9 +1,10 @@
 {
-  "_comment": "Active research state for Auto Audio Depth Estimation - 2026-July RayDPT-validation phase (FRESH RESET). The June improvement phase (champion 2.030) is archived on branch 2026-June-RayDPT-improvement. This phase restarts from the ORIGINAL RayDPT baseline (commit f677b0f, 5ch, fp32-era) with a CORRECTED loss (the coarse-layout & low-pass loss TARGETS now use MASK-WEIGHTED pooling; the old avg-pool/blur included invalid gt=0 pixels and corrupted the target). Goal: re-run/validate the research with the fixed loss. Same framework (program.md v2, research.py, hypothesis-driven workflow).",
+  "_comment": "Active research state for Auto Audio Depth Estimation - 2026-July RayDPT-validation phase (FRESH RESET). June improvement phase (champion composite ~2.03) is archived on branch 2026-June-RayDPT-improvement. This phase restarts from the ORIGINAL RayDPT baseline (f677b0f, 5ch) with TWO changes: (1) LOSS FIX - coarse-layout & low-pass loss TARGETS now use MASK-WEIGHTED pooling (old avg-pool/blur diluted the target with invalid gt=0 pixels); (2) selection composite ABS_REL weight reduced (effective 0.75 -> 0.35) since abs_rel is gameable and varies most. compute_errors (eval metric) unchanged. State files: out/results.tsv, out/hypothesis.tsv, out/hypothesis_details.tsv, studies.json; helper utils/research.py.",
+  "phase": "2026-July RayDPT-validation",
+  "reset_note": "Fresh from original baseline f677b0f + mask-weighted coarse/low loss targets + composite abs_rel weight 0.75->0.35.",
+  "metric": "composite (selection) = rmse/1.6 + (1-d1)/0.46 + 0.35*abs_rel  (lower better; RMSE+d1 dominate; abs_rel de-weighted)",
   "next_exp_id": "E0",
-  "global_champion_commit": null,
-  "global_champion_note": "None yet - first run (E0) establishes the fresh baseline with the fixed loss.",
-  "metric_note": "compute_errors (abs_rel/rmse/d1) in prepare.py is the FIXED eval metric (unchanged). The honest composite ranking = rmse/1.6 + (1-d1)/0.46 + 0.3*abs_rel/0.4 (RMSE+d1 dominate; abs_rel discounted). The 2026-July FIX is to the LOSS (coarse/low targets), not to compute_errors.",
+  "global_champion": null,
   "concluded_studies": [],
   "active_study": {
     "study_id": "S0",
@@ -11,18 +12,18 @@
     "parent": null,
     "type": "new",
     "status": "pending",
-    "general_hypothesis": "Establish the fresh baseline: the original RayDPT (5ch [logL,logR,ILD,cosIPD,sinIPD] + flip-aug) with the CORRECTED coarse/low-pass loss targets (mask-weighted pooling), to anchor the 2026-July validation phase.",
-    "detailed_hypothesis": "Run the reset baseline train.py (f677b0f + loss fix) unchanged; record its metrics as the new baseline. Then the workflow proceeds - re-validating whether the June findings (bf16/bs32/lr, coarse/geometry attention, gated skips, multi-res STFT, coherence, TTA) still hold under the corrected loss.",
-    "experiment_note": "E0: baseline run, python train.py --mode train (defaults: in_ch=5, flip_aug, no FEATURE_FN, no TTA).",
+    "general_hypothesis": "Establish the fresh baseline: original RayDPT (5ch [logL,logR,ILD,cosIPD,sinIPD] + flip-aug) with the CORRECTED coarse/low-pass loss targets (mask-weighted) and the composite selection (abs_rel weight 0.35), to anchor the 2026-July validation phase.",
+    "detailed_hypothesis": "Run the reset baseline train.py unchanged; record its metrics as the new baseline. Then re-validate whether the June findings (bf16/bs32/lr/EMA, coarse/geometry attention, gated skips, multi-res STFT, coherence, TTA) still hold under the corrected loss + de-weighted-abs_rel selection.",
+    "experiment_note": "E0: python train.py --mode train (defaults: in_ch=5, flip_aug, no TTA).",
     "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
     "runs": [],
-    "decision_rule": "Record the baseline metrics. Then follow program.md's hypothesis-driven workflow. KEY: re-verify the June findings under the FIXED loss - the corrected coarse/low targets may change which cues/architectures help. Never crown on <2-3 draws (E121/E125 lesson from the June phase)."
+    "decision_rule": "Record the baseline. Then follow program.md's workflow. The corrected coarse/low targets especially affect the coarse-layout loss that the geometry/coarse studies leaned on, so June conclusions may shift. Never crown on <2-3 draws."
   },
   "backlog": [
-    {"lineage": "training-optimization", "type": "tune", "idea": "Re-validate the June optimisation envelope under the fixed loss: bf16 AMP + bs32 + lr4e-4 + warmup-cosine + EMA0.995 (June: big early win)."},
-    {"lineage": "acoustic-representation-v2", "type": "new", "idea": "Re-validate the June representation wins under the fixed loss: multi-res STFT (fine-time echo delay) and interaural coherence (direct-vs-diffuse). The coarse/low-target fix especially affects the coarse-layout loss which the geometry/coarse studies leaned on."},
-    {"lineage": "inference-time-tta", "type": "new", "idea": "Re-validate eval-time L/R-flip TTA (June: +0.02 win)."},
-    {"lineage": "simplification", "type": "refine", "idea": "The June E116 dropped the vestigial pix2pix encoder tail (24.44M->7.69M, provably equivalent) - re-apply early once the baseline is confirmed."}
+    {"lineage": "training-optimization", "type": "tune", "idea": "Re-validate the June optimisation envelope under the fixed loss: bf16 AMP + bs32 + lr4e-4 + warmup-cosine + EMA0.995."},
+    {"lineage": "acoustic-representation", "type": "new", "idea": "Re-validate the June representation wins: multi-res STFT (fine-time echo delay) + interaural coherence (direct-vs-diffuse)."},
+    {"lineage": "inference-time-tta", "type": "new", "idea": "Re-validate eval-time L/R-flip TTA."},
+    {"lineage": "simplification", "type": "refine", "idea": "Drop the vestigial pix2pix encoder tail (24.44M->7.69M, provably equivalent) - re-apply early once baseline confirmed."}
   ]
 }

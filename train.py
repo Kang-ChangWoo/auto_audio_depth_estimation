@@ -541,6 +541,7 @@ def train(cfg):
     vis_indices = set(np.linspace(0, max(0, len(val_set) - 1), n_vis, dtype=int).tolist())
 
     best_abs_rel = float('inf')
+    best_score = float('inf')   # honest composite (model selection)
     dataset_dir = cfg.dataset.dataset_dir
     depth_type = cfg.dataset.depth_type
 
@@ -590,22 +591,28 @@ def train(cfg):
                 model, val_loader, mcfg, device, max_depth,
                 collect_vis=vis_indices, dataset=val_set,
                 dataset_dir=dataset_dir, depth_type=depth_type)
-            abs_rel = mean_errors[0]
+            abs_rel = mean_errors[0]; rmse = mean_errors[1]; d1 = mean_errors[2]
             print(f'  Val Loss: {val_loss:.4f} | '
-                  f'ABS_REL: {abs_rel:.4f} RMSE: {mean_errors[1]:.4f} '
-                  f'd1: {mean_errors[2]:.4f} d2: {mean_errors[3]:.4f} d3: {mean_errors[4]:.4f}')
+                  f'ABS_REL: {abs_rel:.4f} RMSE: {rmse:.4f} '
+                  f'd1: {d1:.4f} d2: {mean_errors[3]:.4f} d3: {mean_errors[4]:.4f}')
 
             if vis_data:
                 save_visualizations(vis_data, epoch, vis_dir, max_depth)
                 print(f'  Saved {len(vis_data)} visualizations')
 
-            if abs_rel < best_abs_rel:
-                best_abs_rel = abs_rel
+            # HONEST-WEIGHTED composite for model selection. RMSE + d1 dominate (not directly optimised
+            # -> trustworthy); ABS_REL is directly optimisable (gameable) AND varies most across runs, so
+            # it is DE-WEIGHTED (2026-July: effective per-unit coeff 0.75 -> 0.35). Lower is better.
+            score = rmse / 1.6 + (1.0 - d1) / 0.46 + 0.35 * abs_rel
+            if score < best_score:
+                best_score = score; best_abs_rel = abs_rel
                 torch.save({'epoch': epoch, 'state_dict': model.state_dict(),
                             'optimizer': optimizer.state_dict(),
-                            'best_abs_rel': best_abs_rel, 'cfg_model': vars(mcfg)},
+                            'best_score': best_score, 'best_abs_rel': best_abs_rel,
+                            'cfg_model': vars(mcfg)},
                            os.path.join(ckpt_dir, 'best_model.pth'))
-                print(f'  >> Best model saved (ABS_REL: {best_abs_rel:.4f})')
+                print(f'  >> Best model saved (score {best_score:.4f} | '
+                      f'ABS_REL {abs_rel:.4f} RMSE {rmse:.4f} d1 {d1:.4f})')
 
         # Time budget check
         elapsed = time.time() - training_start
@@ -614,7 +621,7 @@ def train(cfg):
             break
 
     total_time = time.time() - training_start
-    print(f'\nTraining complete. Best ABS_REL: {best_abs_rel:.4f}')
+    print(f'\nTraining complete. Best (composite) score: {best_score:.4f} ABS_REL: {best_abs_rel:.4f}')
     print(f'training_seconds: {total_time:.1f}')
     if device.type == 'cuda':
         print(f'peak_vram_mb: {torch.cuda.max_memory_allocated() / 1e6:.1f}')
