@@ -1,6 +1,6 @@
 {
   "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E147",
+  "next_exp_id": "E148",
   "global_champion_commit": "93ef41b",
   "global_champion_note": "NEW CHAMPION (S22): 11ch = multi-res STFT (512+128) + interaural coherence(512) + TTA, 3-draw mean 2.0417. Prior multi-res-10ch (828b9a3, 2.064) is lineage sub-champion. Revert-to-champion: current train.py at 93ef41b.",
   "concluded_studies": [
@@ -74,7 +74,7 @@
     "lineage": "acoustic-representation-v2",
     "parent": "S22 (multi-res+coherence champion)",
     "type": "refine",
-    "status": "running",
+    "status": "confirming",
     "general_hypothesis": "Coherence at the coarse 512 scale helped (S22); coherence is scale-dependent (the direct-vs-diffuse balance differs with analysis window), so adding coherence at the FINE 128 scale too - matching the multi-res two-scale design - may capture complementary direct/diffuse structure and improve further.",
     "detailed_hypothesis": "Append a 2nd coherence channel computed at n_fft=128 (fine-time) alongside the existing n_fft=512 coherence -> 12ch (10 multi-res + 2 coherence).",
     "experiment_note": "E146: multires_coh_feat appends _coherence_at(wav,128,40,128) as a 2nd trailing symmetric channel; cfg.dataset.in_ch=12; swap_lr_multi passes both trailing coherence channels as identity (12 = 2x5 blocks + 2 symmetric).",
@@ -83,8 +83,16 @@
     "runs": [
       {
         "exp_id": "E146",
+        "status": "done",
+        "comp": 2.0289,
+        "rmse": 1.4513,
+        "d1": 0.5967,
+        "verdict": "best-ever honest metrics; 0.013 below champion mean but only 0.003 below best draw - thin, confirm"
+      },
+      {
+        "exp_id": "E147",
         "status": "running",
-        "config": "coherence at 512 AND 128 -> 12ch"
+        "note": "confirmation of 12ch coherence-both-scales"
       }
     ],
     "open_risks": [
