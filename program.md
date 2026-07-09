@@ -16,6 +16,42 @@ the scientific finding, and continues indefinitely. This file is the agent's ope
 > `ff22f23`, 164 runs / 29 studies) — read it for the prior findings to re-test.
 > The framework is unchanged (hypothesis-driven workflow below; `utils/research.py`, `out/hypothesis.tsv`, `studies.json`). **Start from E0 (baseline) this phase.** Run `python utils/research.py status`.
 
+## Reference model, my-model, inputs & reporting (2026-July setup)
+
+**Reference model = BatVision U-Net** (`base/batvision.py`, `build_batvision_model`): the plain
+pix2pix/CycleGAN encoder→decoder `unet_256` from
+[AmandineBtto/Batvision-Dataset](https://github.com/AmandineBtto/Batvision-Dataset) (model only).
+`run_base.py` is a structural clone of `train.py` (same cfg / composite loss / train-eval-CLI / fixed
+`prepare.py` harness); only `build_model` differs. It establishes the number **"my model" must beat**.
+Run it: `conda activate ss && python run_base.py --mode train` (add `--epochs 1 --max-iters 1
+--max-val-batches N` for a 1-iteration smoke to check the pipeline/visuals). Experiment name `batvision`.
+
+**My model = RayDPT** (`train.py`) — the ray-conditioned model iterated to beat the reference. Keep the
+ray-conditioning invariant.
+
+**Input representation = named binaural cues, each on/off, + a `use_log` switch**
+(`prepare.build_channel_names` / `SoundSpacesDataset._features`), canonical order:
+`logL/L, logR/R, ILD, cosIPD, sinIPD`. CLI flags on both scripts: `--use-log`, `--feat-L`, `--feat-R`,
+`--feat-ILD`, `--feat-cosIPD`, `--feat-sinIPD` (all `True/False`). `in_ch` is derived from the enabled
+cues; the L/R mirror aug (`swap_audio_lr`) is name-aware. Default (all on, `use_log=True`) reproduces the
+5ch `[logL,logR,ILD,cosIPD,sinIPD]` stack exactly. (SH ray-PE and the `_spec2`/`_specN`/`EMIT_RAW` seams
+were removed.) Fixed & off-limits: split (`get_scene_split`), waveform (`_wave`), target (`_depth`),
+metric (`compute_errors`).
+
+**Reporting = `utils/report.py`** → figures in `out/display/`, embedded in `README.md`:
+- `python utils/report.py qualitative` → `qualitative.png`: 4 val scenes × `RGB | GT | batvision | best1 | best2`
+  (best1/best2 are your top "my model" checkpoints under `checkpoints/best1|best2/`; missing → "pending"
+  tile; RGB is N/A in the simplified dataset).
+- `python utils/report.py progress` → `score_progress.png`: composite + ABS_REL/RMSE/d1 vs experiment,
+  running-best highlighted (from `out/results.tsv`).
+- `python utils/report.py readme` → refreshes the `<!-- RESULTS:START/END -->` metrics table in `README.md`.
+- `python utils/report.py all [--prune]` runs all three (+ optional prune). Regenerate after each run.
+
+**Image retention.** Per-epoch dumps in `outputs/<exp>/visualizations/` are **git-ignored** (never
+committed) and pruned for disk with `python utils/report.py prune` — it keeps the earliest (initial) epoch,
+a few evenly-spaced milestones, and the latest N (`--keep-latest`, default 6), deleting the rest. Curated
+figures in `out/display/` are **tracked** (README references them); never prune those.
+
 ## Setup
 
 To set up a new experiment, work with the user to:

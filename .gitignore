@@ -20,10 +20,11 @@ AGENTS.md
 # Experimental code/artifacts
 dev/
 
-# Checkpoints and outputs
+# Checkpoints and per-epoch visualization dumps (kept local; prune via
+# `python utils/report.py prune`). Curated figures in out/display/ ARE tracked.
 checkpoints/
 outputs/
 *.pth
 
-# Run logs (kept local). results.tsv IS tracked (per user request).
+# Run logs (kept local). results.tsv + out/display/ ARE tracked (per user request).
 run.log

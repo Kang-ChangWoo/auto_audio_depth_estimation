@@ -1,12 +1,12 @@
 """
-BatVision U-Net baseline model (sound-only) — the BASELINE for this benchmark.
+BatVision U-Net model (sound-only) — the reference model for this benchmark.
 
 MODEL ONLY, ported from:
     https://github.com/AmandineBtto/Batvision-Dataset
     UNetSoundOnly/models/unetbaseline_model.py
 
 This is the pix2pix / CycleGAN-style encoder->decoder U-Net (`unet_256`, 8 downs)
-that takes the binaural spectrogram `(in_ch, 256, 512)` and regresses a single-channel
+that takes the binaural cue stack `(in_ch, 256, 512)` and regresses a single-channel
 ERP depth map in [0, 1]. It is a PLAIN pixel-decoder U-Net — NOT ray-conditioned —
 and serves as the fixed reference that "my model" (`train.py`) must beat.
 
@@ -169,7 +169,7 @@ class UnetSkipConnectionBlock(nn.Module):
 # Adapter to the auto_audio_depth_estimation training loop
 # ============================================================
 
-class BaseUNet(nn.Module):
+class BatVisionUNet(nn.Module):
     """Wrap the BatVision `UnetGenerator` to the {'D','D0','extras'} output contract
     that `run_base.py` (composite_loss / evaluate) expects.
 
@@ -198,6 +198,6 @@ class BaseUNet(nn.Module):
         return {"D": D, "D0": D, "extras": {}}
 
 
-def build_base_model(cfg):
-    """Build the BatVision U-Net baseline from the nested run_base.py cfg."""
-    return BaseUNet(cfg)
+def build_batvision_model(cfg):
+    """Build the BatVision U-Net from the nested run_base.py cfg."""
+    return BatVisionUNet(cfg)

@@ -4,7 +4,7 @@ Data preparation and evaluation utilities for the RayDPT audio->ERP-depth model.
 Ported from the `test_for_audio_implicit_full` repo (RayDPT pipeline) into the
 two-file autoresearch layout. This file is the FIXED data + evaluation harness:
 
-    - erp_grid / sh_basis_matrix : ERP spherical geometry (shared with the model's
+    - erp_grid                   : ERP spherical geometry (shared with the model's
                                    per-ray feature bank in train.py)
     - get_scene_split            : deterministic train/val/test scene split
     - SoundSpacesDataset         : binaural audio -> {spec, depth, mask}
@@ -32,8 +32,6 @@ from torch.utils.data import Dataset, DataLoader
 import torchaudio
 import torchaudio.transforms as T
 
-from scipy.special import lpmv
-from scipy.special import factorial as sp_factorial
 from PIL import Image
 
 
@@ -72,48 +70,6 @@ def radial_factor(H, W):
     return (1.0 / np.clip(linf, 1e-6, None)).astype(np.float32)        # (H, W)
 
 
-# ------------------------------------------------------------
-# Real spherical-harmonic basis (ACN / SN3D), used by the optional
-# SH ray-PE in the model and available as a fixed geometry primitive.
-# ------------------------------------------------------------
-
-def _acn_to_nm(acn):
-    n = int(math.floor(math.sqrt(acn)))
-    m = acn - n * n - n
-    return n, m
-
-
-def _sn3d_norm(n, m):
-    m_abs = abs(m)
-    delta = 1.0 if m == 0 else 0.0
-    return math.sqrt((2.0 - delta) * sp_factorial(n - m_abs, exact=True)
-                     / sp_factorial(n + m_abs, exact=True))
-
-
-def _real_sh_sn3d_np(acn, elevation, azimuth):
-    n, m = _acn_to_nm(acn)
-    m_abs = abs(m)
-    N = _sn3d_norm(n, m)
-    P = (-1)**m_abs * lpmv(m_abs, n, np.sin(elevation))
-    if m > 0:
-        return N * P * np.cos(m * azimuth)
-    elif m == 0:
-        return N * P
-    else:
-        return N * P * np.sin(m_abs * azimuth)
-
-
-def sh_basis_matrix(max_order, elevation, azimuth):
-    """SH basis for a grid. elevation/azimuth (H,W) or (N,). Returns (N, (L+1)^2)."""
-    n_ch = (max_order + 1) ** 2
-    el_flat = np.asarray(elevation).ravel()
-    az_flat = np.asarray(azimuth).ravel()
-    B = np.zeros((el_flat.size, n_ch), dtype=np.float64)
-    for q in range(n_ch):
-        B[:, q] = _real_sh_sn3d_np(q, el_flat, az_flat)
-    return B
-
-
 # ============================================================
 # Scene splitting (deterministic; no scene_split.json required)
 # ============================================================
@@ -146,36 +102,49 @@ _C = 340.0                       # speed of sound [m/s]
 _NFFT, _HOP, _WIN = 512, 160, 400
 
 # ------------------------------------------------------------------------------------------
-# PROPOSAL-01 acoustic-representation seam (research-editable; benchmark stays fixed).
+# Input acoustic representation (research-editable; the benchmark split/target/metric/waveform
+# stay FIXED). The waveform -> input-feature mapping is a set of NAMED binaural cues, each
+# independently toggled on/off, plus a `use_log` switch for magnitude compression:
 #
-# FIXED / reproducibility-critical (never change these to keep E0-E134 reproducible):
-#   get_scene_split (data split), SoundSpacesDataset._wave (waveform access), ._depth (target),
-#   compute_errors (metric), swap_audio_lr (L/R symmetry). These define the benchmark.
+#   logL / L   : left-channel  STFT magnitude   (log1p-compressed iff use_log)
+#   logR / R   : right-channel STFT magnitude   (log1p-compressed iff use_log)
+#   ILD        : interaural level difference     log|L| - log|R|   (always a log-ratio)
+#   cosIPD     : cos of interaural phase diff     angle(L * conj(R))
+#   sinIPD     : sin of interaural phase diff
 #
-# EDITABLE research logic: the waveform -> input-feature mapping. Set `prepare.FEATURE_FN` from
-# train.py to research alternative acoustic representations (multi-resolution STFT, early/late echo
-# split, cross-channel coherence, ...). It receives the FIXED raw waveform and the dataset instance:
-#     def FEATURE_FN(wav, ds) -> Tensor (in_ch, ds.H, ds.W)
-# and may reuse ds._specN / ds._spec2 as building blocks. When FEATURE_FN is None (default) the
-# item pipeline is BYTE-IDENTICAL to the pre-refactor baseline (the 5ch [logL,logR,ILD,cosIPD,sinIPD]
-# representation), so no historical result is invalidated.
+# Channels are always assembled in this canonical order (filtered by the flags), so the L/R
+# mirror augmentation (`swap_audio_lr`) can act on them by name. Defaults = all five cues on,
+# use_log=True  ->  the 5ch [logL, logR, ILD, cosIPD, sinIPD] representation.
+#
+# For advanced research (multi-resolution STFT, early/late split, coherence, ...) set the
+# `prepare.FEATURE_FN` override from the training script: FEATURE_FN(wav, ds) -> (C, ds.H, ds.W).
 FEATURE_FN = None
 
-# PROPOSAL-02 seam (operator-approved): a LEARNED complex-STFT front-end lives in the MODEL (train.py),
-# so it needs the raw STFT at its NATIVE (F, T) resolution (the fixed pipeline nearest-upsamples time
-# 15->512, blurring frame-to-frame echo structure a learned front-end could exploit). When EMIT_RAW is
-# True the item dict gains a "raw" tensor = 5ch [logL,logR,ILD,cosIPD,sinIPD] at native (F, T) via
-# _raw5_native (same math as _specN, minus the ERP interpolation). Default False -> "raw" is absent and
-# every item is BYTE-IDENTICAL to before. The FIXED split/target/metric/waveform are untouched.
-EMIT_RAW = False
+# Canonical cue order + which cues are L/R-antisymmetric (negated on an L/R channel swap).
+_CUE_ORDER = ['L', 'R', 'ILD', 'cosIPD', 'sinIPD']
+_ANTISYM_CUES = {'ILD', 'sinIPD'}       # cosIPD is symmetric; L/R magnitudes are exchanged
+
+
+def build_channel_names(use_log=True, feat_L=True, feat_R=True, feat_ILD=True,
+                        feat_cosIPD=True, feat_sinIPD=True):
+    """Ordered channel names for the enabled cues (magnitude names carry a 'log' prefix when
+    use_log). Used to size in_ch and to drive the name-aware L/R swap."""
+    flags = {'L': feat_L, 'R': feat_R, 'ILD': feat_ILD,
+             'cosIPD': feat_cosIPD, 'sinIPD': feat_sinIPD}
+    names = []
+    for cue in _CUE_ORDER:
+        if not flags[cue]:
+            continue
+        names.append(('log' + cue) if (use_log and cue in ('L', 'R')) else cue)
+    return names
 
 
 class SoundSpacesDataset(Dataset):
     """Binaural echoes -> ERP depth, at cfg.dataset.images_size.
 
     Each item is a dict:
-        spec  : (in_ch, H, W)  log-mag binaural spectrogram (in_ch=2) or RIR
-                spatial feature [logL, logR, ILD, cosIPD, sinIPD][:in_ch] (in_ch in {3,5})
+        spec  : (in_ch, H, W)  binaural cue stack, canonical order filtered by the feat_* flags:
+                [logL/L, logR/R, ILD, cosIPD, sinIPD]  (see build_channel_names / _features)
         depth : (1, H, W)      radial depth / max_depth in [0, 1]
         mask  : (1, H, W)      valid-depth mask in {0, 1}
         key   : "<scene>/<idx>"
@@ -188,9 +157,20 @@ class SoundSpacesDataset(Dataset):
         self.depth_type = d.depth_type
         self.max_depth = d.max_depth
         self.H, self.W = int(d.images_size[0]), int(d.images_size[1])
-        self.in_ch = int(getattr(d, 'in_ch', 2))
         self.sr = int(getattr(d, 'sample_rate', 48000))
-        self.log_spec = bool(getattr(d, 'log_spec', True))
+        # --- input representation: named cue toggles + log switch ---
+        self.use_log = bool(getattr(d, 'use_log', True))
+        self.feat_flags = dict(
+            feat_L=bool(getattr(d, 'feat_L', True)),
+            feat_R=bool(getattr(d, 'feat_R', True)),
+            feat_ILD=bool(getattr(d, 'feat_ILD', True)),
+            feat_cosIPD=bool(getattr(d, 'feat_cosIPD', True)),
+            feat_sinIPD=bool(getattr(d, 'feat_sinIPD', True)),
+        )
+        self.channel_names = build_channel_names(self.use_log, **self.feat_flags)
+        if not self.channel_names:
+            raise ValueError("No input cues enabled: turn on at least one feat_* flag.")
+        self.in_ch = len(self.channel_names)
         self.win_m = float(getattr(d, 'audio_window_m', 0) or self.max_depth)
         self.cut = int(2.0 * self.win_m / _C * self.sr)
         # cubemap perpendicular-Z -> radial depth conversion (see radial_factor)
@@ -199,8 +179,6 @@ class SoundSpacesDataset(Dataset):
         scene_split = get_scene_split(self.root_dir, d.split_ratio, seed=d.split_seed)
         self.scenes = scene_split[split]
 
-        self.spectro = T.Spectrogram(n_fft=_NFFT, win_length=_WIN,
-                                     hop_length=_HOP, power=1.0)
         self._win = torch.hann_window(_WIN)
 
         self.samples = []
@@ -216,7 +194,7 @@ class SoundSpacesDataset(Dataset):
                     self.samples.append((scene, idx))
 
         print(f"[{split}] {len(self.samples)} samples from {len(self.scenes)} scenes "
-              f"({self.H}x{self.W}, in_ch={self.in_ch})", flush=True)
+              f"({self.H}x{self.W}, in_ch={self.in_ch} [{','.join(self.channel_names)}])", flush=True)
 
     def __len__(self):
         return len(self.samples)
@@ -231,37 +209,33 @@ class SoundSpacesDataset(Dataset):
             wav = F.pad(wav, (0, self.cut - wav.shape[1]))
         return wav
 
-    def _spec2(self, wav):
-        """2ch binaural magnitude spectrogram (log1p optional), resized to (H,W)."""
-        sp = self.spectro(wav)                                 # (2,F,T')
-        if self.log_spec:
-            sp = torch.log1p(sp)
-        return F.interpolate(sp.unsqueeze(0), (self.H, self.W),
-                             mode='nearest').squeeze(0).float()
+    def _features(self, wav):
+        """Assemble the enabled binaural cues (canonical order) -> (in_ch, H, W).
 
-    def _specN(self, wav, n):
-        """RIR spatial feature [logL, logR, ILD, cosIPD, sinIPD][:n], resized to (H,W)."""
+        logL/L, logR/R : STFT magnitude (log1p iff use_log); ILD = log|L|-log|R|;
+        cosIPD/sinIPD  : cos/sin of the interaural phase difference angle(L*conj(R)).
+        """
         st = torch.stft(wav, _NFFT, _HOP, _WIN, self._win, return_complex=True)  # (2,F,T')
         L, R = st[0], st[1]
+        la, ra = L.abs(), R.abs()
         eps = 1e-6
-        lmag = torch.log1p(L.abs()); rmag = torch.log1p(R.abs())
-        ild = torch.log(L.abs() + eps) - torch.log(R.abs() + eps)
-        ipd = torch.angle(L * torch.conj(R))
-        feat = torch.stack([lmag, rmag, ild, torch.cos(ipd), torch.sin(ipd)], 0)[:n]
+        f = self.feat_flags
+        chans = []
+        if f['feat_L']:
+            chans.append(torch.log1p(la) if self.use_log else la)
+        if f['feat_R']:
+            chans.append(torch.log1p(ra) if self.use_log else ra)
+        if f['feat_ILD']:
+            chans.append(torch.log(la + eps) - torch.log(ra + eps))
+        if f['feat_cosIPD'] or f['feat_sinIPD']:
+            ipd = torch.angle(L * torch.conj(R))
+            if f['feat_cosIPD']:
+                chans.append(torch.cos(ipd))
+            if f['feat_sinIPD']:
+                chans.append(torch.sin(ipd))
+        feat = torch.stack(chans, 0)                           # (in_ch, F, T')
         return F.interpolate(feat.unsqueeze(0), (self.H, self.W),
                              mode='nearest').squeeze(0).float()
-
-    def _raw5_native(self, wav):
-        """PROPOSAL-02: the 5ch [logL,logR,ILD,cosIPD,sinIPD] feature at NATIVE STFT (F, T) resolution
-        (identical math to _specN, WITHOUT the ERP interpolate). Fed to a learned front-end in the model.
-        L/R structure matches the 5ch so swap_audio_lr mirrors it correctly."""
-        st = torch.stft(wav, _NFFT, _HOP, _WIN, self._win, return_complex=True)  # (2,F,T')
-        L, R = st[0], st[1]
-        eps = 1e-6
-        lmag = torch.log1p(L.abs()); rmag = torch.log1p(R.abs())
-        ild = torch.log(L.abs() + eps) - torch.log(R.abs() + eps)
-        ipd = torch.angle(L * torch.conj(R))
-        return torch.stack([lmag, rmag, ild, torch.cos(ipd), torch.sin(ipd)], 0).float()  # (5,F,T)
 
     def _depth(self, scene, idx):
         d = np.nan_to_num(np.load(os.path.join(
@@ -278,19 +252,13 @@ class SoundSpacesDataset(Dataset):
         scene, idx = self.samples[i]
         try:
             wav = self._wave(scene, idx)                # FIXED waveform access
-            if FEATURE_FN is not None:                  # PROPOSAL-01 research representation
-                spec = FEATURE_FN(wav, self)
-            else:                                       # default: byte-identical baseline
-                spec = self._spec2(wav) if self.in_ch == 2 else self._specN(wav, self.in_ch)
+            spec = FEATURE_FN(wav, self) if FEATURE_FN is not None else self._features(wav)
             depth, mask = self._depth(scene, idx)
         except Exception as e:
             print(f"[skip {scene}/{idx}] {e}", flush=True)
             return self[(i + 1) % len(self)]
-        out = {"spec": spec.contiguous(), "depth": depth.contiguous(),
-               "mask": mask.contiguous(), "key": f"{scene}/{idx}"}
-        if EMIT_RAW:                                    # PROPOSAL-02: native raw STFT for a learned front-end
-            out["raw"] = self._raw5_native(wav).contiguous()
-        return out
+        return {"spec": spec.contiguous(), "depth": depth.contiguous(),
+                "mask": mask.contiguous(), "key": f"{scene}/{idx}"}
 
 
 def collate(batch):
@@ -299,15 +267,31 @@ def collate(batch):
             for k in batch[0]}
 
 
-def swap_audio_lr(spec):
+def swap_audio_lr(spec, channel_names=None):
     """Channel-aware binaural L/R swap (the physically-correct mirror for this rig).
 
-    Negates the L-R-antisymmetric channels (ILD, sin(IPD)); cos(IPD) is symmetric.
-        2ch [L,R]                         -> [R,L]
-        3ch [Lmag,Rmag,ILD]               -> [Rmag,Lmag,-ILD]
-        5ch [Lmag,Rmag,ILD,cosIPD,sinIPD] -> [Rmag,Lmag,-ILD,cosIPD,-sinIPD]
-    Pairs with a width-flip (az -> -az) of depth/mask for L/R mirror augmentation.
+    Exchanges the L/R magnitude channels and negates the L-R-antisymmetric cues
+    (ILD, sinIPD); cosIPD is symmetric. Pairs with a width-flip (az -> -az) of depth/mask
+    for L/R mirror augmentation.
+
+    `channel_names` (from SoundSpacesDataset.channel_names) makes the swap work for ANY
+    enabled cue subset by name. When None, falls back to the legacy positional convention
+    for the classic 2/3/5ch stacks:
+        2ch [L,R] -> [R,L]; 3ch [..,ILD] -> [..,-ILD]; 5ch adds cosIPD (same), sinIPD (neg).
     """
+    if channel_names is not None:
+        name_to_idx = {n: i for i, n in enumerate(channel_names)}
+        partner = {'logL': 'logR', 'logR': 'logL', 'L': 'R', 'R': 'L'}
+        y = spec.clone()
+        for i, n in enumerate(channel_names):
+            if n in partner and partner[n] in name_to_idx:
+                y[:, i] = spec[:, name_to_idx[partner[n]]]      # exchange L<->R magnitude
+            elif n in _ANTISYM_CUES:
+                y[:, i] = -spec[:, i]                           # ILD / sinIPD -> negate
+            else:
+                y[:, i] = spec[:, i]                            # cosIPD (and any solo mag) unchanged
+        return y
+
     C = spec.shape[1]
     if C == 2:
         return spec[:, [1, 0]]

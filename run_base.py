@@ -38,10 +38,9 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from prepare import (
-    make_dataloader, compute_errors, load_gt_rgb, erp_grid, sh_basis_matrix,
-    swap_audio_lr,
+    make_dataloader, compute_errors, load_gt_rgb, swap_audio_lr, build_channel_names,
 )
-from base.unet_baseline import build_base_model
+from base.batvision import build_batvision_model
 
 
 # ============================================================
@@ -68,6 +67,9 @@ class Cfg:
 
 def make_config(args):
     """Build a config object from parsed CLI arguments."""
+    in_ch = len(build_channel_names(
+        args.use_log, args.feat_L, args.feat_R, args.feat_ILD,
+        args.feat_cosIPD, args.feat_sinIPD))
     cfg = Cfg(
         dataset=Cfg(
             name='soundspaces',
@@ -77,28 +79,21 @@ def make_config(args):
             depth_type='erp',
             images_size=[256, 512],
             max_depth=10.0,
-            in_ch=args.in_ch,
+            in_ch=in_ch,                # derived from the cue toggles below
             sample_rate=48000,
-            log_spec=True,
+            # --- input representation: named cue toggles + log switch ---
+            use_log=args.use_log,
+            feat_L=args.feat_L,
+            feat_R=args.feat_R,
+            feat_ILD=args.feat_ILD,
+            feat_cosIPD=args.feat_cosIPD,
+            feat_sinIPD=args.feat_sinIPD,
             audio_window_m=10.0,
         ),
         model=Cfg(
-            name='raydpt',
+            name='batvision',
+            generator='unet_256',
             ngf=64,
-            dim=192,
-            n_heads=4,
-            ray_cross_layers=2,
-            raydpt_win32=5,
-            raydpt_win64=3,
-            raydpt_lite=args.raydpt_lite,
-            # ray-feature bank flags
-            use_xyz=True,
-            use_fourier_pe=True,
-            fourier_bands=6,
-            use_sh_pe=False,
-            sh_order=4,
-            use_mic_pe=False,
-            head_r=0.0875,
             # composite-loss head / weights
             coarse_head_h=16,
             coarse_head_w=32,
@@ -120,6 +115,8 @@ def make_config(args):
             experiment_name=args.experiment_name,
             eval_on=args.eval_on,
             vis_every=args.vis_every,
+            max_iters=args.max_iters,             # >0: stop each epoch after N train iters (smoke/debug)
+            max_val_batches=args.max_val_batches,  # >0: evaluate only N val batches (smoke/debug)
         ),
     )
     return cfg
@@ -137,9 +134,9 @@ def build_model_cfg(cfg):
 
 
 def build_model(cfg):
-    # BASELINE: BatVision plain U-Net (unet_256) instead of RayDPT. Takes the nested
-    # cfg directly (reads cfg.dataset.images_size / in_ch and cfg.model.ngf).
-    return build_base_model(cfg)
+    # BatVision plain U-Net (unet_256). Takes the nested cfg directly
+    # (reads cfg.dataset.images_size / in_ch and cfg.model.ngf / generator).
+    return build_batvision_model(cfg)
 
 
 # ============================================================
@@ -227,15 +224,18 @@ def _build_optimizer(model, cfg):
 
 @torch.no_grad()
 def evaluate(model, loader, mcfg, device, max_depth, collect_vis=None,
-             dataset=None, dataset_dir=None, depth_type='erp'):
+             dataset=None, dataset_dir=None, depth_type='erp', max_batches=0):
     """Run the model over `loader`; return (mean_errors, val_loss, vis_data).
 
     mean_errors = mean over samples of compute_errors() -> [abs_rel, rmse, a1, a2, a3, log10, mae].
+    max_batches>0 evaluates only that many batches (smoke/debug).
     """
     model.eval()
     errors, val_losses, vis_data = [], [], []
     seen = 0
-    for b in loader:
+    for bi, b in enumerate(loader):
+        if max_batches and bi >= max_batches:
+            break
         spec = b["spec"].to(device, non_blocking=True)
         gt = b["depth"].to(device); mask = b["mask"].to(device)
         out = model(spec)
@@ -329,7 +329,7 @@ def train(cfg):
                 fm = torch.rand(spec.size(0), device=device) < 0.5
                 if fm.any():
                     spec = spec.clone(); gt = gt.clone(); mask = mask.clone()
-                    spec[fm] = swap_audio_lr(spec[fm])
+                    spec[fm] = swap_audio_lr(spec[fm], train_set.channel_names)
                     gt[fm] = torch.flip(gt[fm], dims=[-1])
                     mask[fm] = torch.flip(mask[fm], dims=[-1])
             out = model(spec)
@@ -352,7 +352,12 @@ def train(cfg):
                       f'mae:{accum["mae"]/(i+1):.4f} lc:{accum["lc"]/(i+1):.4f} '
                       f'low:{accum["llow"]/(i+1):.4f}', flush=True)
 
-        epoch_loss = accum['total'] / n_batches
+            if cfg.mode.max_iters and (i + 1) >= cfg.mode.max_iters:
+                print(f'  [smoke] stopping epoch after {i+1} iters (--max-iters)', flush=True)
+                break
+
+        n_ran = min(n_batches, cfg.mode.max_iters) if cfg.mode.max_iters else n_batches
+        epoch_loss = accum['total'] / max(1, n_ran)
         print(f'Epoch [{epoch}/{cfg.mode.epochs}] Loss: {epoch_loss:.4f} '
               f'Time: {time.time()-t0:.1f}s LR: {scheduler.get_last_lr()[0]:.6f}')
 
@@ -361,7 +366,8 @@ def train(cfg):
             mean_errors, val_loss, vis_data = evaluate(
                 model, val_loader, mcfg, device, max_depth,
                 collect_vis=vis_indices, dataset=val_set,
-                dataset_dir=dataset_dir, depth_type=depth_type)
+                dataset_dir=dataset_dir, depth_type=depth_type,
+                max_batches=cfg.mode.max_val_batches)
             abs_rel = mean_errors[0]; rmse = mean_errors[1]; d1 = mean_errors[2]
             print(f'  Val Loss: {val_loss:.4f} | '
                   f'ABS_REL: {abs_rel:.4f} RMSE: {rmse:.4f} '
@@ -458,19 +464,28 @@ def parse_args():
     p.add_argument('--lr', type=float, default=3e-4)
     p.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam', 'SGD'])
     p.add_argument('--num-workers', type=int, default=16)
-    p.add_argument('--in-ch', type=int, default=5, choices=[2, 3, 5],
-                   help='5=RIR spatial feature [logL,logR,ILD,cosIPD,sinIPD] (default); '
-                        '2=log-mag binaural; 3=[logL,logR,ILD]')
-    p.add_argument('--flip-aug', type=lambda s: s == 'True', default=True,
-                   help='L/R mirror augmentation (depth width-flip + channel-aware audio swap)')
-    p.add_argument('--raydpt-lite', type=lambda s: s == 'True', default=False,
-                   help='2-scale (32,64) lite RayDPT variant')
 
-    p.add_argument('--experiment-name', type=str, default='base_unet')
+    # --- input representation: named binaural cues (each on/off) + log switch ---
+    _bool = lambda s: s == 'True'
+    p.add_argument('--use-log', type=_bool, default=True,
+                   help='log1p-compress the L/R magnitude channels (logL/logR vs raw L/R)')
+    p.add_argument('--feat-L', type=_bool, default=True, help='include left magnitude channel')
+    p.add_argument('--feat-R', type=_bool, default=True, help='include right magnitude channel')
+    p.add_argument('--feat-ILD', type=_bool, default=True, help='include ILD = log|L|-log|R|')
+    p.add_argument('--feat-cosIPD', type=_bool, default=True, help='include cos(IPD)')
+    p.add_argument('--feat-sinIPD', type=_bool, default=True, help='include sin(IPD)')
+    p.add_argument('--flip-aug', type=_bool, default=True,
+                   help='L/R mirror augmentation (depth width-flip + channel-aware audio swap)')
+
+    p.add_argument('--experiment-name', type=str, default='batvision')
     p.add_argument('--checkpoint', type=str, default=None,
                    help='Checkpoint epoch to resume')
     p.add_argument('--vis-every', type=int, default=100,
                    help='Visualize every N samples during test (0=skip)')
+    p.add_argument('--max-iters', type=int, default=0,
+                   help='Smoke/debug: stop each epoch after N training iterations (0=full epoch)')
+    p.add_argument('--max-val-batches', type=int, default=0,
+                   help='Smoke/debug: evaluate only N validation batches (0=full val set)')
 
     return p.parse_args()
 
@@ -489,7 +504,7 @@ if __name__ == '__main__':
     cfg = make_config(args)
 
     print('=' * 60)
-    print(f'Base U-Net (BatVision) — mode={args.mode}')
+    print(f'BatVision U-Net — mode={args.mode}')
     print(f'Dataset: {args.dataset_dir}')
     print(f'Batch size: {args.batch_size}, LR: {args.lr}, Optimizer: {args.optimizer}')
     print('=' * 60)

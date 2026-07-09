@@ -38,8 +38,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from prepare import (
-    make_dataloader, compute_errors, load_gt_rgb, erp_grid, sh_basis_matrix,
-    swap_audio_lr,
+    make_dataloader, compute_errors, load_gt_rgb, erp_grid,
+    swap_audio_lr, build_channel_names,
 )
 
 
@@ -67,6 +67,9 @@ class Cfg:
 
 def make_config(args):
     """Build a config object from parsed CLI arguments."""
+    in_ch = len(build_channel_names(
+        args.use_log, args.feat_L, args.feat_R, args.feat_ILD,
+        args.feat_cosIPD, args.feat_sinIPD))
     cfg = Cfg(
         dataset=Cfg(
             name='soundspaces',
@@ -76,9 +79,15 @@ def make_config(args):
             depth_type='erp',
             images_size=[256, 512],
             max_depth=10.0,
-            in_ch=args.in_ch,
+            in_ch=in_ch,                # derived from the cue toggles below
             sample_rate=48000,
-            log_spec=True,
+            # --- input representation: named cue toggles + log switch ---
+            use_log=args.use_log,
+            feat_L=args.feat_L,
+            feat_R=args.feat_R,
+            feat_ILD=args.feat_ILD,
+            feat_cosIPD=args.feat_cosIPD,
+            feat_sinIPD=args.feat_sinIPD,
             audio_window_m=10.0,
         ),
         model=Cfg(
@@ -94,8 +103,6 @@ def make_config(args):
             use_xyz=True,
             use_fourier_pe=True,
             fourier_bands=6,
-            use_sh_pe=False,
-            sh_order=4,
             use_mic_pe=False,
             head_r=0.0875,
             # composite-loss head / weights
@@ -163,8 +170,6 @@ class RayBank:
             feats.append(dirs)
         if cfg.use_fourier_pe:
             feats.append(_fourier_pe(dirs, cfg.fourier_bands).astype(np.float32))
-        if cfg.use_sh_pe:
-            feats.append(sh_basis_matrix(cfg.sh_order, el, az).astype(np.float32))
         if cfg.use_mic_pe:
             y = dirs[:, 1:2]
             feats.append(np.concatenate([y, -y], axis=1).astype(np.float32))
@@ -558,7 +563,7 @@ def train(cfg):
                 fm = torch.rand(spec.size(0), device=device) < 0.5
                 if fm.any():
                     spec = spec.clone(); gt = gt.clone(); mask = mask.clone()
-                    spec[fm] = swap_audio_lr(spec[fm])
+                    spec[fm] = swap_audio_lr(spec[fm], train_set.channel_names)
                     gt[fm] = torch.flip(gt[fm], dims=[-1])
                     mask[fm] = torch.flip(mask[fm], dims=[-1])
             out = model(spec)
@@ -687,10 +692,17 @@ def parse_args():
     p.add_argument('--lr', type=float, default=3e-4)
     p.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam', 'SGD'])
     p.add_argument('--num-workers', type=int, default=16)
-    p.add_argument('--in-ch', type=int, default=5, choices=[2, 3, 5],
-                   help='5=RIR spatial feature [logL,logR,ILD,cosIPD,sinIPD] (default); '
-                        '2=log-mag binaural; 3=[logL,logR,ILD]')
-    p.add_argument('--flip-aug', type=lambda s: s == 'True', default=True,
+
+    # --- input representation: named binaural cues (each on/off) + log switch ---
+    _bool = lambda s: s == 'True'
+    p.add_argument('--use-log', type=_bool, default=True,
+                   help='log1p-compress the L/R magnitude channels (logL/logR vs raw L/R)')
+    p.add_argument('--feat-L', type=_bool, default=True, help='include left magnitude channel')
+    p.add_argument('--feat-R', type=_bool, default=True, help='include right magnitude channel')
+    p.add_argument('--feat-ILD', type=_bool, default=True, help='include ILD = log|L|-log|R|')
+    p.add_argument('--feat-cosIPD', type=_bool, default=True, help='include cos(IPD)')
+    p.add_argument('--feat-sinIPD', type=_bool, default=True, help='include sin(IPD)')
+    p.add_argument('--flip-aug', type=_bool, default=True,
                    help='L/R mirror augmentation (depth width-flip + channel-aware audio swap)')
     p.add_argument('--raydpt-lite', type=lambda s: s == 'True', default=False,
                    help='2-scale (32,64) lite RayDPT variant')
