@@ -170,6 +170,14 @@ difference rests mainly on how many epochs fit, re-measure parent and candidate 
 - `out/decision_log.jsonl` — append-only meaningful transitions.
 - `utils/research.py` — `status` · `composite` · `next-id` · `mode` · `log`.
 - `utils/report.py` — `qualitative` · `progress` · `readme` · `research` · `prune` · `all`.
+- `utils/record_run.py` — **the only way to record a finished run.** Parses its log, appends
+  `out/results.tsv`, and regenerates *every* figure including `qualitative` (which needs a forward
+  pass and is therefore the one people skip). It renders on **CPU** by default, so it never steals
+  the GPU from a running experiment. Never hand-append a results row.
+
+**After EVERY run, without exception:** `python utils/record_run.py --exp-id EN --name <exp> --desc "..."`,
+then update `studies.json` / `out/ideas.json`, commit, push. If a figure or the flowchart no longer
+matches the code, that is a bug: the README is the human's only live window into the run.
 
 **The method must be committed before it is scored**, so the logged commit identifies the evaluated code.
 After each meaningful transition (experiment completed, study concluded, candidate promoted or dropped,

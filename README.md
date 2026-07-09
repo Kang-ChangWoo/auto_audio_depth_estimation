@@ -115,20 +115,30 @@ below:
 
 ```mermaid
 flowchart TD
-    subgraph MY["current — RayDPT (my model)"]
+    subgraph MY["current — RayDPT (my model) · 24.44M params, of which 16.78M are DEAD"]
         direction TB
-        A1["Binaural echo waveform (2ch)"] --> A2["STFT → named cue stack (in_ch)<br/>logL/L · logR/R · ILD · cosIPD · sinIPD"]
-        A2 --> A3["UNet8 encoder<br/>256x512 → 1x2 · skips e2/e3/e4"]
-        A3 --> A4["RayBank ray queries ×<br/>audio cross-attention (scales 16/32/64)"]
-        A4 --> A5["DPT fusion +<br/>local spherical window attention"]
-        A5 --> A6["Sigmoid head → ERP planar depth<br/>256x512, [0,1] × max_depth"]
+        A1["Binaural echo waveform (2ch)<br/>cut = 2·10m/c → 2823 samples · FIXED"] --> A2["STFT(nfft 512, hop 160, win 400)<br/>→ (F=257, T=18) → resize to 256×512<br/>height=FREQUENCY · width=TIME"]
+        A2 --> A2b["named cue stack (in_ch)<br/>logL/L · logR/R · ILD · cosIPD · sinIPD"]
+        A2b --> A3["UNet8 encoder — only e1..e4 run<br/>256×512 → e2 64×128 · e3 32×64 · e4 16×32"]
+        A3 -.->|"e5..e8 built but never called<br/>16.78M params · no gradient (I9)"| A3d["(dead tail)"]
+        A3 --> A4["RayBank ray queries Q16/Q32/Q64<br/>× GLOBAL audio cross-attention<br/>(kv from e4=512 tok, e3=2048 tok)"]
+        A3 --> A4s["DPT skips se2/se3/se4<br/>added by PIXEL INDEX (I5: parked)"]
+        A4 --> A5["DPT fusion + local spherical<br/>window attention (32×64 win5, 64×128 win3)<br/>≈57% of forward cost (I8)"]
+        A4s --> A5
+        A5 --> A6["Sigmoid head at 64×128<br/>→ bilinear ×4 → ERP planar depth 256×512"]
     end
-    subgraph REF["batvision (reference)"]
+    subgraph REF["batvision (reference) — plain pix2pix unet_256, 54.41M params"]
         direction TB
-        B1["Binaural echo waveform (2ch)"] --> B2["STFT → magnitude cue stack (in_ch)"]
-        B2 --> B3["UNet8 encoder<br/>256x512 → 1x2 · skips"]
-        B3 --> B4["ConvTranspose decoder + skips"]
+        B1["Binaural echo waveform (2ch)<br/>same fixed cut"] --> B2["same STFT → named cue stack (in_ch)"]
+        B2 --> B3["UNet8 encoder<br/>256×512 → 1×2 (all 8 downs used)"]
+        B3 --> B4["ConvTranspose decoder + full skips<br/>decodes to full 256×512"]
         B4 --> B5["Sigmoid head → ERP planar depth"]
     end
     MY ~~~ REF
 ```
+
+Both models consume the *same* input tensor and are trained by the same `composite_loss`
+(`1.0·dense_MAE + 1.0·coarse_layout(16×32) + 0.5·low_pass(σ=3)`; the two auxiliaries carry
+~58% of the gradient at convergence — see idea `I6`). The target is **planar** (cubemap
+perpendicular-Z) ERP depth. The invariant that defines RayDPT is that depth is decoded **per
+ray direction** from `RayBank` queries, never regressed from a global bottleneck.
