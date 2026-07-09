@@ -3,7 +3,7 @@
   "ideas": [
     {
       "id": "I1",
-      "status": "probing",
+      "status": "inconclusive",
       "origin": "physical property of the sensing modality (measured, not searched)",
       "target_bottleneck": "time-of-flight quantisation in the input representation",
       "mechanism_family": "acoustic-representation / temporal resolution",
@@ -19,8 +19,12 @@
       "evidence_required": "Arm B (win 64) must improve RMSE while arm A (hop only) does not. A d1-only gain does NOT count (per D3, d1 is the cue-driven metric).",
       "unblocked_by": "The STFT analysis window is now editable research logic (--stft-nfft/--stft-hop/--stft-win) read from cfg.dataset. Defaults verified bit-identical; changing them leaves cut/depth/in_ch/shape untouched.",
       "strengthened_by": "(a) I2's oracle diagnostic: the decoder's 64x128 output resolution imposes a ceiling of composite 0.2399 while the model sits at 1.8567 -- the bottleneck is NOT downstream of the decoder, so it is upstream: information. (b) The S0 2x2 dissociation: interaural cues buy d1 (angle) and log1p buys rmse (range), yet the best rmse is still 1.3088 m -- and the analysis window smears an echo over 1.417 m of one-way depth, essentially the same size. Range error and window smear coincide.",
-      "next_action": "Arm B (win64 hop16) running. Then I10 decides WHY arm A moved.",
-      "arm_A_result": "E5 (win400 hop40, smear UNCHANGED 1.417m): composite 1.8514 vs control E2 1.8646, delta +0.0132 ABOVE sigma~0.008. rmse -0.0227 (1.3207 -> 1.2980), d1 -0.0019 (flat), abs_rel -0.0089. The arm designed to show NO effect improved RMSE -- the exact metric I1 predicted. Per the pre-registered rule this WEAKENS the resolution story: sampling density alone moves range accuracy."
+      "next_action": "HOLD. Do not run more I1 arms. I10 (bilinear at hop=160) isolates the staircase; interpret this lineage only after it lands.",
+      "arm_A_result": "E5 (win400 hop40, smear UNCHANGED 1.417m): composite 1.8514 vs control E2 1.8646, delta +0.0132 ABOVE sigma~0.008. rmse -0.0227 (1.3207 -> 1.2980), d1 -0.0019 (flat), abs_rel -0.0089. The arm designed to show NO effect improved RMSE -- the exact metric I1 predicted. Per the pre-registered rule this WEAKENS the resolution story: sampling density alone moves range accuracy.",
+      "arm_B_result": "E6 (win64 hop16, smear 0.227m, a 6.2x resolution increase): composite 1.8379 -- the best batvision run so far -- but the gain is in d1 (+0.0067 vs E2) and abs_rel, NOT in RMSE. Its RMSE (1.3114) is WORSE than arm A's (1.2980), which had no resolution increase at all.",
+      "verdict": "MECHANISM AS STATED: UNSUPPORTED. The pre-registered prediction was 'B improves RMSE, A does not'. The opposite happened: A (density only) improved RMSE by 0.0227 while B (true resolution) improved d1 and left RMSE worse than A. Per D3's rule -- a time-of-flight gain must appear in RANGE, not ANGLE -- sharpening temporal resolution does NOT act through time-of-flight range accuracy. Both arms improved the composite, so the SCORE moved while the MECHANISM story failed: exactly the case program.md warns to separate.",
+      "confound": "E6 changes THREE things at once versus E2: temporal smear 1.417 -> 0.227 m, staircase block 28.4 -> 2.9 px, and frequency resolution (win 400 -> 64) is sacrificed. Its result cannot be attributed to any one of them. The composite happens to be MONOTONE in staircase fineness across all three runs (28.4px -> 1.8646, 7.2px -> 1.8514, 2.9px -> 1.8379), which is why I10 -- which varies the staircase ALONE, holding information and window fixed -- is now the decisive experiment for this whole lineage.",
+      "scope_of_negative_evidence": "Refutes the RANGE mechanism for temporal resolution on the batvision reference under this budget and metric. It does NOT refute that the representation matters -- both arms beat the control. It does not test RayDPT, and it does not rule out that a shorter window helps for a reason unrelated to time-of-flight (e.g. the staircase, or transient sharpening that aids azimuth cues)."
     },
     {
       "id": "I2",
@@ -160,7 +164,8 @@
       "minimal_falsifiable_test": "run_base.py --use-log False --feat-interp bilinear (win 400, hop 160). One run. Control = E2.",
       "budget_risk": "none. Identical shapes, identical model, identical frame count.",
       "evidence_required": "RMSE gain comparable to E5's, with information held fixed.",
-      "next_action": "queued in utils/run_queue3.sh after the I6/I7 discriminator."
+      "next_action": "queued in utils/run_queue3.sh after the I6/I7 discriminator.",
+      "strengthened_by": "The composite is monotone in staircase block width across E2/E5/E6 (28.4px -> 7.2px -> 2.9px gives 1.8646 -> 1.8514 -> 1.8379), while the two runs' other properties (smear, frequency resolution) move incoherently. Staircase fineness is the only variable that tracks the score across all three."
     }
   ],
   "discrepancies": [
@@ -214,6 +219,14 @@
       "why_it_matters": "The arm was designed to isolate 'sampling density' from 'resolution' and to show nothing. It showed something, and in RMSE, the very metric reserved as evidence FOR the resolution mechanism. A Nyquist check says hop=160 already samples the window's envelope at 1.2x Nyquist, so arm A added ~no information. Something other than information improved range accuracy.",
       "diagnostic_value": "Forces a third explanation: the nearest-neighbour resize (I10). If bilinear at hop=160 recovers the gain, then BOTH E5's reading and I1's original framing were wrong, and the real defect is an interpolation choice buried in _features -- editable research logic that nobody had questioned.",
       "next_action": "I10 run, queued. Do not interpret arm B until I10 lands."
+    },
+    {
+      "id": "D7",
+      "status": "open",
+      "observation": "The two I1 arms improved the composite through OPPOSITE metrics. Arm A (density only, smear unchanged): rmse -0.0227, d1 -0.0019. Arm B (6.2x finer smear): rmse -0.0093, d1 +0.0067 -- and B's RMSE is worse than A's despite B having vastly better temporal resolution.",
+      "why_it_matters": "If temporal resolution set range accuracy, B should own RMSE. It does not; A does, and A did not change resolution at all. Meanwhile B, which also sacrifices frequency resolution (win 400 -> 64), buys ANGLE. That inverts the physical story: sharper transients seem to help azimuth cues (ILD/IPD are read across frequency and time), while range accuracy responds to something in the sampling/interpolation of the time axis.",
+      "diagnostic_value": "Separates 'the score improved' from 'the mechanism is real' -- the composite improved in both arms while the pre-registered mechanism failed in both. The one variable monotone with the score across all three runs is staircase block width, which I10 isolates.",
+      "next_action": "I10 first. If bilinear at hop=160 recovers arm A's RMSE gain, then A is explained by interpolation and B's d1 gain needs its own explanation (candidate: shorter windows sharpen transients, aiding IPD-based azimuth)."
     }
   ]
 }

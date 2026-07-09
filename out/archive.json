@@ -9,18 +9,18 @@
       "role": "reference (not a candidate for global champion; it is the bar, not the runner)",
       "status": "active",
       "champion": {
-        "exp_id": "E3",
-        "name": "batvision_5ch_log",
-        "commit": "209c6e8",
-        "abs_rel": 0.4517,
-        "rmse": 1.3088,
-        "d1": 0.5949,
-        "composite": 1.8567,
+        "exp_id": "E6",
+        "name": "batvision_5ch_win64_hop16",
+        "commit": "b9c2f71",
+        "abs_rel": 0.4279,
+        "rmse": 1.3114,
+        "d1": 0.6005,
+        "composite": 1.8379,
         "best_epoch": 13,
         "epochs_ran": 25,
         "vram_gb": 2.4,
-        "provisional": false,
-        "note": "Best of the 2x2. The CUE effect (+0.021) is above sigma and reproduced at both log settings. The LOG effect (+0.007/+0.008) is at the noise floor per draw but consistent in sign, magnitude and metric direction across two independent draws; not crowned as an independent finding without a third."
+        "provisional": true,
+        "note": "Best batvision composite so far, but its cause is UNRESOLVED: E6 changes temporal smear, staircase fineness and frequency resolution simultaneously (see D7, I1 confound). A score, not yet a mechanism. Note E6 is NOLOG -- log adds ~0.008 independently (S0), so a log x win64 combine is an obvious candidate once the cause is known."
       },
       "metric_profile": "Dissociation: interaural cues buy d1 (angle, +0.015); log1p buys rmse (range, -0.010). Additive, no interaction."
     },
@@ -44,6 +44,16 @@
         "note": "ANCHOR, not a verdict. Only 5 epochs fit the 1h budget (batvision fits 25); the best checkpoint is the LAST epoch and every val metric was still improving. Do NOT read the 2.0471-vs-1.8567 gap as an architectural result -- see D5."
       },
       "dead_parameters": "e5..e8 = 16.78M of 24.44M (68.7%): built by UNet8Encoder, never used in forward, receive no gradient. See I9."
+    },
+    "acoustic-representation": {
+      "mechanism": "what the network is shown: STFT analysis window, cue set, and the resize of the (freq,time) grid",
+      "role": "active explore lineage",
+      "status": "probing; I1's range mechanism refuted, I10 pending",
+      "champion": {
+        "exp_id": "E6",
+        "composite": 1.8379
+      },
+      "open_question": "Is the gain temporal resolution, sampling density, or the nearest-neighbour staircase? I10 decides."
     }
   },
   "specialists": [],

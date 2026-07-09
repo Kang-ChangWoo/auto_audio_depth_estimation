@@ -5,3 +5,4 @@ commit	abs_rel	rmse	d1	memory_gb	status	description
 209c6e8	0.4517	1.3088	0.5949	2.4	keep	E3 batvision U-Net 5ch log, planar target, 25ep
 9dd3bce	0.5081	1.3987	0.5423	16.2	keep	E4 RayDPT planar anchor, 5ep ONLY (713s/ep), best=last ep, undertrained
 b9c2f71	0.4371	1.2980	0.5919	2.4	keep	E5 batvision 5ch nolog win400 hop40 (I1 arm A: density only), 26ep
+b9c2f71	0.4279	1.3114	0.6005	2.4	keep	E6 batvision 5ch nolog win64 hop16 (I1 arm B: true resolution), 25ep

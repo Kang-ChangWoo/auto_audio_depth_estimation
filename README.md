@@ -25,7 +25,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | Idea | Mechanism family | Causal distance | Target bottleneck | Status | Next test |
 |---|---|---|---|---|---|
-| `I1` | acoustic-representation / temporal resolution | far | time-of-flight quantisation in the input representation | probing | Arm B (win64 hop16) running. Then I10 decides WHY arm A moved. |
+| `I1` | acoustic-representation / temporal resolution | far | time-of-flight quantisation in the input representation | inconclusive | HOLD. Do not run more I1 arms. I10 (bilinear at hop=160) isolates the staircase; interpret |
 | `I3` | training-optimization | near | the 1h wall-clock budget is spent on epochs that make the model worse | backlog | queue after the RayDPT planar re-anchor (E4); this is a confound affecting EVERY future ru |
 | `I5` | ray conditioning / encoder-decoder correspondence | mid | RayDPT's DPT skip connections impose a FALSE spatial correspondence between the spectrogram's axes and the ERP's axes | inconclusive | none. Do not spend GPU on the skip ablation on this rationale. Revive only with an indepen |
 | `I6` | depth objective design | mid | the objective devotes most of its gradient to low-frequency terms, so the model may be trained to be blurry | backlog | expose w_coarse_layout / w_low as CLI flags, then queue the ablation after the I1 arms. |
@@ -44,19 +44,21 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
   <br/>*Why it matters:* E4's composite 2.0471 vs E3's 1.8567 CANNOT be read as 'RayDPT is the worse model'. One model converged and then overfit for 12 epochs; the other never reached convergence. Under a wall-clock budget, throughput is silently part of the score. Every RayDPT-vs-batvision statement in this phase must carry epochs_ran, and no RayDPT mechanism can be fairly judged until RayDPT can converge inside the budget.
 - **`D6`** — I1's CONTROL arm improved. E5 (win400 hop40) cut RMSE by 0.0227 and the composite by 0.0132 (above sigma) versus E2, despite leaving the analysis window -- and therefore the temporal smear of 1.417 m -- completely unchanged.
   <br/>*Why it matters:* The arm was designed to isolate 'sampling density' from 'resolution' and to show nothing. It showed something, and in RMSE, the very metric reserved as evidence FOR the resolution mechanism. A Nyquist check says hop=160 already samples the window's envelope at 1.2x Nyquist, so arm A added ~no information. Something other than information improved range accuracy.
+- **`D7`** — The two I1 arms improved the composite through OPPOSITE metrics. Arm A (density only, smear unchanged): rmse -0.0227, d1 -0.0019. Arm B (6.2x finer smear): rmse -0.0093, d1 +0.0067 -- and B's RMSE is worse than A's despite B having vastly better temporal resolution.
+  <br/>*Why it matters:* If temporal resolution set range accuracy, B should own RMSE. It does not; A does, and A did not change resolution at all. Meanwhile B, which also sacrifices frequency resolution (win 400 -> 64), buys ANGLE. That inverts the physical story: sharper transients seem to help azimuth cues (ILD/IPD are read across frequency and time), while range accuracy responds to something in the sampling/interpolation of the time axis.
 
 ### Recent decisions
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-10T07:36 | `explore` | discrepancy_recorded | D7: the two I1 arms improved through OPPOSITE metrics, inverting the physical story. The only variable monotone with the composite |
+| 2026-07-10T07:36 | `explore` | experiment_completed | I1 arm B (win64 hop16, 6.2x finer smear): composite 1.8379, best batvision so far. But the gain is d1 (+0.0067) and abs_rel, NOT r |
 | 2026-07-10T06:36 | `explore` | discrepancy_recorded | D6: I1's CONTROL arm improved. E5 (win400 hop40) cut RMSE 0.0227 and composite 0.0132 (above sigma) with the temporal smear UNCHAN |
 | 2026-07-10T06:34 | `explore` | experiment_completed | I1 arm A (win400 hop40, density only, smear UNCHANGED at 1.417m): composite 1.8514 vs control E2 1.8646, delta +0.0132 ABOVE sigma |
 | 2026-07-10T05:33 | `explore` | discrepancy_recorded | D5: RayDPT is compute-starved. Under a wall-clock budget throughput is silently part of the score. 64x128 attention (lsa64+cross64 |
 | 2026-07-10T05:33 | `explore` | experiment_completed | RayDPT planar anchor: composite 2.0471 (rmse 1.3987, d1 0.5423), but ONLY 5 epochs fit (713.5s/ep vs batvision 130s). Best = last  |
 | 2026-07-10T05:00 | `exploit` | idea_added | Competing explanation for the same low-pass observation: two microphones give a broad directional response, so fine azimuthal stru |
 | 2026-07-10T05:00 | `exploit` | idea_added | Objective is 58.2% low-frequency at convergence (coarse-layout 38.4% + low-pass 19.7% vs dense 41.8%). Exposed --w-coarse-layout / |
-| 2026-07-10T04:59 | `exploit` | divergence_checkpoint | D4 resolved: the model is a LOW-PASS predictor (97.4% of azimuthal power in k<=6 vs GT 75.8%; ~5% of GT power at k>=17). The appar |
-| 2026-07-10T04:59 | `exploit` | candidate_dropped | I5's pre-registered signature is ABSENT: azimuthal FFT of E3 predictions shows no peak at the 18-block staircase frequency k=18 (p |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->
@@ -96,6 +98,7 @@ running best highlighted):
 | 4 | `209c6e8` | 0.4517 | 1.3088 | 0.5949 | 1.8567 | keep | E3 batvision U-Net 5ch log, planar target, 25ep |
 | 5 | `9dd3bce` | 0.5081 | 1.3987 | 0.5423 | 2.0470 | keep | E4 RayDPT planar anchor, 5ep ONLY (713s/ep), best=last ep, undertrained |
 | 6 | `b9c2f71` | 0.4371 | 1.2980 | 0.5919 | 1.8514 | keep | E5 batvision 5ch nolog win400 hop40 (I1 arm A: density only), 26ep |
+| 7 | `b9c2f71` | 0.4279 | 1.3114 | 0.6005 | 1.8379 | keep | E6 batvision 5ch nolog win64 hop16 (I1 arm B: true resolution), 25ep |
 <!-- RESULTS:END -->
 
 ## Progression (composite, lower = better)
