@@ -1,172 +1,28 @@
 {
-  "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E158",
-  "global_champion_commit": "36c6538",
-  "global_champion_note": "NEW CHAMPION (S23): 12ch = multi-res STFT (512+128) + interaural coherence at 512 AND 128 + TTA, 3-draw mean 2.0300. Progression 2.099->2.082(TTA)->2.064(multi-res)->2.042(+coh512)->2.030(+coh128). Current train.py at 36c6538.",
-  "concluded_studies": [
-    {
-      "study_id": "S29",
-      "lineage": "learned-frontend",
-      "conclusion": "FAIL",
-      "best_exp_id": "E146",
-      "note": "PROPOSAL-02 learned complex-STFT front-end (E155/E156/E157) does not beat the hand-designed 12ch within the 1hr budget. Zero-init starts==champion + adds ~nothing; extra native STFT costs an anneal epoch; conv cannot compute coherence products (already in 12ch). Not capacity-limited (raw_fe 8==16)."
-    },
-    {
-      "study_id": "S28",
-      "lineage": "acoustic-representation-v2",
-      "conclusion": "INTERRUPTED",
-      "best_exp_id": "E146",
-      "note": "Phase-coherence probe (E154) interrupted at epoch1, superseded by operator-approved PROPOSAL-02."
-    },
-    {
-      "study_id": "S27",
-      "lineage": "acoustic-representation-v2",
-      "conclusion": "confirm",
-      "best_exp_id": "E146",
-      "note": "4th champion draw E153=2.0311 (best-ever RMSE 1.4482); 4-draw mean 2.0303 std 0.0016. Champion rock-solid."
-    },
-    {
-      "study_id": "S26",
-      "lineage": "acoustic-representation-v2",
-      "conclusion": "FAIL",
-      "best_exp_id": "E146",
-      "note": "Onset/direct-arrival channel (13ch, E152=2.0475) is +0.018 worse at full 9 epochs - the conv already derives onset/transients from the mag channels; redundant. 3rd consecutive representation plateau (S24/S25/S26)."
-    },
-    {
-      "study_id": "S25",
-      "lineage": "acoustic-representation-v2",
-      "conclusion": "FAIL",
-      "best_exp_id": "E146",
-      "note": "3rd coherence scale n_fft=1024 (13ch, E151=2.0603) is +0.030 worse - the 1024 window over the ~59ms cut gives ~3-4 frames -> degenerate coherence. Coherence saturated at 2 scales. 2nd plateau. Keep 12ch champion 36c6538."
-    },
-    {
-      "study_id": "S24",
-      "lineage": "acoustic-representation-v2",
-      "conclusion": "NEUTRAL(no change)",
-      "best_exp_id": "E146",
-      "note": "Coherence smooth taps 3->5 tied (E149 2.0201 lucky-low, E150 2.0389 high, mean 2.0295=~champion 2.030). Smoothing not a lever. Keep smooth=3 champion 36c6538. First plateau."
-    },
-    {
-      "study_id": "S23",
-      "lineage": "acoustic-representation-v2",
-      "conclusion": "PASS -> NEW GLOBAL CHAMPION",
-      "best_exp_id": "E146",
-      "note": "Coherence at both scales (12ch). 3-draw mean 2.030 (E146/E147/E148), all below 11ch best draw; Delta -0.012. Fine-scale coherence adds complementary direct/diffuse structure. Commit 36c6538."
-    },
-    {
-      "study_id": "S22",
-      "lineage": "acoustic-representation-v2",
-      "conclusion": "PASS -> NEW GLOBAL CHAMPION",
-      "best_exp_id": "E143",
-      "note": "multi-res + interaural coherence (11ch). 3-draw mean 2.0417 (E143/E144/E145), all below multi-res-10ch best draw. Coherence = direct-vs-diffuse cue improves honest RMSE+d1. Commit 93ef41b."
-    },
-    {
-      "study_id": "S21",
-      "lineage": "acoustic-representation-v2",
-      "conclusion": "FAIL(redundant)",
-      "best_exp_id": "E137",
-      "note": "3rd finer-freq scale (n_fft=1024, 15ch, E142=2.0615) ties the 2-scale champion and is slower (8 epochs). Frequency not the lever (confirms S20). Keep 2-scale champion 828b9a3; gains need a NEW cue."
-    },
-    {
-      "study_id": "S20",
-      "lineage": "acoustic-representation-v2",
-      "conclusion": "PASS(tune, no change)",
-      "best_exp_id": "E137",
-      "note": "Fine-block n_fft sweep {64:2.0652 tied, 128:2.064 best, 256:2.0815 worse}. n_fft=128 optimal; the win is fine-TIME resolution (echo timing), frequency not the lever. Champion unchanged 828b9a3."
-    },
-    {
-      "study_id": "S17",
-      "lineage": "inference-time-tta",
-      "conclusion": "PASS(confirm)",
-      "best_exp_id": "E135",
-      "note": "5th TTA draw E135=2.0796; 5-draw mean 2.0821 +-0.0075. Champion robustly settled. Holding action; operator then approved PROPOSAL-01."
-    },
-    {
-      "study_id": "S18",
-      "lineage": "acoustic-representation-v2",
-      "conclusion": "FAIL",
-      "best_exp_id": "E136",
-      "note": "Early/late waveform-split 10ch (E136=2.1247) is +0.043 worse: splitting the waveform truncates each STFT and the baseline STFT time-axis already carries echo timing. Temporal axis not the bottleneck. PROPOSAL-01 seam works."
-    },
-    {
-      "study_id": "S19",
-      "lineage": "acoustic-representation-v2",
-      "conclusion": "PASS -> NEW GLOBAL CHAMPION",
-      "best_exp_id": "E137",
-      "note": "Multi-resolution STFT (n_fft 512+128) 10ch. 3 draws E137/E138/E139 mean 2.0639 +-0.004, all below old champion best draw 2.072. Fine-time echo-delay resolution adds real depth signal (ABS_REL+d1 up, RMSE tied). First gain beyond the architecture ceiling. Commit 828b9a3."
-    },
-    {
-      "study_id": "S14",
-      "lineage": "equivariance-training",
-      "conclusion": "FAIL",
-      "best_exp_id": "E132",
-      "note": "L/R-equivariance training is redundant with the free eval-time TTA and costs an anneal epoch (E131 budget-bust; E132 comp 2.0925 > champion 2.079). See hypotheses.tsv."
-    },
-    {
-      "study_id": "S15",
-      "lineage": "inference-time-tta",
-      "conclusion": "PASS(confirm)",
-      "best_exp_id": "E133",
-      "note": "4th TTA draw E133=2.0935; 4-draw mean 2.0827 +-0.008, ~2 sigma below old baseline 2.099. Champion settled."
-    },
-    {
-      "study_id": "S16",
-      "lineage": "inference-time-tta",
-      "conclusion": "FAIL",
-      "best_exp_id": "E134",
-      "note": "Confidence-weighted TTA (E134=2.0966) is worse than uniform 50/50 (2.083); uniform is near-optimal for two symmetric views, learned per-pixel confidence is noisy on held-out scenes. TTA blend already optimal."
-    }
-  ],
-  "strategic_note": "PROJECT COMPLETE at a strong, well-characterized final result. Champion = 12ch multi-res STFT(512+128) + interaural coherence(512+128) + TTA, commit 36c6538, mean 2.030 (5 draws, std 0.0016). ALL THREE research axes explored: (1) architecture (E0-E126, mapped/exhausted); (2) hand-designed acoustic representation (PROPOSAL-01: multi-res S19 + coherence S22/S23 = the wins; smooth/3rd-scale/onset/phase-coh plateaus); (3) learned complex-STFT front-end (PROPOSAL-02: S29 FAIL - conv cannot beat hand-designed within budget). Progression 2.099->2.082(TTA)->2.064(multi-res)->2.042(+coh512)->2.030(+coh128); vs baseline ABS_REL -26% / RMSE ~-9% / d1 +7pts. The loop stays alive with occasional champion confirmation draws; a materially larger gain would need a bigger swing (a learned bilinear/product layer that CAN compute coherence-family features, or more scenes/data) - operator-gated. No more low-EV cue/front-end churn.",
+  "_comment": "Active research state for Auto Audio Depth Estimation - 2026-July RayDPT-validation phase (FRESH RESET). The June improvement phase (champion 2.030) is archived on branch 2026-June-RayDPT-improvement. This phase restarts from the ORIGINAL RayDPT baseline (commit f677b0f, 5ch, fp32-era) with a CORRECTED loss (the coarse-layout & low-pass loss TARGETS now use MASK-WEIGHTED pooling; the old avg-pool/blur included invalid gt=0 pixels and corrupted the target). Goal: re-run/validate the research with the fixed loss. Same framework (program.md v2, research.py, hypothesis-driven workflow).",
+  "next_exp_id": "E0",
+  "global_champion_commit": null,
+  "global_champion_note": "None yet - first run (E0) establishes the fresh baseline with the fixed loss.",
+  "metric_note": "compute_errors (abs_rel/rmse/d1) in prepare.py is the FIXED eval metric (unchanged). The honest composite ranking = rmse/1.6 + (1-d1)/0.46 + 0.3*abs_rel/0.4 (RMSE+d1 dominate; abs_rel discounted). The 2026-July FIX is to the LOSS (coarse/low targets), not to compute_errors.",
+  "concluded_studies": [],
   "active_study": {
-    "study_id": "S30",
-    "lineage": "acoustic-representation-v2",
-    "parent": "S23 (12ch champion)",
-    "type": "confirm",
-    "status": "running",
-    "general_hypothesis": "Project at terminal strong result; both hand-designed and learned representation axes explored. Keep the loop alive with champion confirmation draws characterizing the settled final method (2.030).",
-    "detailed_hypothesis": "Re-run the 12ch champion (36c6538) for an additional confirmation draw.",
-    "experiment_note": "E158: re-run champion 36c6538 unchanged; 5th->6th confirm draw of S23.",
-    "confirms": {
-      "study_id": "S23",
-      "exp_id": "E146",
-      "commit": "36c6538"
-    },
-    "hpo_stage": "n/a-confirm",
+    "study_id": "S0",
+    "lineage": "baseline",
+    "parent": null,
+    "type": "new",
+    "status": "pending",
+    "general_hypothesis": "Establish the fresh baseline: the original RayDPT (5ch [logL,logR,ILD,cosIPD,sinIPD] + flip-aug) with the CORRECTED coarse/low-pass loss targets (mask-weighted pooling), to anchor the 2026-July validation phase.",
+    "detailed_hypothesis": "Run the reset baseline train.py (f677b0f + loss fix) unchanged; record its metrics as the new baseline. Then the workflow proceeds - re-validating whether the June findings (bf16/bs32/lr, coarse/geometry attention, gated skips, multi-res STFT, coherence, TTA) still hold under the corrected loss.",
+    "experiment_note": "E0: baseline run, python train.py --mode train (defaults: in_ch=5, flip_aug, no FEATURE_FN, no TTA).",
+    "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
-    "runs": [
-      {
-        "exp_id": "E158",
-        "status": "running",
-        "note": "champion confirmation draw"
-      }
-    ],
-    "decision_rule": "Record the draw; update champion mean. This is the honest terminal activity. Do not churn low-EV variants. If the operator wants a bigger gated swing (bilinear/product layer, more data), surface it; otherwise the champion 2.030 stands as the final result."
+    "runs": [],
+    "decision_rule": "Record the baseline metrics. Then follow program.md's hypothesis-driven workflow. KEY: re-verify the June findings under the FIXED loss - the corrected coarse/low targets may change which cues/architectures help. Never crown on <2-3 draws (E121/E125 lesson from the June phase)."
   },
   "backlog": [
-    {
-      "lineage": "acoustic-representation-v2",
-      "type": "new",
-      "priority": "high",
-      "idea": "3rd resolution scale: add a very-long-window block (n_fft=1024, fine frequency for room modes / material) as a 3rd 5ch block -> 15ch, on top of the 512+128 champion. Tests whether more of the time-frequency plane helps."
-    },
-    {
-      "lineage": "acoustic-representation-v2",
-      "type": "new",
-      "priority": "high",
-      "idea": "Cross-channel coherence: add magnitude-squared coherence |E[L conj(R)]|^2 / (E|L|^2 E|R|^2) per TF bin as an extra channel - a direct-vs-diffuse / direct-path-strength cue distinct from ILD/IPD."
-    },
-    {
-      "lineage": "acoustic-representation-v2",
-      "type": "new",
-      "priority": "medium",
-      "idea": "Per-frequency-band echo processing / learned STFT front-end (small conv on the complex STFT before the 5ch reduction)."
-    },
-    {
-      "lineage": "inference-time-tta",
-      "type": "confirm",
-      "priority": "low",
-      "idea": "The TTA + multi-res champion could get more confirmation draws if a future decision hinges on the exact mean."
-    }
+    {"lineage": "training-optimization", "type": "tune", "idea": "Re-validate the June optimisation envelope under the fixed loss: bf16 AMP + bs32 + lr4e-4 + warmup-cosine + EMA0.995 (June: big early win)."},
+    {"lineage": "acoustic-representation-v2", "type": "new", "idea": "Re-validate the June representation wins under the fixed loss: multi-res STFT (fine-time echo delay) and interaural coherence (direct-vs-diffuse). The coarse/low-target fix especially affects the coarse-layout loss which the geometry/coarse studies leaned on."},
+    {"lineage": "inference-time-tta", "type": "new", "idea": "Re-validate eval-time L/R-flip TTA (June: +0.02 win)."},
+    {"lineage": "simplification", "type": "refine", "idea": "The June E116 dropped the vestigial pix2pix encoder tail (24.44M->7.69M, provably equivalent) - re-apply early once the baseline is confirmed."}
   ]
 }

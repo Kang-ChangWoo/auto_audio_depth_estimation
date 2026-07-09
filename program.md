@@ -6,13 +6,16 @@ Autonomous research for **depth estimation from binaural echoes**. An AI agent i
 hypothesis, modifies `train.py`, trains under a fixed budget, evaluates, concludes PASS/FAIL, records
 the scientific finding, and continues indefinitely. This file is the agent's operating manual.
 
-> **Migration note (research-workflow v2).** This project was upgraded from a single-champion
-> keep/discard loop into a lightweight *hypothesis-driven* workflow. The entire experiment history
-> (`results.tsv`, `EXPERIMENTS.md`), all experiment IDs, all scores, and the current champion are
-> preserved **unchanged**. New scientific structure lives in `research.py`, `hypotheses.tsv`,
-> `archive.json`, and `studies.json`. **Research continues from the current state — do not restart
-> from E0.** The current global champion is **E127 (eval-time L/R-flip TTA), commit `494b5e2`,
-> composite ~2.079**; the next experiment id is in `studies.json`. Run `python research.py status`.
+> **Phase note — 2026-July RayDPT-validation (FRESH RESET).** This branch (`master` /
+> `2026-July-RayDPT-validation`) is a fresh restart from the **original RayDPT baseline** (`f677b0f`, 5ch)
+> with a **corrected loss** (the coarse-layout & low-pass loss *targets* now use MASK-WEIGHTED pooling —
+> the old code averaged/blurred `gt` over invalid `gt=0` pixels, corrupting the target; `compute_errors`
+> is unchanged). Goal: **re-validate** the research under the fixed loss.
+> The **June improvement phase** (champion 12ch multi-res+coherence+TTA, composite ~2.030, ABS_REL −26% /
+> RMSE ~−9% / d1 +7pts vs baseline) is fully archived on branch **`2026-June-RayDPT-improvement`** (commit
+> `ff22f23`, 164 runs / 29 studies) — read it for the prior findings to re-test.
+> The framework is unchanged (hypothesis-driven workflow below; `research.py`, `hypotheses.tsv`,
+> `archive.json`, `studies.json`). **Start from E0 (baseline) this phase.** Run `python research.py status`.
 
 ## Setup
 

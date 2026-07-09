@@ -37,93 +37,10 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-import prepare
 from prepare import (
     make_dataloader, compute_errors, load_gt_rgb, erp_grid, sh_basis_matrix,
     swap_audio_lr,
 )
-
-
-# ============================================================
-# Acoustic representation (PROPOSAL-01 research via prepare.FEATURE_FN)
-# ============================================================
-
-def swap_lr_multi(spec):
-    """L/R mirror. Applies the fixed 5ch swap to each leading consecutive 5-channel block (so multi-scale
-    representations like the 10ch multi-res champion mirror correctly), and passes any TRAILING channels
-    through UNCHANGED — those are reserved for L/R-SYMMETRIC features (e.g. interaural coherence, E143)
-    that are invariant under the mirror. For a plain 5ch input this is exactly swap_audio_lr, so the
-    champion's TTA/flip-aug behaviour is unchanged. (Correctness invariant: trailing channels MUST be
-    L/R-symmetric by construction, else the physical mirror is wrong.)"""
-    C = spec.shape[1]
-    nblk = (C // 5) * 5
-    parts = [swap_audio_lr(spec[:, i:i + 5]) for i in range(0, nblk, 5)]
-    if C > nblk:
-        parts.append(spec[:, nblk:])            # trailing L/R-symmetric channels -> identity
-    return torch.cat(parts, dim=1) if parts else swap_audio_lr(spec)
-
-
-def early_late_feat(wav, ds):
-    """E136 (S18, FAILED): early/late echo split. The fixed echo waveform is split in time into an
-    EARLY window (direct + early reflections) and a LATE window (reverberant tail); the 5ch spatial
-    feature is computed on each and concatenated -> 10ch. Result: +0.043 WORSE than champion (splitting
-    the waveform truncates each STFT / the baseline STFT time-axis already carries echo timing)."""
-    T = wav.shape[1]
-    h = T // 2
-    early = ds._specN(wav[:, :h], 5)        # (5,H,W)
-    late = ds._specN(wav[:, h:], 5)         # (5,H,W)
-    return torch.cat([early, late], dim=0)  # (10,H,W)
-
-
-def _feat5_at(wav, n_fft, hop, win, H, W):
-    """The baseline 5ch spatial feature [logL,logR,ILD,cosIPD,sinIPD] computed at an ARBITRARY STFT
-    resolution (same math as prepare._specN, but parameterisable n_fft/hop/win)."""
-    w = torch.hann_window(win, device=wav.device, dtype=wav.dtype)
-    st = torch.stft(wav, n_fft, hop, win, w, return_complex=True)   # (2,F,T')
-    L, R = st[0], st[1]
-    eps = 1e-6
-    lmag = torch.log1p(L.abs()); rmag = torch.log1p(R.abs())
-    ild = torch.log(L.abs() + eps) - torch.log(R.abs() + eps)
-    ipd = torch.angle(L * torch.conj(R))
-    feat = torch.stack([lmag, rmag, ild, torch.cos(ipd), torch.sin(ipd)], 0)
-    return F.interpolate(feat.unsqueeze(0), (H, W), mode='nearest').squeeze(0).float()
-
-
-def multires_feat(wav, ds):
-    """E137 (S19): multi-resolution STFT. Concatenate the baseline 5ch (n_fft=512 -> fine FREQUENCY,
-    room-mode structure) with a short-window 5ch (n_fft=128 -> fine TIME, sharper echo-delay/distance
-    localisation the single-resolution baseline cannot resolve) -> 10ch. Adds a genuinely new signal
-    (time-frequency resolution tradeoff), unlike the temporal split (S18) which only truncated."""
-    coarse = ds._specN(wav, 5)                                   # n_fft=512 (fine freq) — baseline
-    fine = _feat5_at(wav, 128, 40, 128, ds.H, ds.W)             # n_fft=128 (fine time / echo delay)
-    return torch.cat([coarse, fine], dim=0)                      # (10,H,W)
-
-
-def _coherence_at(wav, n_fft, hop, win, H, W, smooth=3):
-    """Interaural magnitude-squared coherence per TF bin: |E[L conj(R)]|^2 / (E|L|^2 E|R|^2), with E[.]
-    a short (~smooth-tap) moving average over STFT time frames. ~1 near the direct/early (correlated)
-    wavefront, ~0 in diffuse late reverberation (decorrelated) -> a direct-vs-diffuse / distance cue.
-    L/R-SYMMETRIC (swapping ears leaves it invariant). Returns (1,H,W)."""
-    w = torch.hann_window(win, device=wav.device, dtype=wav.dtype)
-    st = torch.stft(wav, n_fft, hop, win, w, return_complex=True)   # (2,F,T)
-    L, R = st[0], st[1]
-    cross = L * torch.conj(R)
-    sm = lambda x: F.avg_pool1d(x.unsqueeze(0), smooth, 1, smooth // 2).squeeze(0)  # avg over time
-    sll = sm(L.abs() ** 2); srr = sm(R.abs() ** 2)
-    sxr = sm(cross.real); sxi = sm(cross.imag)
-    coh = (sxr ** 2 + sxi ** 2) / (sll * srr + 1e-6)               # (F,T) in [0,1]
-    return F.interpolate(coh[None, None], (H, W), mode='nearest').squeeze(0).float()  # (1,H,W)
-
-
-def multires_coh_feat(wav, ds):
-    """E146 (S23 refine): the 10ch multi-res champion + interaural coherence at BOTH scales (n_fft=512
-    coarse AND n_fft=128 fine) as two trailing L/R-symmetric channels -> 12ch. (E143/S22 champion used
-    only the 512 coherence -> 11ch.) Coherence is a direct-vs-diffuse cue distinct from ILD/IPD; the
-    two scales may capture complementary direct/diffuse structure. swap_lr_multi passes both through."""
-    base = multires_feat(wav, ds)                                # (10,H,W)
-    coh512 = _coherence_at(wav, 512, 160, 512, ds.H, ds.W)      # (1,H,W) symmetric
-    coh128 = _coherence_at(wav, 128, 40, 128, ds.H, ds.W)      # (1,H,W) symmetric — E146 fine-scale
-    return torch.cat([base, coh512, coh128], dim=0)             # (12,H,W)
 
 
 # ============================================================
@@ -167,37 +84,33 @@ def make_config(args):
         model=Cfg(
             name='raydpt',
             ngf=64,
-            dim=192,   # E68 confirmed NOT capacity-limited (256 was worse + cost an anneal epoch)
+            dim=192,
             n_heads=4,
             ray_cross_layers=2,
             raydpt_win32=5,
-            raydpt_win64=3,   # E41 confirmed: window 5 at 64x128 too costly (709s/ep) — 3 is the budget-optimal
+            raydpt_win64=3,
             raydpt_lite=args.raydpt_lite,
-            raydpt_full_decode=args.raydpt_full_decode,
             # ray-feature bank flags
             use_xyz=True,
             use_fourier_pe=True,
-            fourier_bands=6,   # E82 confirmed 6 optimal (8 was worse)
-            use_sh_pe=False,   # E80 confirmed neutral-worse (xyz+Fourier PE already sufficient)
+            fourier_bands=6,
+            use_sh_pe=False,
             sh_order=4,
-            use_mic_pe=False,   # E81 confirmed neutral (tied)
+            use_mic_pe=False,
             head_r=0.0875,
             # composite-loss head / weights
             coarse_head_h=16,
             coarse_head_w=32,
             w_dense=1.0,
-            w_coarse_layout=1.0,   # E62 RE-CONFIRMED load-bearing: dropping both aux losses cost 0.070 composite (RMSE+d1 regress hard)
+            w_coarse_layout=1.0,
             w_low=0.5,
-            w_rel=0.1,    # confirmed optimal (E32 0.08, E40 0.13 both worse)
-            w_grad=0.05,  # champion (E34): edge-loss sweet spot (0.03 & 0.1 both worse)
-            w_silog=0.0,
         ),
         mode=Cfg(
             mode=args.mode,
             batch_size=args.batch_size,
             epochs=args.epochs,
             learning_rate=args.lr,
-            weight_decay=1e-4,   # E21 confirmed 1e-4 optimal (2e-4 lost on all 3)
+            weight_decay=1e-4,
             optimizer=args.optimizer,
             validation_iter=1,
             num_threads=args.num_workers,
@@ -284,7 +197,7 @@ class Refine(nn.Module):
 class FFN(nn.Module):
     def __init__(self, dim, mult=4):
         super().__init__()
-        self.net = nn.Sequential(nn.Linear(dim, dim * mult), nn.GELU(),   # E94 confirmed no dropout needed (neutral; not overfit-limited within 9-epoch budget)
+        self.net = nn.Sequential(nn.Linear(dim, dim * mult), nn.GELU(),
                                  nn.Linear(dim * mult, dim))
 
     def forward(self, x):
@@ -304,51 +217,6 @@ class CrossBlock(nn.Module):
         return q + self.ffn(self.n2(q))
 
 
-class SelfBlock(nn.Module):
-    """Ray<->ray global self-attention (pre-LN) + FFN. Used on the coarse 16x32 ray
-    grid so the layout rays exchange info globally before decoding (E22)."""
-    def __init__(self, dim, heads):
-        super().__init__()
-        self.n1, self.n2 = nn.LayerNorm(dim), nn.LayerNorm(dim)
-        self.attn = nn.MultiheadAttention(dim, heads, batch_first=True)
-        self.ffn = FFN(dim)
-
-    def forward(self, q):
-        qn = self.n1(q)
-        a, _ = self.attn(qn, qn, qn)
-        q = q + a
-        return q + self.ffn(self.n2(q))
-
-
-class GeoSelfBlock(nn.Module):
-    """Ray<->ray global self-attention with a learned angular-distance bias (E27).
-    Like SelfBlock but the attention logits get a per-head bias that is a function of
-    the cos angular distance between every ray pair — makes the coarse-layout reasoning
-    geometry-aware (the lsa blocks already use such a bias locally). `geom`: (N,N)."""
-    def __init__(self, dim, heads, geom):
-        super().__init__()
-        self.h, self.dh = heads, dim // heads
-        self.scale = self.dh ** -0.5
-        self.n1, self.n2 = nn.LayerNorm(dim), nn.LayerNorm(dim)
-        self.to_qkv = nn.Linear(dim, dim * 3)
-        self.proj = nn.Linear(dim, dim)
-        self.ffn = FFN(dim)                                      # E45 confirmed: SwiGLU no better (coarse block saturated)
-        self.register_buffer("geom", geom)                       # (N,N,G) pairwise geom feats
-        self.bias_mlp = nn.Sequential(nn.Linear(geom.shape[-1], 32), nn.GELU(), nn.Linear(32, heads))  # E58 confirmed 32 optimal (64 overfits)
-
-    def forward(self, q):
-        B, N, C = q.shape
-        x = self.n1(q)
-        qkv = self.to_qkv(x).reshape(B, N, 3, self.h, self.dh).permute(2, 0, 3, 1, 4)
-        qq, kk, vv = qkv[0], qkv[1], qkv[2]                      # (B,h,N,dh)
-        attn = (qq @ kk.transpose(-2, -1)) * self.scale          # (B,h,N,N)
-        bias = self.bias_mlp(self.geom).permute(2, 0, 1)         # (h,N,N)
-        attn = (attn + bias[None]).softmax(-1)
-        o = (attn @ vv).transpose(1, 2).reshape(B, N, C)
-        q = q + self.proj(o)
-        return q + self.ffn(self.n2(q))
-
-
 class Down(nn.Module):
     """pix2pix encoder block: Conv(4,2,1) (/2) + optional BN + LeakyReLU."""
 
@@ -365,16 +233,18 @@ class Down(nn.Module):
 
 
 class UNet8Encoder(nn.Module):
-    """pix2pix-style down-sampling encoder. RayDPT only consumes e2/e3/e4 (64x128, 32x64,
-    16x32) as DPT tokens/skips, so E116 drops the vestigial deep blocks e5-e8 (256x512 pix2pix
-    tail, never reached by forward) — ~16.9M dead params removed, provably output-equivalent
-    (they were never in the forward/backward path; only the init-RNG shift changes results)."""
+    """Explicit pix2pix-style 8-down encoder (256x512 -> 1x2). Exposes e2/e3/e4
+    feature maps used as DPT tokens / skips."""
     def __init__(self, in_ch, ngf=64):
         super().__init__()
         self.e1 = Down(in_ch,   ngf,     norm=False)   # 128x256
         self.e2 = Down(ngf,     ngf * 2)               # 64x128
         self.e3 = Down(ngf * 2, ngf * 4)               # 32x64
         self.e4 = Down(ngf * 4, ngf * 8)               # 16x32
+        self.e5 = Down(ngf * 8, ngf * 8)               # 8x16
+        self.e6 = Down(ngf * 8, ngf * 8)               # 4x8
+        self.e7 = Down(ngf * 8, ngf * 8)               # 2x4
+        self.e8 = Down(ngf * 8, ngf * 8, norm=False)   # 1x2
 
 
 # ---- local spherical window attention (ray <-> ray) -------------------------
@@ -443,81 +313,32 @@ class RayDPT(nn.Module):
         def bank(h, w):
             pc = copy.copy(cfg); pc.img_h, pc.img_w = h, w
             b = RayBank(pc, device="cpu"); return b.feat, b.feat_dim
-        f16, fd = bank(16, 32); f32, _ = bank(32, 64)   # E87: f64 bank dropped (F64 removed in E65)
+        f16, fd = bank(16, 32); f32, _ = bank(32, 64); f64, _ = bank(64, 128)
         self.register_buffer("rf16", f16); self.register_buffer("rf32", f32)
+        self.register_buffer("rf64", f64)
         mk_rp = lambda: nn.Sequential(nn.Linear(fd, dim), nn.GELU(), nn.Linear(dim, dim))
-        self.rp16, self.rp32 = mk_rp(), mk_rp()
+        self.rp16, self.rp32, self.rp64 = mk_rp(), mk_rp(), mk_rp()
         # audio kv: e4 (512 tok), e3 (2048 tok). 64-scale reuses e4 (cheap global cue).
-        # E75 confirmed the audio->ray interface is not capacity-limited (Linear->MLP was worse). Keep Linear.
         self.kv_e4 = nn.Linear(ngf * 8, dim)
         self.kv_e3 = nn.Linear(ngf * 4, dim)
-        # E77 confirmed the encoder is not feature-extraction-limited (bottleneck Refine was neutral). Reverted.
-        # E70 tried learned positional embeddings on the audio tokens — neutral (within noise); the conv
-        # encoder already encodes position implicitly. Reverted.
         mk_cr = lambda: nn.ModuleList([CrossBlock(dim, heads) for _ in range(nL)])
-        self.cr16, self.cr32 = mk_cr(), mk_cr()   # E87: cr64 dropped (F64 removed in E65) — ~0.9M dead params
-        # E22: ray<->ray global self-attn on the 16x32 coarse grid (512 tokens) so the layout rays
-        # reason jointly after reading audio. Capacity saturates (E23 depth, E25 heads, E26 mid-scale).
-        # E27: make it GEOMETRY-AWARE — add a learned bias on the cos angular distance between ray
-        # pairs (the lsa blocks already do this locally). geom = (512,512) pairwise cos-ang-dist.
-        # E27: geometry bias on the single cos-ang-dist between ray pairs (E28's richer feats w/
-        # absolute elevation biased toward the gamed ABS_REL and lost the honest metrics).
-        el16, az16 = erp_grid(16, 32)
-        d16 = np.stack([np.cos(el16) * np.cos(az16), np.cos(el16) * np.sin(az16),
-                        np.sin(el16)], -1).reshape(-1, 3).astype(np.float32)   # (512,3) unit dirs
-        # E54: pre-fusion geo-attn on raw ray tokens (rsa16) was REMOVED — it slightly hurt; the
-        # post-fusion geometric reasoning (rsa16b, below) on the assembled layout is what matters.
-        # E50/E51 champion: 2 stacked geometry-aware self-attn blocks on the FUSED coarse features m16
-        # (post encoder-skip), so the assembled layout reasons geometrically before head/fine decode.
-        # E56: RICHER geometry feats help the POST-fusion blocks (opposite of E28's pre-fusion loss):
-        # geometric reasoning over the ASSEMBLED layout wants richer conditioning. E57: also add the
-        # wrapped azimuth difference (cos/sin, since azimuth is circular) → 5 feats.
-        cosd = np.clip(d16 @ d16.T, -1.0, 1.0)                                  # (512,512) cos ang dist
-        elf = el16.reshape(-1).astype(np.float32); azf = az16.reshape(-1).astype(np.float32)
-        N = elf.shape[0]
-        daz = azf[None, :] - azf[:, None]                                       # (512,512) azimuth diff
-        geom16b = np.stack([cosd, np.broadcast_to(elf[:, None], (N, N)),
-                            np.broadcast_to(elf[None, :], (N, N)),
-                            np.cos(daz), np.sin(daz)], -1).astype(np.float32)   # (512,512,5)
-        # 2 geometry blocks is the CONFIRMED sweet spot: E67 re-tested 3 blocks WITH budget+deep-anneal
-        # (F64 gone) and it was identical (2.0949 vs 2.0934) — geometry saturates at 2, not a budget limit.
-        self.rsa16b = nn.Sequential(GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy())),
-                                    GeoSelfBlock(dim, heads, torch.from_numpy(geom16b.copy())))
-        # E61 tried a 2nd cross-attn round here (re-gather audio post-geo) — within-noise worse + budget
-        # pressure; reverted. Post-fusion geometry (rsa16b) is the ceiling of this subsystem.
-        # E63 tried FiLM global-audio modulation of m16 — within-noise worse; the per-ray cross-attn
-        # already supplies the audio evidence. Reverted.
+        self.cr16, self.cr32, self.cr64 = mk_cr(), mk_cr(), mk_cr()
         # DPT encoder skips (U-Net detail injection)
         self.se4 = nn.Conv2d(ngf * 8, dim, 1)
         self.se3 = nn.Conv2d(ngf * 4, dim, 1)
         self.se2 = nn.Conv2d(ngf * 2, dim, 1)
-        # E29: gated DPT skips — the ray features gate how much encoder detail to admit per scale.
-        self.g4 = nn.Conv2d(dim, dim, 1); self.g3 = nn.Conv2d(dim, dim, 1)   # E86: dropped dead g2 (unused since E65 removed F64's 64-scale gated skip)
         self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False)
         self.refine32 = Refine(dim); self.refine64 = Refine(dim)
         self.lsa32 = LocalSphericalAttention(dim, heads, 32, 64, getattr(cfg, "raydpt_win32", 5))
         self.lsa64 = LocalSphericalAttention(dim, heads, 64, 128, getattr(cfg, "raydpt_win64", 3))
         self.coarse_head = nn.Conv2d(dim, 1, 1)
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
-        # E66 tried a learned 128x256 decode — RMSE got WORSE (1.485 vs 1.480); resolution is NOT the
-        # bottleneck (depth field smooth, bilinear adequate). Reverted. Accuracy is audio->depth-limited.
         self.lite = getattr(cfg, "raydpt_lite", False)        # 2-scale (32,64) lite variant
-        # full-decode: LEARNED upsample 64x128 -> 256x512 (+e1 skip) instead of bilinear x4.
-        # Improves RMSE/d1 (full-res detail) -- the honest-metric lever.
-        self.full_decode = getattr(cfg, "raydpt_full_decode", False)
-        if self.full_decode:
-            self.proj_fd = conv_bn(dim, ngf)                  # dim->ngf at 64x128
-            self.se1 = nn.Conv2d(ngf, ngf, 1)                 # e1 (128x256) DPT skip
-            self.dec1 = Refine(ngf)                           # at 128x256
-            self.dec2 = nn.Sequential(conv_bn(ngf, ngf), Refine(ngf))   # at 256x512
-            self.head_fd = nn.Conv2d(ngf, 1, 3, 1, 1)
 
-    def _cross(self, rp, rf, blocks, kv, B, h, w, self_attn=None):
+    def _cross(self, rp, rf, blocks, kv, B, h, w):
         q = rp(rf)[None].expand(B, -1, -1)
         for blk in blocks:
             q = blk(q, kv)
-        if self_attn is not None:                          # ray<->ray global self-attn (E22)
-            q = self_attn(q)
         return q.transpose(1, 2).reshape(B, -1, h, w)
 
     def forward(self, spec, coarse_feat=None, sh_basis=None):
@@ -534,24 +355,15 @@ class RayDPT(nn.Module):
             x = self.lsa64(self.refine64(self.up(x) + self.se2(e2)))   # 64x128
         else:
             kv3 = self.kv_e3(e3.flatten(2).transpose(1, 2))     # (B,2048,dim)
-            # E73 tried coarse rays attending fine audio (kv4+kv3) — neutral (fine audio already enters via F32). Reverted.
             F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4, B, 16, 32)
             F32 = self._cross(self.rp32, self.rf32, self.cr32, kv3, B, 32, 64)
-            # E65: drop the finest-scale F64 cross-attn (8192 ray queries — one of the biggest ops).
-            # Ray-conditioning stays via 16/32-scale cross-attn; lsa64 local attn + e2 skip carry 64-scale.
-            m16 = F16 + torch.sigmoid(self.g4(F16)) * self.se4(e4)            # 16x32 (gated skip)
-            m16 = self.rsa16b(m16.flatten(2).transpose(1, 2)).transpose(1, 2).reshape(B, -1, 16, 32)  # E50: geo self-attn on fused
+            F64 = self._cross(self.rp64, self.rf64, self.cr64, kv4, B, 64, 128)
+            m16 = F16 + self.se4(e4)                             # 16x32
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
-            x = self.lsa32(self.refine32(self.up(m16) + F32 + torch.sigmoid(self.g3(F32)) * self.se3(e3)))   # 32x64
-            x = self.lsa64(self.refine64(self.up(x) + self.se2(e2)))     # 64x128 (E65: F64 dropped)
-        if self.full_decode:                                   # LEARNED upsample 64x128 -> 256x512
-            xf = self.up(self.proj_fd(x))                       # 128x256, ngf
-            xf = self.dec1(xf + self.se1(e1))                  # + e1 skip
-            xf = self.dec2(self.up(xf))                        # 256x512, ngf
-            D = torch.sigmoid(self.head_fd(xf))
-        else:
-            D = torch.sigmoid(self.head(x))
-            D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
+            x = self.lsa32(self.refine32(self.up(m16) + F32 + self.se3(e3)))   # 32x64
+            x = self.lsa64(self.refine64(self.up(x) + F64 + self.se2(e2)))     # 64x128
+        D = torch.sigmoid(self.head(x))
+        D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
         return {"D": D, "D0": D, "extras": {"D_coarse": d_c}}
 
 
@@ -578,71 +390,29 @@ def masked_mae(D, gt, mask):
     return ((D - gt).abs() * mask).sum() / mask.sum().clamp(min=1e-6)
 
 
-def masked_berhu(D, gt, mask, c_frac=0.2, eps=1e-6):
-    """Reverse-Huber (berHu): L1 for small residuals, L2 for large ones (threshold c =
-    c_frac * max valid residual). Up-weights large-depth errors -> targets RMSE, while
-    staying gentle on near pixels. Reduces to MAE when residuals are all small."""
-    r = (D - gt).abs()
-    c = c_frac * (r * mask).max().detach().clamp(min=eps)
-    berhu = torch.where(r <= c, r, (r * r + c * c) / (2 * c))
-    return (berhu * mask).sum() / mask.sum().clamp(min=eps)
-
-
-def silog_loss(D, gt, mask, lam=0.85, eps=1e-6):
-    """Scale-invariant log loss (Eigen): sqrt(mean(g^2) - lam*mean(g)^2), g=log D - log gt.
-    Penalises log-error variance -> rewards correct relative STRUCTURE; complements the
-    relative term (which targets relative magnitude) with a far-pixel-gentle gradient."""
-    g = (torch.log(D.clamp(min=eps)) - torch.log(gt.clamp(min=eps))) * mask
-    n = mask.sum().clamp(min=1e-6)
-    var = (g ** 2).sum() / n - lam * ((g.sum() / n) ** 2)
-    return torch.sqrt(var.clamp(min=1e-8))
-
-
 def composite_loss(out, gt, mask, mcfg):
     """Band-limited objective: dense masked-MAE + coarse-layout + low-pass.
     gt / out['D'] are normalised depth in [0,1]. Returns (loss, parts)."""
-    main = masked_mae(out["D"], gt, mask)   # E34 champion (berHu/blend E38-E40 = RMSE frontier slide, no composite gain)
+    main = masked_mae(out["D"], gt, mask)
     loss = mcfg.w_dense * main
-    # relative-error term: directly targets the eval metric ABS_REL = mean(|D-gt|/gt).
-    # gt.clamp(0.01)=0.1m floor matches the metric's near-depth regime; max_depth cancels,
-    # so in normalised space this term equals ABS_REL. Pushes near-field (small-gt) accuracy
-    # that uniform MAE under-weights -> aims to break the ABS_REL<->RMSE LR tradeoff.
-    rel = (((out["D"] - gt).abs() / gt.clamp(min=0.01)) * mask).sum() / mask.sum().clamp(min=1e-6)
-    loss = loss + mcfg.w_rel * rel
-    # scale-invariant log term (structure), stacked on the relative term (magnitude).
-    if mcfg.w_silog:   # E88: guard — w_silog=0, so skip the unused silog compute each step
-        loss = loss + mcfg.w_silog * silog_loss(out["D"], gt, mask)
-    # E46: log-depth L1 — penalises multiplicative (ratio) error, which is what d1 (<1.25 ratio)
-    # measures. Complements the linear MAE (absolute) with a scale-relative signal.
-    wl = getattr(mcfg, "w_logd", 0.0)
-    if wl:
-        ld = ((torch.log(out["D"].clamp(min=1e-3)) - torch.log(gt.clamp(min=1e-3))).abs() * mask).sum() \
-             / mask.sum().clamp(min=1e-6)
-        loss = loss + wl * ld
-    # E33: edge-aware gradient-matching — match horizontal/vertical depth differences so predicted
-    # depth EDGES land where the gt edges are (sharper boundaries -> better RMSE/d1). Masked to
-    # valid pairs. w_grad=0 recovers the prior objective.
-    wg = getattr(mcfg, "w_grad", 0.0)
-    if wg:
-        D, g = out["D"], gt
-        dyD = (D[:, :, 1:, :] - D[:, :, :-1, :]).abs(); dyg = (g[:, :, 1:, :] - g[:, :, :-1, :]).abs()
-        dxD = (D[:, :, :, 1:] - D[:, :, :, :-1]).abs(); dxg = (g[:, :, :, 1:] - g[:, :, :, :-1]).abs()
-        my = mask[:, :, 1:, :] * mask[:, :, :-1, :]; mx = mask[:, :, :, 1:] * mask[:, :, :, :-1]
-        grad = (((dyD - dyg).abs() * my).sum() + ((dxD - dxg).abs() * mx).sum()) \
-               / (my.sum() + mx.sum()).clamp(min=1e-6)
-        loss = loss + wg * grad
     chh, chw = mcfg.coarse_head_h, mcfg.coarse_head_w
-    gt_c = F.adaptive_avg_pool2d(gt, (chh, chw))
+    # METRIC/LOSS FIX (2026-July validation reset): the coarse-layout and low-pass loss TARGETS are now
+    # computed with MASK-WEIGHTED pooling. The previous code averaged/blurred gt over ALL pixels including
+    # INVALID ones (gt=0 where mask=0), which diluted the coarse/low target toward 0 in any cell/region
+    # containing invalid pixels -> the aux losses were trained against a corrupted target. The correct
+    # target is the mean of VALID depths only: sum(gt*mask)/sum(mask).
     m_c = F.adaptive_avg_pool2d(mask, (chh, chw))
+    gt_c = F.adaptive_avg_pool2d(gt * mask, (chh, chw)) / m_c.clamp(min=1e-6)   # mask-weighted coarse target
     dco = out["extras"].get("D_coarse")
     if dco is not None and dco.shape[-2:] == gt_c.shape[-2:]:
         lc = masked_mae(dco, gt_c, m_c)
     else:
         lc = masked_mae(F.adaptive_avg_pool2d(out["D"], (chh, chw)), gt_c, m_c)
-    ll = masked_mae(gaussian_blur_erp(out["D"], 3.0), gaussian_blur_erp(gt, 3.0), mask)
+    gt_low = gaussian_blur_erp(gt * mask, 3.0) / gaussian_blur_erp(mask, 3.0).clamp(min=1e-6)  # mask-weighted low target
+    ll = masked_mae(gaussian_blur_erp(out["D"], 3.0), gt_low, mask)
     loss = loss + mcfg.w_coarse_layout * lc + mcfg.w_low * ll
-    return loss, {"mae": float(main.detach()), "rel": float(rel.detach()),
-                  "lc": float(lc.detach()), "llow": float(ll.detach())}
+    return loss, {"mae": float(main.detach()), "lc": float(lc.detach()),
+                  "llow": float(ll.detach())}
 
 
 # ============================================================
@@ -698,12 +468,6 @@ def evaluate(model, loader, mcfg, device, max_depth, collect_vis=None,
         spec = b["spec"].to(device, non_blocking=True)
         gt = b["depth"].to(device); mask = b["mask"].to(device)
         out = model(spec)
-        # E127: L/R-flip test-time augmentation. The model is trained L/R-equivariant (flip aug), so
-        # average its prediction with the mirrored-input prediction (swap audio L/R, flip depth width
-        # back). Deterministic honest ensembling over the horizontal symmetry -> lower RMSE variance.
-        # Eval-only (training loop unchanged); costs one extra forward per batch.
-        out_f = model(swap_lr_multi(spec))
-        out["D"] = 0.5 * (out["D"] + torch.flip(out_f["D"], dims=[-1]))
         loss, _ = composite_loss(out, gt, mask, mcfg)
         val_losses.append(float(loss.detach()))
         pred_m = (out["D"] * max_depth).cpu().numpy()
@@ -743,18 +507,11 @@ def train(cfg):
     total_params = sum(p.numel() for p in model.parameters()) / 1e6
     print(f'Model: {cfg.model.name} ({total_params:.2f}M params)')
 
-    # Weight EMA (E13): a temporal average of the weights is evaluated/saved instead of the
-    # raw SGD iterate. Free (per-step copy, no extra fwd/bwd) and typically improves the HONEST
-    # metrics (RMSE/d1) by smoothing the noisy late-training trajectory. decay=0.995 -> ~200-step window
-    # (E13 decay=0.999 lagged too much on a 7-epoch run; faster decay tracks the annealed late weights).
-    EMA_DECAY = 0.995   # optimal (axis mapped: 0.99/0.997/0.999 all worse)
-    ema = {k: v.detach().clone() for k, v in model.state_dict().items()}
-
     # Optimizer + warmup-cosine schedule
     optimizer = _build_optimizer(model, cfg)
     steps_per_epoch = max(1, len(train_loader))
     total_steps = cfg.mode.epochs * steps_per_epoch
-    warm = steps_per_epoch   # E79 confirmed 1-epoch warmup optimal (0.5 was worse)
+    warm = steps_per_epoch
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
         lambda s: (s + 1) / warm if s < warm
@@ -784,8 +541,6 @@ def train(cfg):
     vis_indices = set(np.linspace(0, max(0, len(val_set) - 1), n_vis, dtype=int).tolist())
 
     best_abs_rel = float('inf')
-    best_score = float('inf')          # composite (abs_rel + rmse, normalised) for model selection
-    best_rmse = float('inf')
     dataset_dir = cfg.dataset.dataset_dir
     depth_type = cfg.dataset.depth_type
 
@@ -802,24 +557,17 @@ def train(cfg):
                 fm = torch.rand(spec.size(0), device=device) < 0.5
                 if fm.any():
                     spec = spec.clone(); gt = gt.clone(); mask = mask.clone()
-                    spec[fm] = swap_lr_multi(spec[fm])
+                    spec[fm] = swap_audio_lr(spec[fm])
                     gt[fm] = torch.flip(gt[fm], dims=[-1])
                     mask[fm] = torch.flip(mask[fm], dims=[-1])
+            out = model(spec)
+            loss, parts = composite_loss(out, gt, mask, mcfg)
+
             optimizer.zero_grad()
-            with torch.amp.autocast('cuda', dtype=torch.bfloat16):
-                out = model(spec)
-                loss, parts = composite_loss(out, gt, mask, mcfg)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             scheduler.step()
-
-            with torch.no_grad():                       # E13: update weight EMA
-                for k, v in model.state_dict().items():
-                    if v.dtype.is_floating_point:
-                        ema[k].mul_(EMA_DECAY).add_(v.detach(), alpha=1.0 - EMA_DECAY)
-                    else:
-                        ema[k].copy_(v)
 
             accum['total'] = accum.get('total', 0.0) + float(loss.detach())
             for k, v in parts.items():
@@ -829,18 +577,15 @@ def train(cfg):
                 prog = (i + 1) / n_batches * 100
                 print(f'  Epoch {epoch} [{i+1}/{n_batches} {prog:.0f}%] '
                       f'Loss: {accum["total"]/(i+1):.4f} '
-                      f'mae:{accum["mae"]/(i+1):.4f} rel:{accum["rel"]/(i+1):.4f} '
-                      f'lc:{accum["lc"]/(i+1):.4f} '
+                      f'mae:{accum["mae"]/(i+1):.4f} lc:{accum["lc"]/(i+1):.4f} '
                       f'low:{accum["llow"]/(i+1):.4f}', flush=True)
 
         epoch_loss = accum['total'] / n_batches
         print(f'Epoch [{epoch}/{cfg.mode.epochs}] Loss: {epoch_loss:.4f} '
               f'Time: {time.time()-t0:.1f}s LR: {scheduler.get_last_lr()[0]:.6f}')
 
-        # --- Validation --- (evaluate & checkpoint the EMA weights, not the raw iterate)
-        if epoch % cfg.mode.validation_iter == 0:   # E84 confirmed more-epochs saturated at 9 (10th epoch flat) — keep per-epoch eval
-            raw_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
-            model.load_state_dict(ema)                  # swap in EMA weights for eval
+        # --- Validation ---
+        if epoch % cfg.mode.validation_iter == 0:
             mean_errors, val_loss, vis_data = evaluate(
                 model, val_loader, mcfg, device, max_depth,
                 collect_vis=vis_indices, dataset=val_set,
@@ -854,24 +599,13 @@ def train(cfg):
                 save_visualizations(vis_data, epoch, vis_dir, max_depth)
                 print(f'  Saved {len(vis_data)} visualizations')
 
-            rmse = mean_errors[1]; d1 = mean_errors[2]
-            # HONEST-WEIGHTED selection: RMSE + d1 (NOT directly optimized -> trustworthy) drive
-            # selection; ABS_REL (directly optimized by the relative loss -> partly gamed) is only
-            # a small tiebreak. All normalised to ~1 scale. Lower is better.
-            score = rmse / 1.6 + (1.0 - d1) / 0.46 + 0.3 * (abs_rel / 0.4)
-            if score < best_score:
-                best_score = score
+            if abs_rel < best_abs_rel:
                 best_abs_rel = abs_rel
-                best_rmse = rmse
                 torch.save({'epoch': epoch, 'state_dict': model.state_dict(),
                             'optimizer': optimizer.state_dict(),
-                            'best_abs_rel': best_abs_rel, 'best_rmse': best_rmse,
-                            'best_score': best_score, 'cfg_model': vars(mcfg)},
+                            'best_abs_rel': best_abs_rel, 'cfg_model': vars(mcfg)},
                            os.path.join(ckpt_dir, 'best_model.pth'))
-                print(f'  >> Best model saved (score {best_score:.4f} | '
-                      f'ABS_REL {best_abs_rel:.4f} RMSE {best_rmse:.4f})')
-
-            model.load_state_dict(raw_state)            # restore raw iterate to keep training
+                print(f'  >> Best model saved (ABS_REL: {best_abs_rel:.4f})')
 
         # Time budget check
         elapsed = time.time() - training_start
@@ -880,8 +614,7 @@ def train(cfg):
             break
 
     total_time = time.time() - training_start
-    print(f'\nTraining complete. Best (composite) ABS_REL: {best_abs_rel:.4f} '
-          f'RMSE: {best_rmse:.4f} score: {best_score:.4f}')
+    print(f'\nTraining complete. Best ABS_REL: {best_abs_rel:.4f}')
     print(f'training_seconds: {total_time:.1f}')
     if device.type == 'cuda':
         print(f'peak_vram_mb: {torch.cuda.max_memory_allocated() / 1e6:.1f}')
@@ -942,18 +675,16 @@ def parse_args():
                    default='/home/rvi-lab/workspace/sound-spaces/dataset_simplified',
                    help='Path to SoundSpaces dataset')
 
-    p.add_argument('--batch-size', type=int, default=32)   # E42 (bs40 tied) + E91 (bs24 tied) confirm bs32 optimal; more-optimization-steps axis saturated
-    p.add_argument('--epochs', type=int, default=10)   # E69 confirmed anneal DEPTH is neutral (epochs=9 LR->0 tied E65); 10 keeps the ~9-run + 1e-4 floor. E65's win was more epochs, not lower LR
-    p.add_argument('--lr', type=float, default=4e-4)   # E16 champion LR (4e-4 is the floor; 3e-4 U-turned worse)
+    p.add_argument('--batch-size', type=int, default=16)
+    p.add_argument('--epochs', type=int, default=40)
+    p.add_argument('--lr', type=float, default=3e-4)
     p.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam', 'SGD'])
     p.add_argument('--num-workers', type=int, default=16)
-    p.add_argument('--in-ch', type=int, default=5, choices=[2, 3, 5],   # E74 confirmed 5ch optimal: dropping IPD phase feats cost 0.055 (phase encodes direction — load-bearing)
+    p.add_argument('--in-ch', type=int, default=5, choices=[2, 3, 5],
                    help='5=RIR spatial feature [logL,logR,ILD,cosIPD,sinIPD] (default); '
                         '2=log-mag binaural; 3=[logL,logR,ILD]')
-    p.add_argument('--flip-aug', type=lambda s: s == 'True', default=True,   # E76 confirmed load-bearing (off was 0.027 worse on all 3)
+    p.add_argument('--flip-aug', type=lambda s: s == 'True', default=True,
                    help='L/R mirror augmentation (depth width-flip + channel-aware audio swap)')
-    p.add_argument('--raydpt-full-decode', type=lambda s: s == 'True', default=False,
-                   help='E64 confirmed BUDGET BUST (699s/epoch, +150s) — bilinear x4 upsample stays')
     p.add_argument('--raydpt-lite', type=lambda s: s == 'True', default=False,
                    help='2-scale (32,64) lite RayDPT variant')
 
@@ -978,12 +709,6 @@ if __name__ == '__main__':
 
     args = parse_args()
     cfg = make_config(args)
-
-    # E143 (S22, acoustic-representation): multi-res champion (10ch) + interaural coherence (1ch) via the
-    # PROPOSAL-01 seam -> 11ch. The coherence channel is L/R-symmetric (swap_lr_multi passes it through).
-    # (Champion = 10ch multires_feat 512+128, commit 828b9a3; revert with git checkout 828b9a3 -- train.py.)
-    prepare.FEATURE_FN = multires_coh_feat
-    cfg.dataset.in_ch = 12   # E146 (S23): 10ch multi-res + coherence at 512 AND 128 (champion=11ch, 1 coherence, commit 93ef41b)
 
     print('=' * 60)
     print(f'RayDPT — mode={args.mode}')

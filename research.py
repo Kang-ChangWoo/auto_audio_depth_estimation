@@ -73,10 +73,15 @@ def status():
     print(f"noise sigma ~= {arc['metric']['noise_sigma_composite']} "
           f"(small-sample up to {arc['metric']['noise_sigma_small_sample']})")
     print("-" * 72)
-    print(f"GLOBAL CHAMPION : {gc['exp_id']} ({gc['lineage']}) commit {gc['commit']}")
-    print(f"  abs_rel {gc['abs_rel']}  rmse {gc['rmse']}  d1 {gc['d1']}  "
-          f"comp {gc.get('composite_mean_3draw', gc.get('composite_best_draw'))}  "
-          f"confirmed={gc['confirmed']}")
+    if gc:
+        print(f"GLOBAL CHAMPION : {gc['exp_id']} ({gc['lineage']}) commit {gc['commit']}")
+        print(f"  abs_rel {gc['abs_rel']}  rmse {gc['rmse']}  d1 {gc['d1']}  "
+              f"comp {gc.get('composite_mean', gc.get('composite_mean_3draw', gc.get('composite_best_draw')))}  "
+              f"confirmed={gc['confirmed']}")
+    else:
+        print(f"GLOBAL CHAMPION : (none yet) — {arc.get('phase', '')}")
+        if arc.get('reset_note'):
+            print(f"  reset: {arc['reset_note'][:96]}")
     print("-" * 72)
     print("LINEAGE CHAMPIONS:")
     for lin, c in arc["lineage_champions"].items():

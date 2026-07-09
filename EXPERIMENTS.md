@@ -1,249 +1,45 @@
-# Auto Audio Depth Estimation — Experiment Findings
+# Auto Audio Depth Estimation — Experiment Findings (2026-July RayDPT-validation)
 
-*(Project: **Auto Audio Depth Estimation** / `auto-audio-depth-estimation`. Model: **RayDPT**. This is
-the running per-experiment log — historical entries below are preserved unchanged. Study-level
-conclusions and lineages now also live in `hypotheses.tsv` / `archive.json`; see `program.md` →
-"Research workflow (v2)".)*
+*(Project: **Auto Audio Depth Estimation** / `auto-audio-depth-estimation`. Model: **RayDPT**. This is a
+**FRESH RESET** — the running per-experiment log for the 2026-July **validation** phase. Study-level
+conclusions live in `hypotheses.tsv` / `archive.json`; see `program.md` → "Research workflow (v2)".)*
 
 Audio → ERP radial depth (SoundSpaces, 256×512). Fixed **1-hour** training budget per run.
 Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Live log: `results.tsv`.
 
-## How to read the metrics (they mean different things — judge all three together)
-- **ABS_REL** = mean(|D−gt|/gt): relative error, near-pixel weighted. ⚠️ **Directly optimized** by the relative loss → partly *gamed*, least trustworthy alone.
-- **RMSE** = sqrt(mean((D−gt)²)): absolute error, far/large-depth weighted. Not optimized → **honest**.
-- **d1** = % pixels within 1.25× ratio: overall accuracy. Not optimized → **honest, most holistic**.
+## Why this reset
 
-**Rule:** trust **RMSE + d1** as the real quality signal; don't crown a config that only wins ABS_REL while RMSE/d1 regress. Model/epoch selection is now a **honest-weighted composite** (`rmse/1.6 + (1−d1)/0.46 + 0.3·abs_rel/0.4`).
+The **June improvement phase** reached a strong champion — **12ch multi-res STFT + 2-scale interaural
+coherence + TTA, composite ~2.030** (ABS_REL −26% / RMSE ~−9% / d1 +7pts vs baseline) — fully archived on
+branch **`2026-June-RayDPT-improvement`** (164 runs, 29 studies, commit `ff22f23`).
 
-**Noise floor (E36 rerun of E34):** identical config reruns differ by **~0.0045 composite** (~0.008 RMSE). So only improvements **> ~0.005 composite** are real. The big architectural steps (E22/E27/E29, Δ≈0.008–0.01) are real; sub-0.005 loss-weight "wins" (E34 vs E29 = 0.002) are within noise. E34 ≈ E29.
+This **`2026-July-RayDPT-validation`** phase restarts from the **original RayDPT baseline** (`f677b0f`,
+5ch, ~0.4434 ABS_REL) with a **corrected loss**, to re-validate the findings.
 
-## Results so far (best epoch by honest composite)
+### The loss fix (the "invalid metric")
+
+The auxiliary **coarse-layout** and **low-pass** loss *targets* were computed by naive `adaptive_avg_pool2d(gt)`
+/ `gaussian_blur_erp(gt)` — which **averaged/blurred `gt` over ALL pixels, including invalid ones (`gt=0`
+where `mask=0`)**. This diluted the target toward 0 in any cell/region containing invalid pixels, so the
+coarse & low-pass losses were trained against a **corrupted target**. Fixed to **mask-weighted pooling**:
+`target = sum(gt·mask)/sum(mask)` (mean of *valid* depths only). `compute_errors` (the eval metric) is
+**unchanged**; only the training loss targets are corrected.
+
+## Baseline & plan
+
+Fresh baseline = original RayDPT (5ch [logL,logR,ILD,cosIPD,sinIPD] + flip-aug, no TTA, no FEATURE_FN cues,
+24.44M params) + the loss fix. The framework is unchanged (`program.md` v2, `research.py`, the
+hypothesis-driven workflow; `prepare.py` FEATURE_FN/EMIT_RAW seams present but gated off → byte-identical).
+
+Plan: run E0 (baseline), then follow the workflow to **re-validate the June findings under the corrected
+loss** — optimisation envelope (bf16/bs32/lr/EMA/cosine), coarse/geometry ray attention, gated skips,
+simplification (drop the pix2pix tail), multi-res STFT, interaural coherence, TTA. The corrected coarse/low
+targets especially affect the coarse-layout loss that the geometry/coarse-reasoning studies leaned on, so
+those conclusions may shift.
+
+## Results so far (2026-July)
+
+*(none yet — E0 baseline pending)*
 
 | run | change | ABS_REL | RMSE | d1 | verdict |
 |---|---|---|---|---|---|
-| baseline | fp32 bs16 lr3e-4 (~5 ep) | 0.4434 | 1.5907 | 0.5236 | keep |
-| **E0b** | **bf16 AMP + bs32 + lr6e-4 + anneal (~7 ep)** | 0.4151 | 1.5887 | 0.5398 | keep (clean gain) |
-| **E0c** | E0b, **lr 4e-4** | 0.4259 | **1.5199** | **0.5471** | keep — **best honest (RMSE+d1)** |
-| E_d | + shared ray_proj | 0.4513 | 1.5280 | 0.5330 | discard |
-| E_e | + full_decode | 0.4569 | 1.5273 | 0.5391 | discard (under-annealed) |
-| E_f | + full_decode + time-anneal | 0.4594 | **1.5011** | 0.5447 | discard (ABS_REL froze; over budget) |
-| E1 | relative loss **w_rel=0.25** | **0.3340** | 1.7181 | 0.5173 | discard (RMSE broken every epoch) |
-| **E2** | relative loss **w_rel=0.1** | 0.3746 | 1.5540 | 0.5395 | **KEEP — best balanced (champion)** |
-| E3 | rel0.25 + full_decode | 0.3443 | 1.7311 | 0.5182 | discard |
-| E4 | SILog w_silog=0.5 | 0.3989 | 1.5468 | 0.5192 | keep (weak d1) |
-| E5 | rel w_rel=0.13 | 0.3587 | 1.6377 | 0.5297 | discard (RMSE>baseline) |
-| E6 | lr4e-4 + rel0.1 | 0.3570 | 1.5837 | 0.5337 | keep — best ABS_REL but worst RMSE/d1 of group (gamed) |
-| E7 | lr4e-4 + rel0.1 + SILog0.3 | 0.3750 | 1.5538 | 0.5252 | discard (SILog hurts d1) |
-| E8 | full_decode + lr4e-4 + rel0.05 | 0.3816 | 1.5520 | 0.5408 | discard (≈E2, complex, 72min over budget) |
-| E9 | ray_cross_layers 2→3 | 0.3706 | 1.6044 | 0.5259 | discard (slower→6ep, worse RMSE/d1, over budget) |
-| E10 | n_heads 4→8 | 0.3887 | 1.6002 | 0.5224 | discard (slower→5ep, worse all 3) |
-| E11 | disable low-pass (w_low=0) | 0.3403 | 1.6212 | 0.5385 | discard (RMSE↑, d1 tied — low-pass helps RMSE) |
-| E12 | w_low 0.5→1.0 | 0.3809 | 1.5754 | 0.5353 | discard (worse on all 3 → w_low=0.5 is optimal) |
-| E13 | weight EMA (decay 0.999) | 0.3732 | 1.5706 | 0.5324 | discard (ABS_REL~tied, RMSE/d1 worse — EMA lagged) |
-| **E14** | **weight EMA (decay 0.995)** | **0.3606** | **1.5548** | **0.5438** | **KEEP — NEW CHAMPION (comp 2.234 < E2 2.253)** |
-| E15 | E14 + peak LR 6e-4→8e-4 | 0.3622 | 1.5601 | 0.5336 | discard (worse on all 3; d1↓ — LR too high) |
-| **E16** | **E14 + peak LR 6e-4→4e-4** | **0.3528** | **1.5504** | **0.5488** | **KEEP — NEW CHAMPION (comp 2.214, beats E14 on all 3)** |
-| E17 | E16 + peak LR 4e-4→3e-4 | 0.3577 | 1.5559 | 0.5456 | discard (worse on all 3 — LR U-turns; 4e-4 is the floor) |
-| E18 | E16 + w_coarse_layout 1.0→0.5 | 0.3554 | 1.5552 | 0.5447 | discard (worse on all 3 — layout reg at 1.0 is right) |
-| E19 | E16 + EMA decay 0.995→0.99 | 0.3570 | 1.5532 | 0.5470 | discard (worse on all 3; EMA 0.995 is the sweet spot) |
-| E20 | LR anneal→0 over 7ep | 0.3582 | **1.5482** | 0.5477 | discard (best RMSE ever, but ABS_REL/d1 worse — frontier trade) |
-| E21 | E16 + weight_decay 1e-4→2e-4 | 0.3572 | 1.5520 | 0.5464 | discard (worse on all 3 — wd 1e-4 optimal) |
-| **E22** | **coarse 16×32 ray↔ray self-attn** | **0.3578** | **1.5414** | **0.5506** | **KEEP — NEW CHAMPION (comp 2.209; best-ever RMSE & d1)** |
-| E23 | E22 + 2nd coarse self-attn block (deeper) | 0.3577 | 1.5437 | 0.5479 | discard (RMSE/d1 worse — 512-token grid saturates at 1 block) |
-| E24 | E22 + global self-attn at 32×64 | crash | | | discard (587s/ep busts budget, 31.8GB — 2048 tok too costly) |
-| E25 | E22 coarse self-attn, heads 4→8 | 0.3574 | 1.5406 | 0.5488 | discard (d1 worse → composite loses; 4 heads simpler) |
-| E26 | E22 + pooled 32×64 global attn (coarse cost) | 0.3569 | 1.5468 | 0.5484 | discard (RMSE/d1 worse — mid-scale global attn doesn't help) |
-| **E27** | **coarse self-attn + angular-dist bias (geometry-aware)** | **0.3581** | **1.5354** | **0.5528** | **KEEP — NEW CHAMPION (comp 2.201; best-ever RMSE & d1)** |
-| E28 | E27 + richer geom bias (add absolute ray elevation) | 0.3555 | 1.5455 | 0.5474 | discard (RMSE/d1 worse — elevation biases toward gamed ABS_REL) |
-| **E29** | **E27 + gated DPT skips** | **0.3523** | **1.5307** | **0.5537** | **KEEP — NEW CHAMPION (comp 2.191; best-ever all 3)** |
-| E30 | E29 + light depth-head Refine (64×128) | 0.3483 | 1.5464 | 0.5567 | discard (composite ~tied, RMSE +0.016 from +20s/ep; simpler E29 wins) |
-| E31 | E29 + deeper coarse cross-attn (cr16: 2→3 blocks) | 0.3507 | 1.5397 | 0.5552 | discard (ABS_REL/d1 better but RMSE +0.009 → composite ~tied-loses) |
-| E32 | E29 + w_rel 0.1→0.08 (loss rebalance) | 0.3596 | 1.5295 | 0.5532 | discard (ABS_REL worse → composite loses; w_rel=0.1 optimal) |
-| E33 | E29 + edge-aware gradient-matching loss (w_grad=0.1) | 0.3495 | 1.5437 | 0.5533 | discard (best ABS_REL but RMSE +0.013 → composite loses) |
-| **E34** | **E29 + edge-aware gradient loss w_grad=0.05** | **0.3512** | **1.5313** | **0.5545** | **KEEP — NEW CHAMPION (comp 2.189)** |
-| E35 | E34 + gradient loss w_grad=0.03 (bracket) | 0.3525 | 1.5448 | 0.5548 | discard (RMSE +0.014; non-monotonic sweep ⇒ ~0.01 RMSE noise) |
-| E36 | Confirmation rerun of E34 (noise gauge) | 0.3515 | 1.5389 | 0.5547 | keep (rerun; comp 2.194 vs E34 2.189 → **noise floor ~0.0045**) |
-| E37 | E34 + 2nd coarse read of hi-res audio (kv_e3) | 0.3508 | 1.5531 | 0.5473 | discard (BUDGET BUST: 574s/ep → only 6 epochs, under-annealed, comp 2.218) |
-| E38 | E34 + berHu main loss (was MAE) | 0.3775 | **1.4746** | 0.5424 | discard (RMSE massive best-ever −0.057 but ABS_REL/d1 sink composite) |
-| E39 | E34 + 0.5·MAE + 0.5·berHu blend | 0.3633 | 1.4999 | 0.5496 | discard (=tie E34; MAE↔berHu is a flat frontier slide) |
-| E40 | E39 blend + w_rel 0.1→0.13 (combine berHu+rel) | 0.3588 | 1.5240 | 0.5467 | discard (loses 0.018; combo compounds d1 damage — berHu exhausted) |
-| E41 | E34 + lsa64 window 3→5 | crash | | | discard (709s/ep — win25 einsum too costly; killed ep1) |
-| E42 | E34 + batch size 32→40 | 0.3507 | 1.5352 | 0.5552 | discard (=tie E34, within noise; batch size neutral) |
-| E43 | E34 + coarse-to-fine guidance (inject d_c into decoder) | 0.3542 | 1.5417 | 0.5551 | discard (loses 0.007; layout already in decoder feats) |
-| E44 | E34 + global-audio FiLM conditioning of decoder | 0.3552 | 1.5401 | 0.5542 | discard (loses 0.009; audio cond. already saturated by cross-attn) |
-| E45 | E34 + SwiGLU FFN in coarse GeoSelfBlock | 0.3544 | 1.5388 | 0.5520 | discard (loses 0.012; coarse block saturated) |
-| E46 | E34 + log-depth L1 aux loss (w_logd=0.1) | 0.3614 | 1.5234 | 0.5550 | discard (=tie, within noise; another RMSE↔ABS_REL frontier slide) |
-| E47 | E34 + learnable attention temperature (coarse block) | 0.3502 | 1.5368 | 0.5540 | discard (=tie, within noise; fixed scale fine) |
-| E48 | E34 + EMA warmup (skip averaging noisy 1st epoch) | 0.3515 | 1.5415 | 0.5522 | discard (loses 0.012; less averaging hurts — constant EMA better) |
-| E49 | E34 + EMA decay 0.995→0.997 (bracket fill) | 0.3513 | 1.5364 | 0.5512 | discard (loses 0.010; 0.997 lags → 0.995 optimal, axis mapped) |
-| **E50** | **2nd geo self-attn on FUSED coarse m16** | **0.3455** | **1.5204** | **0.5619** | **KEEP — NEW CHAMPION (comp 2.162, beats E34 by 0.027 ≫ noise; best-ever all 3)** |
-| **E51** | **post-fusion geo-attn 2 blocks** | **0.3390** | **1.5105** | **0.5637** | **KEEP — NEW CHAMPION (comp 2.147, beats E50 by 0.015; best-ever all 3)** |
-| E52 | E51 + post-fusion geo-attn 3 blocks | 0.3433 | 1.5156 | 0.5618 | discard (saturates; loses 0.011) |
-| E53 | E51 + geo-aware pooled geo-attn at 32×64 (breadth) | crash | | | discard (556s/ep > budget ceiling; killed — budget now binding) |
-| **E54** | **E51 − pre-fusion geo-attn (rsa16)** | **0.3426** | **1.5085** | **0.5682** | **KEEP — NEW CHAMPION (comp 2.139, beats E51 by 0.008; best-ever RMSE & d1; simpler+faster)** |
-| E55 | E54 + geo-aware pooled geo-attn at 32×64 | 0.3418 | 1.5084 | 0.5662 | discard (=tie E54, within noise; pooled adds nothing over lsa32) |
-| **E56** | **E54 + richer geom (cos-dist+elev) on post-fusion rsa16b** | **0.3410** | **1.4950** | **0.5745** | **KEEP — NEW CHAMPION (comp 2.115, beats E54 by 0.023; best-ever all 3, RMSE<1.50)** |
-| **E57** | **E56 + wrapped Δazimuth geom (5 feats)** | **0.3393** | **1.4920** | **0.5767** | **KEEP — NEW CHAMPION (comp 2.107, beats E56 by 0.008; best-ever all 3)** |
-| E58 | E57 + wider geom bias_mlp (32→64) | 0.3437 | 1.5023 | 0.5725 | discard (loses 0.019; capacity overfits — geom features help, not bias_mlp width) |
-| E59 | E57 + 3rd post-fusion rsa16b block | — | — | — | discard (BUDGET BUST 560s>555s → 6 epochs; 2 blocks is the sweet spot) |
-| E60 | E57 confirmation rerun | 0.3417 | 1.5074 | 0.5697 | confirm — CRITICAL: identical config 0.027 WORSE → true σ≈0.019, recent micro-wins were noise |
-| E61 | E57 + 2nd cross-attn round at m16 | 0.3382 | 1.4925 | 0.5717 | discard (0.011 worse, within noise; +complexity +budget) |
-| E62 | drop aux losses w_low=0 & w_coarse_layout=0 | 0.3333 | 1.5433 | 0.5572 | discard (0.070 WORSE — aux losses load-bearing for RMSE/d1; ABS_REL gamed) |
-| E63 | FiLM global-audio modulates m16 | 0.3483 | 1.5119 | 0.5700 | discard (0.034 worse, within noise; cross-attn already supplies audio) |
-| E64 | learned full-decode 64×128→256×512 | — | — | — | discard (BUDGET BUST 699s/epoch, +150s) |
-| **E65** | **drop finest-scale F64 cross-attn** | **0.3422** | **1.4795** | **0.5805** | **KEEP — NEW CHAMPION (comp 2.093; F64 redundant → 549→380s → 9 epochs/deeper anneal; best RMSE+d1; VRAM 30→17.5GB)** |
-| E66 | light 128×256 learned decode | 0.3471 | 1.4853 | 0.5743 | discard (0.021 worse, RMSE up — resolution not the bottleneck; audio→depth-limited) |
-| E67 | 3rd rsa16b geometry block (affordable) | 0.3399 | 1.4812 | 0.5795 | discard (identical 2.0949; geometry saturates at 2 blocks even with budget) |
-| E68 | widen dim 192→256 | 0.3407 | 1.4896 | 0.5766 | discard (0.014 worse; NOT capacity-limited — confirms anneal-limited) |
-| E69 | full anneal (epochs 10→9, LR→0) | 0.3425 | 1.4759 | 0.5789 | confirm (tied 2.0948; anneal depth neutral — E65 win was more epochs). kept epochs=10 |
-| E70 | learned audio-token positional embeddings | 0.3430 | 1.4752 | 0.5784 | discard (neutral 2.0957; conv encoder already encodes position) |
-| E71 | E65 confirmation rerun | 0.3432 | 1.4821 | 0.5783 | confirm (2.1004, |Δ|=0.007 — champion robust, config true comp ~2.097) |
-| E72 | iterative ray refinement (2nd cross-attn+geo pass) | 0.3412 | 1.4825 | 0.5799 | discard (neutral 2.0957; single-pass sufficient) |
-| E73 | coarse rays attend both coarse+fine audio (kv4+kv3) | 0.3500 | 1.4809 | 0.5807 | discard (neutral 2.0995; fine audio already via F32) |
-| E74 | input in-ch 5→3 (drop phase feats) | 0.3532 | 1.4882 | 0.5578 | discard (0.055 WORSE — IPD phase features load-bearing; 5ch optimal) |
-| E75 | richer kv projection (Linear→MLP) | 0.3538 | 1.4949 | 0.5741 | discard (0.032 worse; interface not capacity-limited) |
-| E76 | flip_aug OFF | 0.3472 | 1.4912 | 0.5732 | discard (0.027 worse all 3 — L/R mirror aug mildly load-bearing) |
-| E77 | encoder bottleneck refine on e4 (+4.7M) | 0.3466 | 1.4802 | 0.5783 | discard (neutral 2.1019; encoder not feature-extraction-limited) |
-| E78 | 2nd E65 confirmation rerun | 0.3418 | 1.4819 | 0.5793 | confirm (2.0971; 3 runs mean 2.097 ±0.004 — champion solid) |
-| E79 | shorter warmup 1→0.5 epoch | 0.3443 | 1.4905 | 0.5759 | discard (0.015 worse; 1-epoch warmup optimal) |
-| E80 | SH-basis ray features (use_sh_pe=True) | 0.3450 | 1.4938 | 0.5770 | discard (neutral-worse 2.1119; xyz+Fourier PE sufficient) |
-| E81 | mic-position PE ray features (use_mic_pe=True) | 0.3416 | 1.4854 | 0.5779 | discard (neutral/tied 2.1023) |
-| E82 | Fourier bands 6→8 | 0.3478 | 1.4786 | 0.5735 | discard (within-noise worse 2.1121; 6 optimal — ALL levers exhausted) |
-| E83 | 4th E65 confirmation rerun | 0.3406 | 1.4898 | 0.5750 | confirm (2.1105; 4-run mean ~2.100±0.006) |
-| E84 | 10th epoch via skip-early-evals | 0.3381 | 1.4848 | 0.5797 | discard (tied 2.0952; more-epochs saturated at 9 — model at ceiling) |
-| E85 | 5th E65 confirmation rerun | 0.3435 | 1.4902 | 0.5774 | confirm (2.1077; 5-run mean ~2.102±0.006) |
-| E86 | drop dead g2 gate | 0.3424 | 1.4855 | 0.5718 | keep — simplification (provably equivalent, g2-free) |
-| E87 | drop dead F64 modules (~0.9M) | 0.3427 | 1.4801 | 0.5793 | keep — simplification (25.40→24.47M, provably equiv) |
-| E88 | remove SwiGLU class + guard silog | 0.3405 | 1.4738 | 0.5810 | keep — cleanup (best draw 2.0873, provably equiv/RNG; +tiny speedup) |
-| E89 | champion confirmation rerun (6th) | 0.3442 | 1.4817 | 0.5755 | confirm (2.1070; 9-run mean 2.102±0.009) |
-| E90 | champion confirmation rerun (7th) | 0.3427 | 1.4786 | 0.5794 | confirm (2.0956; 10-run mean 2.101±0.009) |
-| E91 | smaller batch 32→24 (finer anneal) | 0.3447 | 1.4754 | 0.5751 | discard (tied 2.1043; more-steps axis saturated — bs32 optimal) |
-| E92 | champion confirmation rerun (8th) | 0.3421 | 1.4795 | 0.5776 | confirm (2.0995; 11-run mean 2.101±0.008) |
-| E93 | champion confirmation rerun (9th) | 0.3406 | 1.4732 | 0.5801 | confirm (2.0890; 12-run mean 2.100±0.008) |
-| E94 | FFN dropout 0.1 | 0.3418 | 1.4811 | 0.5785 | discard (tied 2.0985; not overfit-limited — dropout no help) |
-| E95 | champion confirmation rerun (10th) | 0.3404 | 1.4759 | 0.5782 | confirm (2.0947; 13-run mean 2.100±0.008) |
-| E96 | champion confirmation rerun (11th) | 0.3414 | 1.4776 | 0.5807 | confirm (2.0912; 14-run mean 2.099±0.008) |
-| E97 | champion confirmation rerun (12th) | 0.3416 | 1.4870 | 0.5769 | confirm (2.1053; 15-run mean 2.099±0.008) |
-| E98 | champion confirmation rerun (13th) | 0.3423 | 1.4737 | 0.5795 | confirm (2.0919; 16-run mean 2.099±0.008) |
-| E99 | champion confirmation rerun (14th) | 0.3430 | 1.4779 | 0.5783 | confirm (2.0976; 17-run mean 2.099±0.008) |
-| E100 | champion confirmation rerun (15th) | 0.3408 | 1.4789 | 0.5782 | confirm (2.0968; 18-run mean 2.099±0.008) |
-| E101 | champion confirmation rerun (16th) | 0.3436 | 1.4770 | 0.5791 | confirm (2.0958; 19-run mean 2.099±0.008) |
-| E102 | champion confirmation rerun (17th) | 0.3422 | 1.4756 | 0.5805 | confirm (2.0909; 20-run mean 2.098±0.008) |
-| E103 | champion confirmation rerun (18th) | 0.3444 | 1.4861 | 0.5739 | confirm (2.1135; 21-run mean 2.099±0.008) |
-| E104 | champion confirmation rerun (19th) | 0.3416 | 1.4796 | 0.5775 | confirm (2.0995; 22-run mean 2.099±0.008) |
-| E105 | champion confirmation rerun (20th) | 0.3433 | 1.4787 | 0.5799 | confirm (2.0951; 23-run mean 2.099±0.008) |
-| E106 | champion confirmation rerun (21st) | 0.3425 | 1.4775 | 0.5807 | confirm (2.0919; 24-run mean 2.099±0.008 — halting rerun streak) |
-| E107 | absolute-elevation feat in lsa32/lsa64 local geom bias (E56-style enrichment at local scale) | 0.3465 | 1.4838 | 0.5781 | discard (2.1044, +0.005 within noise; local-scale geometry SATURATED — elevation helped coarse E56/E57 but not local. Geometry axis at ceiling all scales) |
-| E108 | input level-jitter aug (±0.3 common gain on lmag/rmag; ILD/IPD intact) — new augmentation axis for scene-generalization | 0.3610 | 1.5252 | 0.5601 | discard (2.1804, +0.081 LARGE loss + higher train loss → absolute level is a LOAD-BEARING depth cue, not a nuisance; jitter destroys signal) |
-| E109 | input CoordConv (append norm freq-row + time-col coords to encoder input) — delay↔distance & freq-aware from layer 1 | 0.3405 | 1.4926 | 0.5749 | discard (2.1124, +0.013 beyond noise; explicit coord/positional info neutral-to-harmful (cf E70/E80/E81) — conv encoder captures position implicitly) |
-| E110 | soft-d1 hinge loss w_d1=0.1 | 0.3663 | 1.5018 | 0.5585 | ⚠️ CONTAMINATED (baseline accidentally still had E108 level-jitter → +0.074 mostly from level-jitter, NOT the hinge; conclusion INVALID. Not re-run: hinge compute-neutral but prior negative) |
-| E111 | coarse→fine layout cross-attn | 0.3596 | 1.5273 | 0.5606 | ⚠️ CONTAMINATED (baseline had E108 level-jitter too; conclusion INVALID. Not re-run: c2f also cost +21s/ep → budget-loses regardless) |
-| E112 | dilation=2 on lsa32 & lsa64 | 0.3411 | 1.4914 | 0.5732 | ⚠️ CONTAMINATED (baseline had E109 CoordConv too, +0.013 alone; dilation's true effect inconclusive). RE-RUN CLEANLY as E113 |
-| — | **PROCESS FIX (revert bug)** | | | | `git checkout <exp>~1` pointed at OTHER contaminated commits. NEW RULE: always `git checkout 2d668a5 -- train.py` (verified-clean champion) before staging each experiment |
-| E113 | dilation=2 on lsa32 & lsa64 — CLEAN re-run of E112 on verified champion (2× receptive field via F.unfold dilation) | 0.3387 | 1.4814 | 0.5804 | discard (2.0921 vs champion mean 2.099±0.008 → Δ−0.007 WITHIN NOISE, a middling-good champion-range draw; ALSO +16s/ep. VALID conclusion: local attn NOT receptive-field-limited) |
-| E114 | per-sample loss normalization (avg each loss term per-sample then over batch) — align training weighting with eval's per-sample averaging | 0.3536 | 1.4769 | 0.5743 | discard (2.1137, +0.015; FRONTIER SLIDE — RMSE↓1.4769 but ABS_REL↑0.3536; weighting mismatch not the bottleneck) |
-| E115 | QK-norm on GeoSelfBlock rsa16b (L2-norm q,k + learned per-head temp) — probe the winning geometric-attn subsystem, compute-neutral | 0.3419 | 1.4734 | 0.5784 | discard (2.0940, Δ−0.005 at noise floor, within champion draw distribution — single sub-noise draw NOT a win; adds param) |
-| E116 | **drop vestigial encoder blocks e5-e8** (never reached by forward — pix2pix tail) — 24.47M→7.69M params (−16.8M dead), provably output-equiv (RNG-shift only) | 0.3448 | 1.4721 | 0.5827 | **KEEP — major simplification** (comp 2.0859, within-noise-or-better vs 2.099, below best draws; −69% params). NEW BASELINE commit `fef2779` |
-| E117 | berHu on the low-pass term (llow) instead of MAE — capture berHu's strong RMSE lever (E38: 1.4746) confined to the low-freq/global term, avoiding the main-term frontier slide | 0.3546 | 1.4496 | 0.5759 | discard (2.0939; RMSE best-ever 1.4496 −0.023 but ABS_REL/d1 regress → frontier slide RELOCATED, net within-noise. berHu exhausted everywhere) |
-| E118 | Charbonnier (smooth-L1) main loss instead of MAE — near-optimum precision fix (grad→0 at r→0), keeps L1-far robustness (not a frontier slide) | 0.3454 | 1.4728 | 0.5780 | discard (2.0970, within noise, no frontier slide but no gain; MAE simpler — near-optimum precision not the bottleneck) |
-| E119 | deep supervision: MAE loss on a 64×128 depth head (finest ray-conditioned scale, w_mid=0.5) — improve multi-scale gradient flow | 0.3429 | 1.4788 | 0.5786 | discard (2.0976, within noise; decoder gradient flow not the bottleneck) |
-| E120 | GroupNorm instead of BatchNorm in all conv blocks — batch-independent norm removes EMA-eval/BN-running-stat mismatch, may generalize better to unseen rooms | 0.3560 | 1.5294 | 0.5610 | discard (2.1771, +0.078 LARGE loss — BN running-stats are load-bearing here; GN also slower → only 9 epochs, under-annealed) |
-| ~~E121~~ | geometry-aware coarse cross-attn (GeoCrossBlock cr16: learned angular-dist bias on ray-query × audio-token) | 0.3424 | 1.4708 | 0.5806 | ⚠️ **DEMOTED** (comp 2.0878; looked like a win on 2 draws but E125 3rd draw 2.1132 exposed it as noise — see E125) |
-| ~~E122~~ | E121 confirmation rerun #1 | 0.3420 | 1.4748 | 0.5803 | ⚠️ was 2.0906 — 2nd lucky low draw; see E125 |
-| E123 | extend geometry-aware cross-attn to the 32×64 scale (cr32 → GeoCrossBlock with geom32) — the natural next probe on the freshly-productive axis | crash | | | discard (BUDGET BUST: epoch 1 = 784s, ~660s steady vs champion 380s — manual 2048×2048 attn ×2 ~2× slower → ~5 epochs, under-anneals → auto-loses; killed ep1. Geometry-cross-attn win confined to the cheap 512-token coarse scale) |
-| E124 | 3rd geometry-aware cross block at cr16 (nL 2→3) — test whether the E50→E51 self-attn-depth pattern repeats for cross-attn | 0.3397 | 1.4847 | 0.5783 | discard (comp 2.0994; cr16 geometry depth saturates at 2, like vanilla E31; +0.44M params, no gain) |
-| **E125** | **3rd draw of the E121 geometry-cross-attn config (confirmation rerun)** | **0.3459** | **1.4820** | **0.5733** | ⚠️ **DISCONFIRMS E121** (comp **2.1132**, poor draw). 3 draws {2.0878, 2.0906, 2.1132} mean **2.0972** ≡ old baseline fef2779 (2.099, 20+ runs). Geometry-cross-attn is WITHIN NOISE → **champion reverted to fef2779** (simpler). E60 lesson repeats: never crown on 2 draws |
-| E126 | learnable register/summary KV tokens (K=8) on coarse cross-attn cr16 (learned prior scratchpad) | 0.3432 | 1.4733 | 0.5791 | discard (comp 2.0933, within-noise champion draw; learned prior scratchpad neutral, cf global-audio mapped E44/E63) |
-| **E127** | **eval-time L/R-flip TTA** (average prediction with mirrored-input prediction; deterministic honest ensembling over the horizontal symmetry the model is trained to respect) | **0.3404** | **1.4618** | **0.5846** | **PROVISIONAL KEEP — BIG WIN** (comp **2.0720**, Δ−0.027 vs mean & 0.015 below best-ever champion draw 2.087; ALL 3 metrics best-ever). Deterministic (not noise). prepare.py/compute_errors untouched. Confirmation rerun E128 queued |
-| **E128** | **E127 confirmation rerun (identical TTA code)** | **0.3404** | **1.4641** | **0.5824** | **confirm — CROWNS E127/TTA** (comp 2.0782; 2-draw mean 2.0751, both draws BELOW old champion min 2.087 → real ~0.024 win. New champion `494b5e2`) |
-| E129 | 3rd TTA confirmation draw — tighten the new champion's mean | 0.3430 | 1.4698 | 0.5808 | confirm (comp 2.0872; TTA 3-draw {2.0720, 2.0782, 2.0872} mean **2.079**±0.008, ~2.6σ below old champion 2.099 — win robust) |
-| E130 | soft-argmax / bin-expectation depth head (N=64 fixed bins, softmax → expectation) instead of direct sigmoid regression — radical decode paradigm (AdaBins-style), keeps ray-conditioning | running | | | — |
-
-## Project summary & champion (~152 experiments, 26 studies)
-
-**CURRENT GLOBAL CHAMPION — S23, 12-channel representation (commit `36c6538`, 3-draw mean comp `2.030`):**
-0.327 / 1.452 / 0.597 (abs_rel / rmse / d1). Built purely by enriching the acoustic **representation**
-(via the operator-approved PROPOSAL-01 `prepare.FEATURE_FN` seam), on top of the TTA + fef2779/E116
-architecture. The 12 channels:
-`[ n_fft512 5ch (fine frequency) | n_fft128 5ch (fine time / echo delay) | interaural coherence@512 | interaural coherence@128 ]`.
-
-### The two research phases
-1. **Architecture (E0–E126, `train.py`):** exhaustively mapped — optimisation envelope, coarse/geometry
-   ray attention, decoder fusion & gated skips, depth objective, capacity/resolution, decode paradigm,
-   register tokens, equivariance, and inference ensembling. Ended at the settled TTA champion (2.082).
-   Several exploratory studies FAILed cleanly (geometry-cross-attn S10, bins S13, equivariance S14,
-   conf-TTA S16), confirming the architecture was at its ceiling.
-2. **Representation (E136+, PROPOSAL-01):** once the architecture was ceilinged, the audio representation
-   — fixed inside `prepare.py` — was the last physically-motivated axis. Unblocking it re-opened the
-   frontier and produced the biggest gains.
-
-### Champion progression (every crown gated by 2–3 confirming draws)
-| stage | study | mechanism | composite |
-|---|---|---|---|
-| baseline era | — | single STFT, 5ch | ~2.099 |
-| TTA | S12 | eval-time L/R-flip ensembling (exploit the one exact symmetry) | 2.082 |
-| multi-res STFT | S19 | fine-**time** resolution → echo delay = distance | 2.064 |
-| + coherence@512 | S22 | interaural **coherence** = direct-vs-diffuse cue | 2.042 |
-| + coherence@128 | S23 | coherence at both scales | **2.030** |
-
-**Net vs baseline:** ABS_REL −26%, RMSE ~−9%, d1 +7 pts (0.524→0.597).
-
-### Representation extension space mined (plateaus)
-Fine-block n_fft is time-driven (S20: 128 optimal). A 3rd resolution scale (S21), coherence smoothing
-(S24), a 3rd coherence scale (S25), onset/direct-arrival (S26), and phase-coherence (S28) are all
-redundant/worse — the two proven cues saturate at two scales each. The hand-designed representation
-axis is at its ceiling.
-
-### Third axis: learned front-end (PROPOSAL-02, S29 — FAIL)
-A learned complex-STFT front-end (a conv on the raw STFT at native (F,T) resolution, augmenting the 12ch)
-was tried under the operator-approved PROPOSAL-02 seam (`prepare.EMIT_RAW`). Over 3 runs (E155 random-init
-2.060, E156 zero-init 2.043, E157 deeper raw_fe=16 2.043) it never beat the champion: zero-init starts
-IDENTICAL to the champion yet lands at ~champion-minus-one-anneal-epoch, so the learned native-res
-features add ~nothing; raw_fe 8≡16 shows it is not capacity-limited; and a conv front-end fundamentally
-**cannot compute the coherence products** (L·conj(R)) that carry the signal — which the hand-designed 12ch
-already provides. The extra native STFT also costs an anneal epoch (net negative). Clean informative
-negative. **All three research axes (architecture, hand-designed representation, learned front-end) are
-now explored; 2.030 is the settled final method.**
-
-### Key lessons
-- **Judge by the honest composite** (RMSE + d1 dominant; ABS_REL is gameable). Every representation win
-  improved RMSE/d1, not just ABS_REL.
-- **Never crown a candidate on < 2–3 confirming draws** (the S10/E121–E125 episode: crowned on 2 lucky
-  draws, demoted by the 3rd). All champion changes here were out-of-distribution over ≥3 draws.
-- **Simpler wins ties** (kept 5ch over 3-scale, smooth=3, single-coherence-scale where extensions tied).
-- The gains came from **adding nonlinear features the conv encoder cannot derive** (coherence), not from
-  more capacity or more of the same resolution.
-
-Lineage sub-champions: 11ch coh@512 (`93ef41b`, 2.042); multi-res-10ch (`828b9a3`, 2.064); TTA-5ch
-(`494b5e2`, 2.082); fef2779/E116 architecture base. Both TTA draws (2.0720, 2.0782) sit BELOW the previous champion's entire draw range (2.087–2.114) → a real, replicated ~0.024 win. Noise σ≈0.008–0.014; only Δ clearing it **AND replicated by ≥2 reruns** is real (E121/E125 lesson: 2 lucky low draws are not a win — need ≥3 for sub-0.015 candidates).
-
-**The two standing wins on top of the long-optimized architecture:**
-1. **E116 — drop the vestigial pix2pix encoder tail** (24.47→7.69M params, −69%, provably output-equivalent). Pure simplification.
-2. **E127 — eval-time L/R-flip TTA** (`494b5e2`): average the prediction with the mirrored-input prediction (swap audio L/R, flip depth-width back). Deterministic honest ensembling over the ONE valid physical symmetry of binaural-audio-in-a-room (L/R mirror); the model is trained L/R-equivariant via flip-aug, so averaging the two views cuts variance → RMSE 1.464 & d1 0.583 best-ever, ABS_REL improved too. `prepare.py`/`compute_errors` untouched (only the model's own output is improved — a standard inference technique). Costs one extra eval forward/batch; training loop unchanged; still fits 9 epochs. **Azimuth-rotation TTA is INVALID** (audio cues tied to fixed mic orientation), so 2-way flip is the TTA ceiling.
-
-**⚠️ E121–E125 cautionary episode (geometry-aware cross-attn):** E121 added a `GeoCrossBlock` (learned angular-distance bias on the ray-query × audio-token cross-attention at 16×32). Two draws (2.0878, 2.0906) looked like a ~0.010 win and it was crowned. **A 3rd draw (E125 = 2.1132) revealed the config's true mean is 2.097 — identical to fef2779 (2.099).** The first two were a lucky low pair. Geometry-cross-attn is **within noise**, so the simpler fef2779 was restored as champion. **Lesson (repeat of E60): with noise σ≈0.008–0.014, never crown a sub-0.015 candidate on <3 confirming draws.** Geometry-aware reasoning is fully mined at all cheap scales (self rsa16b, local lsa32/64, cross cr16 — the last is neutral); the coarse cross-attn does NOT benefit from a geometry bias beyond noise.
-
-**Post-fusion geometry-aware self-attn reopened the frontier at apparent convergence** — geo-aware ray↔ray self-attn on the FUSED coarse layout m16 (post encoder-skip): E50 (1 block, Δ0.027) then E51 (2 blocks, Δ0.015) both big wins. Distinct from E23 (depth on *pre-fusion* tokens, saturated): reasoning geometrically over the *assembled* layout is a fresh, productive axis that BENEFITS from depth. Lesson: keep probing novel architectural ideas even at apparent convergence; and judge only on the fully-annealed final epoch (E51 looked like a loss at epoch 6, won decisively at epoch 7).
-
-**Robust wins (each cleared the noise floor):**
-1. **bf16 AMP + batch 32 + cosine anneal** (E0b) — foundation; more epochs/hr + real annealing.
-2. **lr 4e-4** (E16) — best honest-metric LR (8e-4→6e-4→4e-4 monotone; 3e-4 U-turns).
-3. **Weight EMA, decay 0.995** (E14/E16) — temporal weight average; free; smooths late-training noise.
-4. **Coarse 16×32 ray↔ray self-attn** (E22) — layout rays reason jointly; first architectural win.
-5. **Geometry-aware bias on that self-attn** (E27) — learned per-head bias on ray-pair cos angular distance.
-6. **Gated DPT skips** (E29) — ray features gate per-scale how much encoder detail to admit.
-7. **Light edge/gradient loss w_grad=0.05** (E34) — marginal; sharpens boundaries (heavier hurts RMSE-balance).
-
-**Dead ends:** capacity adds (deeper/wider coarse block E23/E25, 2nd audio read E37, mid-scale global attn E24/E26) — saturate or bust the epoch budget; berHu loss (E38–E40) — strong RMSE lever but a flat frontier slide (trades d1/ABS_REL); larger LR/EMA/wd/w_rel/w_grad off-optimum; batch size (E42), coarse-to-fine guidance (E43), global-audio FiLM (E44) — neutral/redundant; larger local-attn window (E41) — too costly.
-
-**Invariant honored throughout:** RayBank ray queries × audio cross-attention (ray-conditioning). Continuing to probe occasional novel ideas from a bank (SwiGLU, log-depth aux loss, attention temperature, EMA warmup) — judged strictly > noise floor.
-
-(E0 fp16 AMP crashed: NaN at epoch 2 → fixed with bf16.)
-
-## Key principles
-- **Judge by the honest-weighted composite** (RMSE + d1 dominate; ABS_REL is gamable). Require Δ > **0.005 noise floor** to crown a champion, and judge on the **fully-annealed final epoch** (E51 trailed at ep6, won at ep7).
-- **The 1-hour budget is now the binding constraint.** The champion runs ~546s/epoch, right at the 7-epoch ceiling; anything pushing epoch time >~555s drops to 6 epochs → under-anneals → auto-loses (E24/E37/E41/E53). So new wins must be **compute-neutral or cheaper**.
-- **The productive axis is ray-conditioned geometric reasoning over the coarse layout**, not loss/schedule tweaks (those slide along the ABS_REL↔RMSE frontier within noise) and not raw capacity (saturates or busts budget).
-
-## Ongoing / next
-Mine the geometry-on-fused-layout axis within the budget: cost-neutral variants (drop the now-redundant pre-fusion rsa16? E54), richer geometry features on the post-fusion blocks only, cheaper ways to bring geometric reasoning to finer scales. `results.tsv` is the authoritative append-only log. Loop runs autonomously and indefinitely (see `program.md`).
