@@ -12,9 +12,9 @@ Produces the figures embedded in README.md (written under out/display/):
         models ("my model", train.py) are trained.
 
   progress     ->  out/display/score_progress.png
-        Honest composite (and ABS_REL/RMSE/d1) vs experiment index from
-        out/results.tsv, running-best highlighted. "No experiments yet"
-        placeholder when results.tsv holds only its header.
+        RMSE, ABS_REL and a1 (d1, δ<1.25) each as a full-width graph stacked
+        vertically vs experiment index (from out/results.tsv), running-best
+        highlighted. "No experiments yet" placeholder when results.tsv is empty.
 
   readme       ->  rewrites the <!-- RESULTS:START/END --> block in README.md
         with a compact metrics table generated from out/results.tsv.
@@ -82,7 +82,7 @@ def _default_cfg():
 # ==================================================================
 # Qualitative comparison grid
 # ==================================================================
-def build_qualitative(n_scenes=4, out_path=None):
+def build_qualitative(n_scenes=7, out_path=None):
     import torch
     from prepare import SoundSpacesDataset, load_gt_rgb
 
@@ -209,31 +209,33 @@ def build_progress(out_path=None):
             continue
         pts.append((r.get('commit', '')[:7], ar, rm, d1, _composite(ar, rm, d1)))
 
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+    # one full-width graph per metric, stacked vertically (no side-by-side split).
+    # (idx into pts tuple, colour, higher_is_better)
+    metrics = [('RMSE', 2, '#ccbb44', False),
+               ('ABS_REL', 1, '#228833', False),
+               ('a1 (d1, δ<1.25)', 3, '#aa3377', True)]
+    fig, axes = plt.subplots(len(metrics), 1, figsize=(9, 3.1 * len(metrics)), squeeze=False)
+    axes = axes[:, 0]
     if not pts:
         for a in axes:
             a.text(0.5, 0.5, 'No experiments logged yet\n(run_base.py / train.py -> out/results.tsv)',
                    ha='center', va='center', fontsize=11, color='0.4', transform=a.transAxes)
             a.set_xticks([]); a.set_yticks([])
-        fig.suptitle('Performance progress (composite lower = better)', fontsize=12)
+        axes[0].set_title('Performance progress — RMSE / ABS_REL / a1 vs experiment', fontsize=12)
     else:
         xs = list(range(1, len(pts) + 1))
-        comp = [p[4] for p in pts]
-        run_best = np.minimum.accumulate(comp)
-        axes[0].plot(xs, comp, 'o-', color='#4477aa', label='composite')
-        axes[0].plot(xs, run_best, '--', color='#ee6677', label='running best')
-        bi = int(np.argmin(comp))
-        axes[0].scatter([xs[bi]], [comp[bi]], s=90, color='#ee6677', zorder=5)
-        axes[0].set_title('Honest composite = rmse/1.6 + (1-d1)/0.46 + 0.35·abs_rel')
-        axes[0].set_xlabel('experiment #'); axes[0].set_ylabel('composite')
-        axes[0].legend(fontsize=8); axes[0].grid(alpha=0.3)
-        axes[1].plot(xs, [p[1] for p in pts], 'o-', label='ABS_REL', color='#228833')
-        axes[1].plot(xs, [p[2] for p in pts], 's-', label='RMSE', color='#ccbb44')
-        axes[1].plot(xs, [p[3] for p in pts], '^-', label='d1', color='#aa3377')
-        axes[1].set_title('Individual metrics'); axes[1].set_xlabel('experiment #')
-        axes[1].legend(fontsize=8); axes[1].grid(alpha=0.3)
-        fig.suptitle('Performance progress (%d runs; best composite %.4f)' % (len(pts), min(comp)),
-                     fontsize=12)
+        for a, (name, j, colour, hib) in zip(axes, metrics):
+            ys = [p[j] for p in pts]
+            run_best = (np.maximum if hib else np.minimum).accumulate(ys)
+            bi = int(np.argmax(ys) if hib else np.argmin(ys))
+            a.plot(xs, ys, 'o-', color=colour, label=name)
+            a.plot(xs, run_best, '--', color='#ee6677',
+                   label='running best (%s)' % ('max' if hib else 'min'))
+            a.scatter([xs[bi]], [ys[bi]], s=90, color='#ee6677', zorder=5)
+            a.set_ylabel(name); a.grid(alpha=0.3); a.legend(fontsize=8, loc='best')
+        axes[-1].set_xlabel('experiment #')
+        axes[0].set_title('Performance progress (%d runs) — higher a1 / lower RMSE,ABS_REL = better'
+                          % len(pts), fontsize=12)
     fig.tight_layout()
     fig.savefig(out_path, dpi=95, bbox_inches='tight')
     plt.close(fig)
@@ -317,7 +319,7 @@ def prune_visualizations(keep_latest=6, dry_run=False):
 def main():
     p = argparse.ArgumentParser(description='Reporting / visualization')
     p.add_argument('cmd', choices=['qualitative', 'progress', 'readme', 'prune', 'all'])
-    p.add_argument('--n-scenes', type=int, default=4)
+    p.add_argument('--n-scenes', type=int, default=7)
     p.add_argument('--keep-latest', type=int, default=6)
     p.add_argument('--dry-run', action='store_true')
     p.add_argument('--prune', action='store_true', help='also prune in `all`')
