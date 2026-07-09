@@ -1,9 +1,16 @@
 {
   "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E149",
-  "global_champion_commit": "93ef41b",
-  "global_champion_note": "NEW CHAMPION (S22): 11ch = multi-res STFT (512+128) + interaural coherence(512) + TTA, 3-draw mean 2.0417. Prior multi-res-10ch (828b9a3, 2.064) is lineage sub-champion. Revert-to-champion: current train.py at 93ef41b.",
+  "next_exp_id": "E150",
+  "global_champion_commit": "36c6538",
+  "global_champion_note": "NEW CHAMPION (S23): 12ch = multi-res STFT (512+128) + interaural coherence at 512 AND 128 + TTA, 3-draw mean 2.0300. Progression 2.099->2.082(TTA)->2.064(multi-res)->2.042(+coh512)->2.030(+coh128). Current train.py at 36c6538.",
   "concluded_studies": [
+    {
+      "study_id": "S23",
+      "lineage": "acoustic-representation-v2",
+      "conclusion": "PASS -> NEW GLOBAL CHAMPION",
+      "best_exp_id": "E146",
+      "note": "Coherence at both scales (12ch). 3-draw mean 2.030 (E146/E147/E148), all below 11ch best draw; Delta -0.012. Fine-scale coherence adds complementary direct/diffuse structure. Commit 36c6538."
+    },
     {
       "study_id": "S22",
       "lineage": "acoustic-representation-v2",
@@ -70,39 +77,28 @@
   ],
   "strategic_note": "BREAKTHROUGH on the acoustic-representation axis (PROPOSAL-01, operator-approved & implemented). After the whole train.py architecture space was exhausted (S10/S13/S14/S16 FAILed; TTA 5ch settled at 2.082), the representation held the real signal: multi-resolution STFT (S19) is the NEW CHAMPION at 2.064 (commit 828b9a3). Now mining this productive axis: S20 tunes the fine-block resolution (E140 n_fft=64 tied 128); next explore a 3rd resolution scale / cross-channel coherence / per-band echo processing. The prepare.FEATURE_FN seam is the live research surface.",
   "active_study": {
-    "study_id": "S23",
+    "study_id": "S24",
     "lineage": "acoustic-representation-v2",
-    "parent": "S22 (multi-res+coherence champion)",
-    "type": "refine",
-    "status": "confirming",
-    "general_hypothesis": "Coherence at the coarse 512 scale helped (S22); coherence is scale-dependent (the direct-vs-diffuse balance differs with analysis window), so adding coherence at the FINE 128 scale too - matching the multi-res two-scale design - may capture complementary direct/diffuse structure and improve further.",
-    "detailed_hypothesis": "Append a 2nd coherence channel computed at n_fft=128 (fine-time) alongside the existing n_fft=512 coherence -> 12ch (10 multi-res + 2 coherence).",
-    "experiment_note": "E146: multires_coh_feat appends _coherence_at(wav,128,40,128) as a 2nd trailing symmetric channel; cfg.dataset.in_ch=12; swap_lr_multi passes both trailing coherence channels as identity (12 = 2x5 blocks + 2 symmetric).",
-    "hpo_stage": "refine",
+    "parent": "S23 (12ch coherence champion)",
+    "type": "tune",
+    "status": "running",
+    "general_hypothesis": "The coherence estimate uses a short (~3-frame) temporal moving average; the smoothing window trades estimate stability against time-localisation of the direct-vs-diffuse transition, so it is a tunable knob that may sharpen the coherence cue.",
+    "detailed_hypothesis": "Sweep the coherence smoothing taps: 5 (and maybe 7) vs the current 3, applied to both coherence channels.",
+    "experiment_note": "E149: _coherence_at smooth=5 for both coherence channels (currently 3). Judged vs champion 3-draw mean 2.030.",
+    "hpo_stage": "hpo-3",
     "hpo_runs_used": 0,
     "runs": [
       {
-        "exp_id": "E146",
-        "status": "done",
-        "comp": 2.0289
-      },
-      {
-        "exp_id": "E147",
-        "status": "done",
-        "comp": 2.0325,
-        "note": "12ch 2-draw mean 2.0307"
-      },
-      {
-        "exp_id": "E148",
+        "exp_id": "E149",
         "status": "running",
-        "note": "3rd 12ch draw for fair 3-vs-3 vs 11ch champion (mean 2.042)"
+        "config": "coherence smooth taps 3->5"
       }
     ],
     "open_risks": [
-      "Fine-scale (128) coherence has fewer freq bins + noisier per-bin estimates; may add little over the 512 coherence. Screen vs champion 2.042.",
-      "If it only ties, keep the simpler 11ch champion."
+      "Smoothing is a minor knob; likely within-noise. If 5 and 7 both tie 3, keep 3 (simplest) and move to a new cue.",
+      "Judge vs the tight champion (std 0.0018) - need a clear >noise gain to re-crown a tune."
     ],
-    "decision_rule": "Screen vs champion 2.042. Clearly better (<2.036) + replicate -> new champion (12ch). Within noise -> single-scale coherence suffices, keep 11ch champion (93ef41b), revert. Then backlog: tune coherence smooth taps, per-band echo features, or if representation ideas plateau do a final champion multi-draw confirmation + project summary."
+    "decision_rule": "HPO 3->5. E149 smooth=5 vs champion 2.030. Clearly better (<2.025)+replicate -> update; within noise -> keep smooth=3 champion 36c6538, conclude S24, EXPLORE a new cue (per-band echo / learned STFT front-end / direct-path onset-energy). Worse -> keep 3."
   },
   "backlog": [
     {

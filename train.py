@@ -121,8 +121,8 @@ def multires_coh_feat(wav, ds):
     only the 512 coherence -> 11ch.) Coherence is a direct-vs-diffuse cue distinct from ILD/IPD; the
     two scales may capture complementary direct/diffuse structure. swap_lr_multi passes both through."""
     base = multires_feat(wav, ds)                                # (10,H,W)
-    coh512 = _coherence_at(wav, 512, 160, 512, ds.H, ds.W)      # (1,H,W) symmetric
-    coh128 = _coherence_at(wav, 128, 40, 128, ds.H, ds.W)      # (1,H,W) symmetric — E146 fine-scale
+    coh512 = _coherence_at(wav, 512, 160, 512, ds.H, ds.W, smooth=5)   # E149 (S24): smooth 3->5
+    coh128 = _coherence_at(wav, 128, 40, 128, ds.H, ds.W, smooth=5)   # E146 fine-scale, E149 smooth=5
     return torch.cat([base, coh512, coh128], dim=0)             # (12,H,W)
 
 
