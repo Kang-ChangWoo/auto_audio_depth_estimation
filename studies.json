@@ -20,9 +20,13 @@
     "hpo_runs_used": 1,
     "runs": [
       {"exp_id": "E0", "name": "batvision_2ch_nolog", "abs_rel": 0.4143, "rmse": 1.3186, "d1": 0.5785,
-       "composite": 1.8854, "best_epoch": 14, "epochs_ran": 26, "vram_gb": 2.4, "status": "keep"}
+       "composite": 1.8854, "best_epoch": 14, "epochs_ran": 26, "vram_gb": 2.4, "status": "keep"},
+      {"exp_id": "E1", "name": "batvision_2ch_log", "abs_rel": 0.4211, "rmse": 1.3116, "d1": 0.5808,
+       "composite": 1.8784, "best_epoch": 14, "epochs_ran": 26, "vram_gb": 2.4, "status": "keep"}
     ],
     "observations": [
+      "E1 vs E0 (2ch, log vs nolog): composite 1.8784 vs 1.8854, delta = 0.0070 -- BELOW the sigma ~= 0.008 noise floor. log1p compression on the [L,R] magnitude pair is INDISTINGUISHABLE from raw magnitude at 2ch. The two runs also split the underlying metrics (log wins rmse 1.3116 vs 1.3186 and d1 0.5808 vs 0.5785; nolog wins abs_rel 0.4143 vs 0.4211), which is the signature of noise, not of a mechanism. Do NOT crown either. The detailed hypothesis predicted log would help MORE at 2ch than 5ch (no ILD to supply a log-domain ratio); at 2ch it does not help at all, so that half of the prediction is already not supported. The 5ch pair (E2/E3) still tests the other half.",
+      "Both 2ch cells peak at epoch 14 of 26 and both peak VRAM at exactly 2400.3MB -- the overfitting turn and the memory envelope are properties of the architecture + schedule, not of the input representation.",
       "E0: the composite peaks at epoch 14 of 26 and then DEGRADES -- val loss rises monotonically 0.1871 -> 0.1925 over the last 5 epochs, RMSE 1.347 -> 1.382, d1 0.5827 -> 0.5758. The batvision U-Net (54.4M params) OVERFITS well inside the 1-hour budget. Compounding it: the cosine schedule is sized for --epochs 40 but only ~26 fit in the budget, so LR never fully anneals and the run ends mid-schedule at a degraded point. Best-checkpoint selection protects the reported number, but it means (a) the extra epochs are wasted compute, and (b) a fair comparison of any config must go through the best checkpoint, never the last. FOLLOW-UP for the training-optimization lineage: set --epochs to what actually fits (~24) so cosine anneals to zero inside the budget, and/or add weight decay / early stop. Do NOT change this mid-grid -- all four cells must share one schedule."
     ],
     "decision_rule": "Rank by the honest composite. The winning cell becomes the reference number RayDPT must beat. The qualitative figure shows ONE column per channel count, always the NON-LOG variant (operator instruction), regardless of which log setting wins the composite; the log variants stay in out/results.tsv. Gaps below ~0.015 composite are near-noise -> do not crown without confirmation."

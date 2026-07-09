@@ -30,6 +30,7 @@ running best highlighted):
 | # | commit | ABS_REL | RMSE | d1 | composite | status | description |
 |---|---|---|---|---|---|---|---|
 | 1 | `209c6e8` | 0.4143 | 1.3186 | 0.5785 | 1.8854 | keep | E0 batvision U-Net 2ch [L,R] nolog, planar target, 26ep |
+| 2 | `209c6e8` | 0.4211 | 1.3116 | 0.5808 | 1.8784 | keep | E1 batvision U-Net 2ch [logL,logR] log, planar target, 26ep |
 <!-- RESULTS:END -->
 
 ## Progression (composite, lower = better)
