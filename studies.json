@@ -1,6 +1,6 @@
 {
   "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E148",
+  "next_exp_id": "E149",
   "global_champion_commit": "93ef41b",
   "global_champion_note": "NEW CHAMPION (S22): 11ch = multi-res STFT (512+128) + interaural coherence(512) + TTA, 3-draw mean 2.0417. Prior multi-res-10ch (828b9a3, 2.064) is lineage sub-champion. Revert-to-champion: current train.py at 93ef41b.",
   "concluded_studies": [
@@ -84,15 +84,18 @@
       {
         "exp_id": "E146",
         "status": "done",
-        "comp": 2.0289,
-        "rmse": 1.4513,
-        "d1": 0.5967,
-        "verdict": "best-ever honest metrics; 0.013 below champion mean but only 0.003 below best draw - thin, confirm"
+        "comp": 2.0289
       },
       {
         "exp_id": "E147",
+        "status": "done",
+        "comp": 2.0325,
+        "note": "12ch 2-draw mean 2.0307"
+      },
+      {
+        "exp_id": "E148",
         "status": "running",
-        "note": "confirmation of 12ch coherence-both-scales"
+        "note": "3rd 12ch draw for fair 3-vs-3 vs 11ch champion (mean 2.042)"
       }
     ],
     "open_risks": [
