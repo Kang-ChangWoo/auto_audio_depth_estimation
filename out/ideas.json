@@ -16,23 +16,21 @@
       "budget_risk": "low. STFT cost only; the feature is interpolated to (256,512) regardless, so model FLOPs/VRAM/in_ch are unchanged (verified). Finer hop means more STFT frames -> slightly slower dataloading, which spends wall-clock TIME_BUDGET. Report epochs_ran.",
       "evidence_required": "monotone RMSE improvement across two hop halvings, on a parent that is not the current champion.",
       "unblocked_by": "The STFT window is now editable research logic (--stft-hop), read from cfg.dataset. Defaults verified bit-identical to the historical representation; changing hop leaves cut/depth/in_ch/shape untouched.",
+      "strengthened_by": "(a) I2's oracle diagnostic shows the decoder's 64x128 output resolution imposes a ceiling of composite 0.2399 while the model sits at 1.8646 -- the bottleneck is NOT downstream of the decoder, so it is upstream: information. (b) D3 shows the interaural cues buy d1 (azimuth) but not RMSE (range), leaving range accuracy unexplained -- and range is precisely what time-of-flight resolution sets.",
       "next_action": "READY. Probe `run_base.py --stft-hop 40` vs the hop-160 control once the batvision grid frees the GPU."
     },
     {
       "id": "I2",
-      "status": "backlog",
+      "status": "dropped",
       "origin": "measured property of the planar target (grad-energy, 24 samples / 6 scenes)",
-      "target_bottleneck": "output resolution: 4x bilinear upsample smears the target's sharp steps",
+      "target_bottleneck": "(claimed) output resolution: 4x bilinear upsample smears the target's sharp steps",
       "mechanism_family": "decoder resolution",
       "causal_distance": "near",
-      "general_hypothesis": "The planar (cubemap) target is piecewise-constant -- flat regions separated by sharp steps -- because a wall perpendicular to a cube face has constant planar depth. A decoder that cannot represent a step cannot fit this target, and d1 (a +-25% threshold metric) punishes blurred edges hard.",
-      "detailed_hypothesis": "RayDPT decodes at 64x128 and bilinear-upsamples 4x to 256x512; batvision's U-Net decodes to full resolution. Adding a 128x256 DPT scale (RayBank Q128 + an e1 skip) halves the final upsample to 2x, letting the head place steps at twice the spatial precision.",
-      "expected_metric_effect": "d1 rises; RMSE improves modestly. If d1 does not move, edge blur was not the binding constraint.",
-      "main_falsification_condition": "d1 unchanged (within sigma 0.008 composite) despite the finer decode -- i.e. the model's error is in WHERE the surface is, not in how sharply the boundary is drawn.",
-      "minimal_falsifiable_test": "Diagnostic first, and it is nearly free: take the trained batvision prediction at full resolution, downsample to 64x128, bilinear-upsample back to 256x512, and recompute d1/RMSE. The drop is an UPPER BOUND on what RayDPT loses to its 4x upsample. Run the expensive architecture change only if that bound is large.",
-      "budget_risk": "medium. A 128x256 attention scale costs VRAM and wall-clock; fewer epochs fit the 1h budget, which is itself a confound (see D2).",
-      "evidence_required": "the cheap upsample-bound diagnostic must show a material d1 drop BEFORE the architecture change is attempted.",
-      "next_action": "run the upsample-bound diagnostic on the finished batvision checkpoint (CPU/GPU, seconds)"
+      "general_hypothesis": "The planar target is piecewise-constant, so a decoder that cannot represent a step cannot fit it, and d1 punishes blurred edges. RayDPT decodes at 64x128 and upsamples 4x; add a 128x256 scale to halve that.",
+      "why_dropped": "REFUTED by an oracle diagnostic that cost zero GPU time. Downsample the GROUND TRUTH to each decode resolution and bilinearly upsample it back: that is what a PERFECT predictor at that resolution would score. At RayDPT's 64x128 the oracle scores d1=0.9757, RMSE=0.2873m, composite=0.2399. The best ACHIEVED is d1=0.5938, RMSE=1.3207m, composite=1.8646. The model is nowhere near the ceiling its decode resolution imposes -- roughly 1.62 composite of headroom remains. Raising the ceiling to 128x256 (oracle composite 0.1638) buys nothing the model can currently use.",
+      "scope_of_negative_evidence": "Refutes decoder output resolution as the CURRENT binding constraint, at the present error level, for this target and metric. It does NOT say a finer decode is worthless forever: if a future model approaches d1 ~ 0.9, the 64x128 ceiling becomes real and this idea should be revived. Recorded as a ceiling to re-check, not a closed door.",
+      "expected_metric_effect": "(would have been) d1 rises",
+      "next_action": "none. Revive only if achieved d1 approaches ~0.9."
     },
     {
       "id": "I3",
@@ -70,7 +68,15 @@
       "observation": "log1p magnitude compression is a no-op at 2ch: E1 (log) composite 1.8784 vs E0 (nolog) 1.8854, delta 0.0070 < sigma 0.008. The two runs SPLIT the underlying metrics -- log wins rmse (1.3116 vs 1.3186) and d1 (0.5808 vs 0.5785), nolog wins abs_rel (0.4143 vs 0.4211).",
       "why_it_matters": "The pre-registered detailed hypothesis predicted log would help MORE at 2ch than at 5ch, because in the 5ch stack ILD already supplies a log-domain ratio. At 2ch it does not help at all, so that half of the prediction is unsupported. A metric split with a sub-sigma delta is the signature of noise, not of a mechanism.",
       "diagnostic_value": "If E2/E3 show log ALSO does nothing at 5ch, then dynamic-range compression is simply irrelevant to this task -- which would point at time-of-flight (I1), not level statistics, as the operative cue. That is a cheap, strong inference from data already being collected.",
-      "next_action": "read the E2/E3 result before interpreting; do not crown either 2ch cell"
+      "next_action": "E2 (5ch nolog) is in at composite 1.8646. Awaiting E3 (5ch log) to close this."
+    },
+    {
+      "id": "D3",
+      "status": "open",
+      "observation": "E2 (5ch nolog, composite 1.8646) beats both 2ch cells (1.8854, 1.8784) by 0.014-0.021 -- above the sigma~0.008 floor -- but the win comes ENTIRELY from d1 (0.5938 vs 0.5808/0.5785). Its RMSE is actually WORSE than E1's (1.3207 vs 1.3116) and its ABS_REL is the worst of the three (0.4460 vs 0.4143/0.4211).",
+      "why_it_matters": "The composite weights d1 at 1/0.46, so a d1 gain of 0.013 alone buys 0.028 of composite -- enough to swamp the RMSE regression. So 'derived interaural cues help' is true ONLY in the d1 sense: the cues make more pixels land within +-25% of truth, while the typical squared error gets slightly larger. That is the profile of a mechanism that improves DIRECTIONAL/angular assignment (which is exactly what ILD and IPD encode: azimuth) without improving absolute RANGE. It is not evidence that the cues help distance estimation.",
+      "diagnostic_value": "Sharpens I1. If the interaural cues fix azimuth but leave range untouched, then range accuracy is limited by something else -- and time-of-flight resolution (I1) is the physically obvious candidate. It also warns that a composite win can be a single-metric win: never report 'E2 is better' without saying better AT WHAT.",
+      "next_action": "check whether E3 reproduces the same d1-only profile. Then, when the I1 hop probe lands, verify its gain is in RMSE (range) rather than d1 (angle) -- that would make I1 and the cue stack COMPLEMENTARY, and a combine study justified."
     },
     {
       "id": "D2",

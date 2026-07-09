@@ -1,3 +1,4 @@
 commit	abs_rel	rmse	d1	memory_gb	status	description
 209c6e8	0.4143	1.3186	0.5785	2.4	keep	E0 batvision U-Net 2ch [L,R] nolog, planar target, 26ep
 209c6e8	0.4211	1.3116	0.5808	2.4	keep	E1 batvision U-Net 2ch [logL,logR] log, planar target, 26ep
+209c6e8	0.4460	1.3207	0.5938	2.4	keep	E2 batvision U-Net 5ch nolog, planar target, 25ep

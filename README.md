@@ -26,7 +26,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | Idea | Mechanism family | Causal distance | Target bottleneck | Status | Next test |
 |---|---|---|---|---|---|
 | `I1` | acoustic-representation / temporal resolution | far | time-of-flight quantisation in the input representation | backlog | READY. Probe `run_base.py --stft-hop 40` vs the hop-160 control once the batvision grid fr |
-| `I2` | decoder resolution | near | output resolution: 4x bilinear upsample smears the target's sharp steps | backlog | run the upsample-bound diagnostic on the finished batvision checkpoint (CPU/GPU, seconds) |
 | `I3` | training-optimization | near | the 1h wall-clock budget is spent on epochs that make the model worse | backlog | queue after the RayDPT planar re-anchor (E4); this is a confound affecting EVERY future ru |
 
 ### Open discrepancies
@@ -35,6 +34,8 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 - **`D1`** — log1p magnitude compression is a no-op at 2ch: E1 (log) composite 1.8784 vs E0 (nolog) 1.8854, delta 0.0070 < sigma 0.008. The two runs SPLIT the underlying metrics -- log wins rmse (1.3116 vs 1.3186) and d1 (0.5808 vs 0.5785), nolog wins abs_rel (0.4143 vs 0.4211).
   <br/>*Why it matters:* The pre-registered detailed hypothesis predicted log would help MORE at 2ch than at 5ch, because in the 5ch stack ILD already supplies a log-domain ratio. At 2ch it does not help at all, so that half of the prediction is unsupported. A metric split with a sub-sigma delta is the signature of noise, not of a mechanism.
+- **`D3`** — E2 (5ch nolog, composite 1.8646) beats both 2ch cells (1.8854, 1.8784) by 0.014-0.021 -- above the sigma~0.008 floor -- but the win comes ENTIRELY from d1 (0.5938 vs 0.5808/0.5785). Its RMSE is actually WORSE than E1's (1.3207 vs 1.3116) and its ABS_REL is the worst of the three (0.4460 vs 0.4143/0.4211).
+  <br/>*Why it matters:* The composite weights d1 at 1/0.46, so a d1 gain of 0.013 alone buys 0.028 of composite -- enough to swamp the RMSE regression. So 'derived interaural cues help' is true ONLY in the d1 sense: the cues make more pixels land within +-25% of truth, while the typical squared error gets slightly larger. That is the profile of a mechanism that improves DIRECTIONAL/angular assignment (which is exactly what ILD and IPD encode: azimuth) without improving absolute RANGE. It is not evidence that the cues help distance estimation.
 - **`D2`** — Both 2ch cells peak at epoch 14 of 26 and both peak at exactly 2400.3 MB VRAM.
   <br/>*Why it matters:* The overfitting turn and the memory envelope are properties of the architecture + schedule, NOT of the input representation. This makes epoch count a CONFOUND for every comparison run under the fixed wall-clock budget: any change that slows an epoch silently reduces the epochs that fit, and is penalised for reasons unrelated to its mechanism.
 
@@ -42,14 +43,14 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-10T03:28 | `synthesize` | discrepancy_recorded | D3: E2's composite win over the 2ch cells is entirely a d1 win (0.5938 vs 0.5808); its RMSE (1.3207) is WORSE than E1's (1.3116) a |
+| 2026-07-10T03:26 | `synthesize` | candidate_dropped | I2 (decoder output resolution) REFUTED by an oracle diagnostic costing zero GPU. A PERFECT predictor at RayDPT's 64x128 decode res |
+| 2026-07-10T03:26 | `synthesize` | experiment_completed | batvision 5ch nolog: composite 1.8646 (rmse 1.3207, d1 0.5938, abs_rel 0.4460), best epoch 13/25. Beats both 2ch cells (1.8854, 1. |
 | 2026-07-10T03:24 | `synthesize` | study_opened | S1 (queued, exploit): E4 re-anchors RayDPT (my model) under the planar target. Prerequisite for every RayDPT improvement; nothing  |
 | 2026-07-10T03:24 | `synthesize` | study_opened | S2 (queued, explore): I1 temporal-resolution probe on the CHEAPEST parent (batvision, not the champion). Control is E2 (batvision_ |
 | 2026-07-10T03:19 | `synthesize` | infrastructure | Upgrade-plan section 15 (audio representation search-space): STFT analysis window moved from prepare.py module constants into cfg. |
 | 2026-07-10T03:20 | `synthesize` | infrastructure | Serial scored-evaluation lock added (utils/evallock.py). Our composite has no runtime term, but TIME_BUDGET is wall-clock, so over |
 | 2026-07-10T03:12 | `synthesize` | idea_added | Temporal resolution of the input (hop 160 -> 40). Causally FAR from the current decoder/attention lineage, grounded in sensing phy |
-| 2026-07-10T03:10 | `synthesize` | divergence_checkpoint | Abstraction levels reviewed: input representation / target geometry / decoder resolution / optimisation schedule / sensing physics |
-| 2026-07-10T03:05 | `synthesize` | mode_changed | Two grid cells concluded and both produced unexplained results (D1: a pre-registered prediction failed; D2: a budget confound affe |
-| 2026-07-10T02:30 | `exploit` | discrepancy_recorded | log1p compression is a no-op at 2ch, contradicting the pre-registered prediction that it would help MORE at 2ch than 5ch. Await E2 |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->
@@ -85,6 +86,7 @@ running best highlighted):
 |---|---|---|---|---|---|---|---|
 | 1 | `209c6e8` | 0.4143 | 1.3186 | 0.5785 | 1.8854 | keep | E0 batvision U-Net 2ch [L,R] nolog, planar target, 26ep |
 | 2 | `209c6e8` | 0.4211 | 1.3116 | 0.5808 | 1.8784 | keep | E1 batvision U-Net 2ch [logL,logR] log, planar target, 26ep |
+| 3 | `209c6e8` | 0.4460 | 1.3207 | 0.5938 | 1.8646 | keep | E2 batvision U-Net 5ch nolog, planar target, 25ep |
 <!-- RESULTS:END -->
 
 ## Progression (composite, lower = better)
