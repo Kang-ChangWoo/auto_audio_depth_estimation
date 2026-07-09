@@ -1,1 +1,2 @@
 study_id	lineage	type	conclusion	best_comp	best_exp_id	best_commit	summary
+S0	batvision-reference	new	PASS	1.8567	E3	209c6e8	2x2 {2ch,5ch}x{log,nolog} under planar. Effects ADDITIVE and act on DIFFERENT metrics: interaural cues -> d1 (+0.015, angle); log1p -> rmse (-0.010, range). Predicted interaction (log helps more at 2ch) REFUTED.

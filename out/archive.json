@@ -9,25 +9,25 @@
       "role": "reference (not a candidate for global champion; it is the bar, not the runner)",
       "status": "active",
       "champion": {
-        "exp_id": "E2",
-        "name": "batvision_5ch_nolog",
+        "exp_id": "E3",
+        "name": "batvision_5ch_log",
         "commit": "209c6e8",
-        "abs_rel": 0.446,
-        "rmse": 1.3207,
-        "d1": 0.5938,
-        "composite": 1.8646,
+        "abs_rel": 0.4517,
+        "rmse": 1.3088,
+        "d1": 0.5949,
+        "composite": 1.8567,
         "best_epoch": 13,
         "epochs_ran": 25,
         "vram_gb": 2.4,
-        "provisional": true,
-        "caveat": "Leads the 2ch cells by 0.014-0.021, above sigma~0.008, so the derived interaural cues genuinely add information. BUT the win is d1-only (see D3): RMSE is worse than E1's. E3 (5ch log) pending."
+        "provisional": false,
+        "note": "Best of the 2x2. The CUE effect (+0.021) is above sigma and reproduced at both log settings. The LOG effect (+0.007/+0.008) is at the noise floor per draw but consistent in sign, magnitude and metric direction across two independent draws; not crowned as an independent finding without a third."
       },
-      "metric_profile": "d1-dominant: the cue stack improves angular (azimuth) assignment, not range."
+      "metric_profile": "Dissociation: interaural cues buy d1 (angle, +0.015); log1p buys rmse (range, -0.010). Additive, no interaction."
     },
     "raydpt-baseline": {
       "mechanism": "ray-conditioned DPT: per-ray RayBank queries x audio cross-attention, depth decoded per ray direction",
       "role": "my model; the architectural invariant of this project",
-      "status": "pending re-anchor under the planar target (E4)",
+      "status": "E4 running: first RayDPT run under the planar target",
       "champion": null
     }
   },
@@ -53,5 +53,8 @@
       "scope": "Refutes THIS reparameterisation under the planar target on SoundSpaces rooms, which are mostly axis-aligned (a wall perpendicular to a cube face has constant planar depth, while radial curves as 1/cos). It does NOT license the conclusion that geometry-conditioned heads are useless in general, and says nothing about non-axis-aligned scenes.",
       "recombination_value": "The measurement itself is the asset: it establishes that the planar target is piecewise-constant, which is what makes decoder output resolution (I2) worth testing."
     }
-  ]
+  ],
+  "study_conclusions": {
+    "S0": "PASS. Reference anchored at composite 1.8567 (E3). Cues->angle, log->range, additive. Predicted log x channel-count interaction refuted."
+  }
 }

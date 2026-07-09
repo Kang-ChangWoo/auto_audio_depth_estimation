@@ -4,52 +4,143 @@
   "reset_note": "Fresh from original baseline f677b0f + mask-weighted coarse/low loss targets + composite abs_rel weight 0.75->0.35 + PLANAR (cubemap) depth target.",
   "depth_convention": "planar (cubemap perpendicular-Z); stored erp_depth used as-is; radial_factor removed",
   "metric": "composite (selection) = rmse/1.6 + (1-d1)/0.46 + 0.35*abs_rel  (lower better; RMSE+d1 dominate; abs_rel de-weighted)",
-  "next_exp_id": "E4",
+  "next_exp_id": "E5",
   "global_champion": null,
-  "concluded_studies": [],
-
-  "mode": "synthesize",
-  "mode_reason": "Two grid cells concluded and both produced unexplained results (D1: a pre-registered prediction failed; D2: a budget confound that affects every future run). Rather than spend the remaining GPU on more of the same lineage, step up a level. The divergence checkpoint surfaced the sensing-physics abstraction level, which had never been examined: the input resolves time-of-flight only at 0.567m while the best RMSE is 1.3116m. S0 continues to completion in the background -- it is a formal study and is not reinterpreted or cut short.",
-  "studies_since_synthesize": 0,
+  "concluded_studies": [
+    {
+      "study_id": "S0",
+      "lineage": "batvision-reference",
+      "parent": null,
+      "type": "new",
+      "status": "concluded",
+      "general_hypothesis": "Before any RayDPT work the BatVision U-Net reference must be re-anchored under the PLANAR depth target, and we must know which binaural input representation the reference actually needs. Two questions: (a) how much do the derived interaural cues (ILD, cosIPD, sinIPD) add over the bare [L,R] magnitude pair; (b) does log1p magnitude compression help or hurt.",
+      "detailed_hypothesis": "log1p compression equalises the dynamic range between the direct sound and the far-field echo tail, so it should help a model that must read weak late reflections to place distant surfaces -> log wins, and it should help the 2ch stack MORE than the 5ch stack (in 5ch, ILD already supplies a log-domain ratio, so part of the compression benefit is redundant). Adding ILD+IPD gives explicit interaural level/phase, which is where azimuth and hence per-direction depth structure lives -> 5ch beats 2ch at both log settings.",
+      "experiment_note": "2x2 grid on run_base.py, 1h each, sequential on one GPU: {2ch=[L,R], 5ch=[L,R,ILD,cosIPD,sinIPD]} x {use_log True, False}. E0 batvision_2ch_nolog, E1 batvision_2ch_log, E2 batvision_5ch_nolog, E3 batvision_5ch_log. Driver: utils/run_batvision_grid.sh.",
+      "hpo_stage": "structural-screen",
+      "hpo_runs_used": 1,
+      "runs": [
+        {
+          "exp_id": "E0",
+          "name": "batvision_2ch_nolog",
+          "abs_rel": 0.4143,
+          "rmse": 1.3186,
+          "d1": 0.5785,
+          "composite": 1.8854,
+          "best_epoch": 14,
+          "epochs_ran": 26,
+          "vram_gb": 2.4,
+          "status": "keep"
+        },
+        {
+          "exp_id": "E1",
+          "name": "batvision_2ch_log",
+          "abs_rel": 0.4211,
+          "rmse": 1.3116,
+          "d1": 0.5808,
+          "composite": 1.8784,
+          "best_epoch": 14,
+          "epochs_ran": 26,
+          "vram_gb": 2.4,
+          "status": "keep"
+        },
+        {
+          "exp_id": "E2",
+          "name": "batvision_5ch_nolog",
+          "abs_rel": 0.446,
+          "rmse": 1.3207,
+          "d1": 0.5938,
+          "composite": 1.8646,
+          "best_epoch": 13,
+          "epochs_ran": 25,
+          "vram_gb": 2.4,
+          "status": "keep"
+        },
+        {
+          "exp_id": "E3",
+          "name": "batvision_5ch_log",
+          "abs_rel": 0.4517,
+          "rmse": 1.3088,
+          "d1": 0.5949,
+          "composite": 1.8567,
+          "best_epoch": 13,
+          "epochs_ran": 25,
+          "vram_gb": 2.4,
+          "status": "keep"
+        }
+      ],
+      "observations": [
+        "E1 vs E0 (2ch, log vs nolog): composite 1.8784 vs 1.8854, delta = 0.0070 -- BELOW the sigma ~= 0.008 noise floor. log1p compression on the [L,R] magnitude pair is INDISTINGUISHABLE from raw magnitude at 2ch. The two runs also split the underlying metrics (log wins rmse 1.3116 vs 1.3186 and d1 0.5808 vs 0.5785; nolog wins abs_rel 0.4143 vs 0.4211), which is the signature of noise, not of a mechanism. Do NOT crown either. The detailed hypothesis predicted log would help MORE at 2ch than 5ch (no ILD to supply a log-domain ratio); at 2ch it does not help at all, so that half of the prediction is already not supported. The 5ch pair (E2/E3) still tests the other half.",
+        "Both 2ch cells peak at epoch 14 of 26 and both peak VRAM at exactly 2400.3MB -- the overfitting turn and the memory envelope are properties of the architecture + schedule, not of the input representation.",
+        "E0: the composite peaks at epoch 14 of 26 and then DEGRADES -- val loss rises monotonically 0.1871 -> 0.1925 over the last 5 epochs, RMSE 1.347 -> 1.382, d1 0.5827 -> 0.5758. The batvision U-Net (54.4M params) OVERFITS well inside the 1-hour budget. Compounding it: the cosine schedule is sized for --epochs 40 but only ~26 fit in the budget, so LR never fully anneals and the run ends mid-schedule at a degraded point. Best-checkpoint selection protects the reported number, but it means (a) the extra epochs are wasted compute, and (b) a fair comparison of any config must go through the best checkpoint, never the last. FOLLOW-UP for the training-optimization lineage: set --epochs to what actually fits (~24) so cosine anneals to zero inside the budget, and/or add weight decay / early stop. Do NOT change this mid-grid -- all four cells must share one schedule."
+      ],
+      "decision_rule": "Rank by the honest composite. The winning cell becomes the reference number RayDPT must beat. The qualitative figure shows ONE column per channel count, always the NON-LOG variant (operator instruction), regardless of which log setting wins the composite; the log variants stay in out/results.tsv. Gaps below ~0.015 composite are near-noise -> do not crown without confirmation.",
+      "conclusion": "PASS"
+    }
+  ],
+  "mode": "exploit",
+  "mode_reason": "S0 concluded PASS: the reference is anchored at composite 1.8567 and the representation question is answered (cues->angle, log->range, additive). Now EXPLOIT the prerequisite: E4 re-anchors RayDPT (my model) under the planar target, which every RayDPT improvement needs as a valid parent. The I1 explore probe follows immediately after, on the cheapest parent.",
+  "studies_since_synthesize": 1,
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",
   "active_study": {
-    "study_id": "S0",
-    "lineage": "batvision-reference",
+    "study_id": "S1",
+    "lineage": "raydpt-baseline",
     "parent": null,
     "type": "new",
     "status": "running",
-    "general_hypothesis": "Before any RayDPT work the BatVision U-Net reference must be re-anchored under the PLANAR depth target, and we must know which binaural input representation the reference actually needs. Two questions: (a) how much do the derived interaural cues (ILD, cosIPD, sinIPD) add over the bare [L,R] magnitude pair; (b) does log1p magnitude compression help or hurt.",
-    "detailed_hypothesis": "log1p compression equalises the dynamic range between the direct sound and the far-field echo tail, so it should help a model that must read weak late reflections to place distant surfaces -> log wins, and it should help the 2ch stack MORE than the 5ch stack (in 5ch, ILD already supplies a log-domain ratio, so part of the compression benefit is redundant). Adding ILD+IPD gives explicit interaural level/phase, which is where azimuth and hence per-direction depth structure lives -> 5ch beats 2ch at both log settings.",
-    "experiment_note": "2x2 grid on run_base.py, 1h each, sequential on one GPU: {2ch=[L,R], 5ch=[L,R,ILD,cosIPD,sinIPD]} x {use_log True, False}. E0 batvision_2ch_nolog, E1 batvision_2ch_log, E2 batvision_5ch_nolog, E3 batvision_5ch_log. Driver: utils/run_batvision_grid.sh.",
+    "general_hypothesis": "RayDPT (my ray-conditioned model) must be re-anchored under the PLANAR target before any of its mechanisms can be judged. Nothing measured before commit 87b3047 is comparable, so the model currently has NO valid baseline in this phase and no RayDPT improvement can be attributed.",
+    "detailed_hypothesis": "Run train.py unchanged (5ch log, flip-aug, no TTA) for one wall-clock hour. This produces the parent against which decoder, representation and optimisation mechanisms will be compared, and gives the first honest RayDPT-vs-batvision number under the planar target. The reference to beat is E3 = 1.8567.",
+    "experiment_note": "E4: python train.py --mode train (defaults). Queued in utils/run_queue.sh; started 04:28.",
     "hpo_stage": "structural-screen",
-    "hpo_runs_used": 1,
-    "runs": [
-      {"exp_id": "E0", "name": "batvision_2ch_nolog", "abs_rel": 0.4143, "rmse": 1.3186, "d1": 0.5785,
-       "composite": 1.8854, "best_epoch": 14, "epochs_ran": 26, "vram_gb": 2.4, "status": "keep"},
-      {"exp_id": "E1", "name": "batvision_2ch_log", "abs_rel": 0.4211, "rmse": 1.3116, "d1": 0.5808,
-       "composite": 1.8784, "best_epoch": 14, "epochs_ran": 26, "vram_gb": 2.4, "status": "keep"}
-    ],
-    "observations": [
-      "E1 vs E0 (2ch, log vs nolog): composite 1.8784 vs 1.8854, delta = 0.0070 -- BELOW the sigma ~= 0.008 noise floor. log1p compression on the [L,R] magnitude pair is INDISTINGUISHABLE from raw magnitude at 2ch. The two runs also split the underlying metrics (log wins rmse 1.3116 vs 1.3186 and d1 0.5808 vs 0.5785; nolog wins abs_rel 0.4143 vs 0.4211), which is the signature of noise, not of a mechanism. Do NOT crown either. The detailed hypothesis predicted log would help MORE at 2ch than 5ch (no ILD to supply a log-domain ratio); at 2ch it does not help at all, so that half of the prediction is already not supported. The 5ch pair (E2/E3) still tests the other half.",
-      "Both 2ch cells peak at epoch 14 of 26 and both peak VRAM at exactly 2400.3MB -- the overfitting turn and the memory envelope are properties of the architecture + schedule, not of the input representation.",
-      "E0: the composite peaks at epoch 14 of 26 and then DEGRADES -- val loss rises monotonically 0.1871 -> 0.1925 over the last 5 epochs, RMSE 1.347 -> 1.382, d1 0.5827 -> 0.5758. The batvision U-Net (54.4M params) OVERFITS well inside the 1-hour budget. Compounding it: the cosine schedule is sized for --epochs 40 but only ~26 fit in the budget, so LR never fully anneals and the run ends mid-schedule at a degraded point. Best-checkpoint selection protects the reported number, but it means (a) the extra epochs are wasted compute, and (b) a fair comparison of any config must go through the best checkpoint, never the last. FOLLOW-UP for the training-optimization lineage: set --epochs to what actually fits (~24) so cosine anneals to zero inside the budget, and/or add weight decay / early stop. Do NOT change this mid-grid -- all four cells must share one schedule."
-    ],
-    "decision_rule": "Rank by the honest composite. The winning cell becomes the reference number RayDPT must beat. The qualitative figure shows ONE column per channel count, always the NON-LOG variant (operator instruction), regardless of which log setting wins the composite; the log variants stay in out/results.tsv. Gaps below ~0.015 composite are near-noise -> do not crown without confirmation."
+    "hpo_runs_used": 0,
+    "runs": [],
+    "decision_rule": "This is an ANCHOR, not a competition: E4 is recorded whatever it scores. Report which metrics RayDPT wins/loses vs E3 separately (per S0, d1 is the cue-driven metric and rmse the range metric). If RayDPT trails badly, that is a research finding about ray-conditioning under a piecewise-constant target, not a failure to be patched immediately."
   },
   "backlog": [
-    {"lineage": "raydpt-baseline", "type": "new", "idea": "E4: re-anchor RayDPT (train.py, 5ch log, flip-aug) under the planar target; this is the number the batvision grid is compared against. Must run before any RayDPT improvement."},
-    {"lineage": "output-resolution", "type": "new", "priority": "high",
-     "idea": "RayDPT decodes at 64x128 and bilinear-upsamples 4x to 256x512; batvision's U-Net decodes to full res. Add a 128x256 DPT scale (ray bank Q128 + se1 skip from e1) so the final upsample is only 2x.",
-     "why": "MEASURED (24 samples, 6 scenes): the planar target is PIECEWISE-CONSTANT -- a wall perpendicular to a cube face has constant planar depth, so the map is flat regions separated by SHARP steps at depth discontinuities. A 4x bilinear upsample smears exactly those steps, and d1 (a +-25% threshold metric) punishes blurred edges hard. Highest-value structural fix under the planar target. Costs VRAM -- screen before committing."},
-    {"lineage": "geometric-head", "type": "new", "status": "REFUTED-BEFORE-RUN",
-     "idea": "Predict the smooth radial field R and emit D = R * linf, linf = max(|dx|,|dy|,|dz|) as a fixed buffer, so the net never learns the cube-edge creases.",
-     "why_refuted": "The premise is false. Measured grad-energy over 24 samples / 6 scenes: planar 0.01618, radial 0.01677; radial is smoother in only 17% of samples (mean ratio 1.035). PLANAR is already the smoother parameterisation -- for an axis-aligned room a wall perpendicular to a face has CONSTANT planar depth while radial curves as 1/cos. Reparameterising to radial would make the regression HARDER, not easier. Do not revive without new evidence."},
-    {"lineage": "training-optimization", "type": "tune", "priority": "high",
-     "idea": "Match --epochs to what the 1-hour budget actually fits (~24-26) so the cosine schedule anneals to zero inside the budget instead of being truncated mid-schedule. Observed on E0: best at epoch 14/26, then 12 epochs of overfitting (val loss 0.1871 -> 0.1925). Pair with weight decay / EMA."},
-    {"lineage": "training-optimization", "type": "tune", "idea": "Re-validate the June optimisation envelope under the fixed loss + planar target: bf16 AMP + bs32 + lr4e-4 + warmup-cosine + EMA0.995."},
-    {"lineage": "acoustic-representation", "type": "new", "idea": "Re-validate the June representation wins: multi-res STFT (fine-time echo delay) + interaural coherence (direct-vs-diffuse)."},
-    {"lineage": "inference-time-tta", "type": "new", "idea": "Re-validate eval-time L/R-flip TTA."},
-    {"lineage": "simplification", "type": "refine", "idea": "Drop the vestigial pix2pix encoder tail (24.44M->7.69M, provably equivalent) - re-apply early once baseline confirmed."}
+    {
+      "lineage": "raydpt-baseline",
+      "type": "new",
+      "idea": "E4: re-anchor RayDPT (train.py, 5ch log, flip-aug) under the planar target; this is the number the batvision grid is compared against. Must run before any RayDPT improvement."
+    },
+    {
+      "lineage": "output-resolution",
+      "type": "new",
+      "priority": "high",
+      "idea": "RayDPT decodes at 64x128 and bilinear-upsamples 4x to 256x512; batvision's U-Net decodes to full res. Add a 128x256 DPT scale (ray bank Q128 + se1 skip from e1) so the final upsample is only 2x.",
+      "why": "MEASURED (24 samples, 6 scenes): the planar target is PIECEWISE-CONSTANT -- a wall perpendicular to a cube face has constant planar depth, so the map is flat regions separated by SHARP steps at depth discontinuities. A 4x bilinear upsample smears exactly those steps, and d1 (a +-25% threshold metric) punishes blurred edges hard. Highest-value structural fix under the planar target. Costs VRAM -- screen before committing."
+    },
+    {
+      "lineage": "geometric-head",
+      "type": "new",
+      "status": "REFUTED-BEFORE-RUN",
+      "idea": "Predict the smooth radial field R and emit D = R * linf, linf = max(|dx|,|dy|,|dz|) as a fixed buffer, so the net never learns the cube-edge creases.",
+      "why_refuted": "The premise is false. Measured grad-energy over 24 samples / 6 scenes: planar 0.01618, radial 0.01677; radial is smoother in only 17% of samples (mean ratio 1.035). PLANAR is already the smoother parameterisation -- for an axis-aligned room a wall perpendicular to a face has CONSTANT planar depth while radial curves as 1/cos. Reparameterising to radial would make the regression HARDER, not easier. Do not revive without new evidence."
+    },
+    {
+      "lineage": "training-optimization",
+      "type": "tune",
+      "priority": "high",
+      "idea": "Match --epochs to what the 1-hour budget actually fits (~24-26) so the cosine schedule anneals to zero inside the budget instead of being truncated mid-schedule. Observed on E0: best at epoch 14/26, then 12 epochs of overfitting (val loss 0.1871 -> 0.1925). Pair with weight decay / EMA."
+    },
+    {
+      "lineage": "training-optimization",
+      "type": "tune",
+      "idea": "Re-validate the June optimisation envelope under the fixed loss + planar target: bf16 AMP + bs32 + lr4e-4 + warmup-cosine + EMA0.995."
+    },
+    {
+      "lineage": "acoustic-representation",
+      "type": "new",
+      "idea": "Re-validate the June representation wins: multi-res STFT (fine-time echo delay) + interaural coherence (direct-vs-diffuse)."
+    },
+    {
+      "lineage": "inference-time-tta",
+      "type": "new",
+      "idea": "Re-validate eval-time L/R-flip TTA."
+    },
+    {
+      "lineage": "simplification",
+      "type": "refine",
+      "idea": "Drop the vestigial pix2pix encoder tail (24.44M->7.69M, provably equivalent) - re-apply early once baseline confirmed."
+    }
   ]
 }

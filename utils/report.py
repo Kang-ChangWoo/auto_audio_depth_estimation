@@ -73,19 +73,25 @@ def _model_registry():
          os.path.join(ROOT, 'checkpoints', 'batvision_5ch_nolog', 'best_model.pth'),
          dict(use_log=False)),                               # [L, R, ILD, cosIPD, sinIPD]
         ('current (my model)', train,
-         os.path.join(ROOT, 'checkpoints', 'raydpt_5chflip', 'best_model.pth'),
+         os.path.join(ROOT, 'checkpoints', 'raydpt_e4_planar', 'best_model.pth'),
          dict()),                           # RayDPT, 5ch log on (adjust if cues change)
     ]
 
 
 def _args(**over):
-    """CLI-args namespace for run_base/train make_config (defaults = 5ch, log on)."""
+    """CLI-args namespace for run_base/train make_config (defaults = 5ch, log on, historical STFT).
+
+    Must carry every attribute make_config reads, including the editable acoustic
+    representation (stft_*). A checkpoint trained with a non-default window must be
+    rendered with that same window, so pass stft_* through `over` for such models.
+    """
     from types import SimpleNamespace
     a = dict(dataset_dir='/home/rvi-lab/workspace/sound-spaces/dataset_simplified',
              mode='test', batch_size=4, epochs=1, lr=3e-4, optimizer='AdamW',
              num_workers=0, checkpoint=None, flip_aug=True, experiment_name='x',
              eval_on='val', vis_every=0, use_log=True, feat_L=True, feat_R=True,
              feat_ILD=True, feat_cosIPD=True, feat_sinIPD=True,
+             stft_nfft=512, stft_hop=160, stft_win=400,
              raydpt_lite=False, max_iters=0, max_val_batches=0)
     a.update(over)
     return SimpleNamespace(**a)

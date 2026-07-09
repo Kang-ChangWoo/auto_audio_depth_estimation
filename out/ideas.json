@@ -3,7 +3,7 @@
   "ideas": [
     {
       "id": "I1",
-      "status": "backlog",
+      "status": "probing",
       "origin": "physical property of the sensing modality (measured, not searched)",
       "target_bottleneck": "time-of-flight quantisation in the input representation",
       "mechanism_family": "acoustic-representation / temporal resolution",
@@ -15,11 +15,11 @@
       "main_falsification_condition": "Neither arm improves RMSE -> temporal resolution is not the binding constraint, DROP. If BOTH arms improve equally, the gain is extra sampling density / capacity, not resolution, and the mechanism story is wrong even if the score moves.",
       "minimal_falsifiable_test": "Two arms on run_base.py (cheapest parent), control = E2 (win 400, hop 160, smear 1.417m). A: win 400, hop 40 -> T=71, smear UNCHANGED 1.417m (density only). B: win 64, hop 16 -> T=177, smear 0.227m (true resolution). The design DISSOCIATES sampling density from resolution: only B should improve RMSE if I1 is right.",
       "prior_weakened_by": "A training-free nearest-neighbour retrieval probe (400 train / 120 val) found hop=40 no better than hop=160 (composite 3.048 vs 3.016). But that instrument is INVALID -- its NN retrieval (rmse 2.20) is worse than the trivial mean-training-depth predictor (rmse 1.64), so it cannot detect anything. It is recorded as a failed instrument, not as evidence against I1. Separately, a quantisation argument cuts against the ORIGINAL framing: a 0.567m quantum implies ~0.16m RMSE if quantisation were binding, while the achieved RMSE is 1.32m. That arithmetic is what exposed the window/hop confusion.",
-      "budget_risk": "low. STFT cost only; the feature is interpolated to (256,512) regardless, so model FLOPs/VRAM/in_ch are unchanged (verified). Finer hop means more STFT frames -> slightly slower dataloading, which spends wall-clock TIME_BUDGET. Report epochs_ran.",
-      "evidence_required": "monotone RMSE improvement across two hop halvings, on a parent that is not the current champion.",
-      "unblocked_by": "The STFT window is now editable research logic (--stft-hop), read from cfg.dataset. Defaults verified bit-identical to the historical representation; changing hop leaves cut/depth/in_ch/shape untouched.",
-      "strengthened_by": "(a) I2's oracle diagnostic shows the decoder's 64x128 output resolution imposes a ceiling of composite 0.2399 while the model sits at 1.8646 -- the bottleneck is NOT downstream of the decoder, so it is upstream: information. (b) D3 shows the interaural cues buy d1 (azimuth) but not RMSE (range), leaving range accuracy unexplained -- and range is precisely what time-of-flight resolution sets.",
-      "next_action": "READY. Probe `run_base.py --stft-hop 40` vs the hop-160 control once the batvision grid frees the GPU."
+      "budget_risk": "low-medium. Model FLOPs/VRAM/in_ch unchanged (feature is resized to (256,512) regardless). But win=64,hop=16 yields T=177 frames -> more STFT work per sample, so dataloading is slower and fewer epochs fit the wall-clock budget. Report epochs_ran; per D2 epoch count is a confound.",
+      "evidence_required": "Arm B (win 64) must improve RMSE while arm A (hop only) does not. A d1-only gain does NOT count (per D3, d1 is the cue-driven metric).",
+      "unblocked_by": "The STFT analysis window is now editable research logic (--stft-nfft/--stft-hop/--stft-win) read from cfg.dataset. Defaults verified bit-identical; changing them leaves cut/depth/in_ch/shape untouched.",
+      "strengthened_by": "(a) I2's oracle diagnostic: the decoder's 64x128 output resolution imposes a ceiling of composite 0.2399 while the model sits at 1.8567 -- the bottleneck is NOT downstream of the decoder, so it is upstream: information. (b) The S0 2x2 dissociation: interaural cues buy d1 (angle) and log1p buys rmse (range), yet the best rmse is still 1.3088 m -- and the analysis window smears an echo over 1.417 m of one-way depth, essentially the same size. Range error and window smear coincide.",
+      "next_action": "RUNNING in the queue after E4: arm A = batvision_5ch_win400_hop40, arm B = batvision_5ch_win64_hop16. Control = E2."
     },
     {
       "id": "I2",
@@ -61,24 +61,42 @@
       "why_dropped": "The premise is measurably false. Grad-energy over 24 samples / 6 scenes: planar 0.01618, radial 0.01677; radial is smoother in only 17% of samples (mean ratio 1.035). PLANAR is already the smoother parameterisation -- for an axis-aligned room a wall perpendicular to a cube face has CONSTANT planar depth, while radial curves as 1/cos. Reparameterising to radial would make the regression HARDER.",
       "scope_of_negative_evidence": "Refutes THIS reparameterisation under the planar target on SoundSpaces rooms (mostly axis-aligned). It says nothing about geometry-conditioned heads in general, and nothing about scenes with non-axis-aligned walls. Do not generalise it into 'geometric conditioning does not help'.",
       "next_action": "none. Revive only with new evidence (e.g. a non-axis-aligned benchmark)."
+    },
+    {
+      "id": "I5",
+      "status": "backlog",
+      "origin": "reading the code against the qualitative figure (predictions show quasi-periodic azimuthal banding)",
+      "target_bottleneck": "RayDPT's DPT skip connections impose a FALSE spatial correspondence between the spectrogram's axes and the ERP's axes",
+      "mechanism_family": "ray conditioning / encoder-decoder correspondence",
+      "causal_distance": "mid",
+      "general_hypothesis": "A skip connection asserts that a pixel at (i,j) in the encoder feature means the same thing as the pixel at (i,j) in the output. That assertion is only valid when input and output share a coordinate system. Here they do not: the input's height is FREQUENCY and its width is TIME, while the output's height is ELEVATION and its width is AZIMUTH. Adding one to the other by pixel index is a category error, and it may be actively injecting structure that has no geometric meaning.",
+      "detailed_hypothesis": "_features() produces (C, F=257, T=18) and interpolates it to (C,256,512): height <- frequency, width <- time (nearest-upsampled 28.4x, so the width axis is a staircase of 18 constant blocks). RayDPT then does `m16 = F16 + se4(e4)` and `up(m16) + F32 + se3(e3)` -- adding encoder features to the ray-query grid at matching pixel coordinates. This ties azimuth to echo arrival TIME and elevation to FREQUENCY. The ray-conditioned cross-attention (kv_e4/kv_e3) does NOT have this problem: it is global, so it only sees an unordered token set and can learn any mapping. The DPT skips are therefore the one place where a false geometry is hard-coded. Predicted signature: the predicted depth maps should show azimuthal banding with a period tied to the 18-block staircase (~28.4 px at full width, ~7.1 px at e2's 128-wide grid), which is visible in out/display/qualitative.png.",
+      "expected_metric_effect": "Removing or re-routing the spatial skips should reduce azimuthal banding. d1 (angular assignment) should improve; RMSE may be unchanged. If banding persists without the skips, the false correspondence was not its cause.",
+      "main_falsification_condition": "An FFT of the predicted depth along azimuth shows NO peak at the 18-block period, i.e. the banding is not tied to the staircase -- then the story is wrong even if ablating skips helps for other reasons.",
+      "minimal_falsifiable_test": "DIAGNOSTIC FIRST, zero GPU: take the existing batvision predictions and FFT them along the azimuth axis; check for a spectral peak at period ~28.4 px (or its harmonics) that is absent in the GT's azimuthal spectrum. Only if the peak exists is the architecture change worth an hour. NOTE the diagnostic works on batvision too -- it also consumes the same (freq,time) image -- so it tests the REPRESENTATION's staircase, not RayDPT's skips. To isolate the skips, a second arm ablating se2/se3/se4 on RayDPT is needed.",
+      "budget_risk": "low for the diagnostic (no GPU). Medium for the ablation: removing skips changes RayDPT's parameter count and may need its own re-tune.",
+      "evidence_required": "an azimuthal spectral peak at the staircase period in predictions but not in GT; then a RayDPT skip-ablation that reduces it.",
+      "next_action": "run the zero-GPU azimuthal-FFT diagnostic on the E3 batvision predictions while E4 trains."
     }
   ],
   "discrepancies": [
     {
       "id": "D1",
-      "status": "open",
+      "status": "resolved",
       "observation": "log1p magnitude compression is a no-op at 2ch: E1 (log) composite 1.8784 vs E0 (nolog) 1.8854, delta 0.0070 < sigma 0.008. The two runs SPLIT the underlying metrics -- log wins rmse (1.3116 vs 1.3186) and d1 (0.5808 vs 0.5785), nolog wins abs_rel (0.4143 vs 0.4211).",
       "why_it_matters": "The pre-registered detailed hypothesis predicted log would help MORE at 2ch than at 5ch, because in the 5ch stack ILD already supplies a log-domain ratio. At 2ch it does not help at all, so that half of the prediction is unsupported. A metric split with a sub-sigma delta is the signature of noise, not of a mechanism.",
       "diagnostic_value": "If E2/E3 show log ALSO does nothing at 5ch, then dynamic-range compression is simply irrelevant to this task -- which would point at time-of-flight (I1), not level statistics, as the operative cue. That is a cheap, strong inference from data already being collected.",
-      "next_action": "E2 (5ch nolog) is in at composite 1.8646. Awaiting E3 (5ch log) to close this."
+      "next_action": "none. A third draw would crown the log effect as an independent finding; low priority since it is already used in the reference champion.",
+      "resolution": "Closed by E3. log1p helps by +0.0070 (2ch) and +0.0078 (5ch): each draw at/below sigma~0.008, but consistent in SIGN, MAGNITUDE and METRIC DIRECTION across two independent channel counts, and the metric it moves is RMSE (-0.0070/-0.0119) -- i.e. RANGE, exactly what the dynamic-range mechanism predicts. So log is a real small effect, NOT noise. What IS refuted is the predicted interaction: log did not help more at 2ch than at 5ch (0.0070 vs 0.0078), so ILD's log-domain ratio does not make magnitude compression redundant. The effects are additive."
     },
     {
       "id": "D3",
-      "status": "open",
+      "status": "resolved",
       "observation": "E2 (5ch nolog, composite 1.8646) beats both 2ch cells (1.8854, 1.8784) by 0.014-0.021 -- above the sigma~0.008 floor -- but the win comes ENTIRELY from d1 (0.5938 vs 0.5808/0.5785). Its RMSE is actually WORSE than E1's (1.3207 vs 1.3116) and its ABS_REL is the worst of the three (0.4460 vs 0.4143/0.4211).",
       "why_it_matters": "The composite weights d1 at 1/0.46, so a d1 gain of 0.013 alone buys 0.028 of composite -- enough to swamp the RMSE regression. So 'derived interaural cues help' is true ONLY in the d1 sense: the cues make more pixels land within +-25% of truth, while the typical squared error gets slightly larger. That is the profile of a mechanism that improves DIRECTIONAL/angular assignment (which is exactly what ILD and IPD encode: azimuth) without improving absolute RANGE. It is not evidence that the cues help distance estimation.",
       "diagnostic_value": "Sharpens I1. If the interaural cues fix azimuth but leave range untouched, then range accuracy is limited by something else -- and time-of-flight resolution (I1) is the physically obvious candidate. It also warns that a composite win can be a single-metric win: never report 'E2 is better' without saying better AT WHAT.",
-      "next_action": "check whether E3 reproduces the same d1-only profile. Then, when the I1 hop probe lands, verify its gain is in RMSE (range) rather than d1 (angle) -- that would make I1 and the cue stack COMPLEMENTARY, and a combine study justified."
+      "next_action": "This is now the decision rule for I1: a temporal-resolution gain MUST appear in RMSE (range), not d1. If it appears in d1 it is not acting through time-of-flight. And since log already buys range by making faint far echoes readable, I1's window-smear mechanism is a DIFFERENT range constraint -- if both hold, a combine study is justified.",
+      "resolution": "Confirmed and generalised by the full 2x2. The dissociation is clean and reproduces at both log settings: interaural cues move d1 (+0.0153/+0.0141, angle) with rmse flat (+0.0021/-0.0028); log1p moves rmse (-0.0070/-0.0119, range) with d1 flat (+0.0023/+0.0011). Cues fix AZIMUTH, compression fixes RANGE. They fix different failure modes, which is why the effects are additive rather than redundant."
     },
     {
       "id": "D2",
@@ -87,6 +105,14 @@
       "why_it_matters": "The overfitting turn and the memory envelope are properties of the architecture + schedule, NOT of the input representation. This makes epoch count a CONFOUND for every comparison run under the fixed wall-clock budget: any change that slows an epoch silently reduces the epochs that fit, and is penalised for reasons unrelated to its mechanism.",
       "diagnostic_value": "Any future structural change that costs wall-clock (e.g. I2's extra attention scale) must report epochs-fit alongside the composite, or its result is uninterpretable.",
       "next_action": "fix via I3 (match --epochs to the budget); until then, always log best_epoch and epochs_ran"
+    },
+    {
+      "id": "D4",
+      "status": "open",
+      "observation": "Predicted depth maps in out/display/qualitative.png are low-frequency blobs showing quasi-periodic banding along azimuth, while the GT is sharp and piecewise-constant. The 5ch predictions carry visibly more azimuthal structure than the 2ch ones.",
+      "why_it_matters": "The input's width axis is STFT TIME with only 18 distinct frames, nearest-upsampled 28.4x into 512 columns -- a staircase. If the predicted banding period matches that staircase, the model is reproducing an artefact of the interpolation rather than scene geometry, and the nearest-neighbour upsample in _features() (editable research logic) is itself a defect. The extra 5ch structure is consistent with S0's finding that interaural cues buy angular assignment.",
+      "diagnostic_value": "Distinguishes two very different stories: (a) the model is under-fitting and simply produces blurry output; (b) the representation injects a spatial artefact the model faithfully reproduces. These call for opposite interventions.",
+      "next_action": "azimuthal FFT of predictions vs GT (zero GPU). Feeds I5."
     }
   ]
 }
