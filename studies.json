@@ -1,6 +1,6 @@
 {
   "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E157",
+  "next_exp_id": "E158",
   "global_champion_commit": "36c6538",
   "global_champion_note": "NEW CHAMPION (S23): 12ch = multi-res STFT (512+128) + interaural coherence at 512 AND 128 + TTA, 3-draw mean 2.0300. Progression 2.099->2.082(TTA)->2.064(multi-res)->2.042(+coh512)->2.030(+coh128). Current train.py at 36c6538.",
   "concluded_studies": [
@@ -120,19 +120,25 @@
     "general_hypothesis": "All hand-designed representation cues are mined; but a conv encoder cannot compute cross-channel PRODUCTS (why hand-designed coherence helped) NOR see the native echo-timing resolution (the fixed pipeline nearest-upsamples 18 STFT frames to 512, blurring frame-to-frame structure). A LEARNED complex-STFT front-end operating on the raw STFT at NATIVE (F,T) resolution could extract time-frequency features the fixed ERP-reshaped pipeline cannot, AUGMENTING the proven 12ch champion (which keeps the non-conv-derivable coherence).",
     "detailed_hypothesis": "A small conv front-end processes the raw 5ch native STFT (5,257,18) -> 8 learned feature maps, bilinearly mapped to the ERP grid and concatenated with the 12ch champion features (encoder sees 20ch). PROPOSAL-02 gated seam: prepare.EMIT_RAW passes native raw STFT; front-end lives in the model (gets gradients).",
     "experiment_note": "E155: prepare.EMIT_RAW=True + FEATURE_FN=multires_coh_feat (12ch) + model.raw_frontend=True, raw_fe_ch=8. Champion byte-identical when EMIT_RAW=False.",
-    "hpo_stage": "refine",
-    "hpo_runs_used": 1,
+    "hpo_stage": "hpo-3",
+    "hpo_runs_used": 2,
     "runs": [
       {
         "exp_id": "E155",
         "status": "done",
         "comp": 2.06,
-        "verdict": "random-init front-end dilutes input -> +0.030 worse, 8 epochs"
+        "verdict": "random-init dilutes"
       },
       {
         "exp_id": "E156",
+        "status": "done",
+        "comp": 2.0428,
+        "verdict": "zero-init ~= champion-minus-epoch-penalty; features add ~nothing"
+      },
+      {
+        "exp_id": "E157",
         "status": "running",
-        "config": "zero-init front-end (starts==champion, additive)"
+        "config": "deeper+wider zero-init front-end raw_fe=16 (66k params)"
       }
     ],
     "open_risks": [
