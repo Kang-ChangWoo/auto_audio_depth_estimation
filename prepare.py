@@ -161,6 +161,14 @@ _NFFT, _HOP, _WIN = 512, 160, 400
 # representation), so no historical result is invalidated.
 FEATURE_FN = None
 
+# PROPOSAL-02 seam (operator-approved): a LEARNED complex-STFT front-end lives in the MODEL (train.py),
+# so it needs the raw STFT at its NATIVE (F, T) resolution (the fixed pipeline nearest-upsamples time
+# 15->512, blurring frame-to-frame echo structure a learned front-end could exploit). When EMIT_RAW is
+# True the item dict gains a "raw" tensor = 5ch [logL,logR,ILD,cosIPD,sinIPD] at native (F, T) via
+# _raw5_native (same math as _specN, minus the ERP interpolation). Default False -> "raw" is absent and
+# every item is BYTE-IDENTICAL to before. The FIXED split/target/metric/waveform are untouched.
+EMIT_RAW = False
+
 
 class SoundSpacesDataset(Dataset):
     """Binaural echoes -> ERP depth, at cfg.dataset.images_size.
@@ -243,6 +251,18 @@ class SoundSpacesDataset(Dataset):
         return F.interpolate(feat.unsqueeze(0), (self.H, self.W),
                              mode='nearest').squeeze(0).float()
 
+    def _raw5_native(self, wav):
+        """PROPOSAL-02: the 5ch [logL,logR,ILD,cosIPD,sinIPD] feature at NATIVE STFT (F, T) resolution
+        (identical math to _specN, WITHOUT the ERP interpolate). Fed to a learned front-end in the model.
+        L/R structure matches the 5ch so swap_audio_lr mirrors it correctly."""
+        st = torch.stft(wav, _NFFT, _HOP, _WIN, self._win, return_complex=True)  # (2,F,T')
+        L, R = st[0], st[1]
+        eps = 1e-6
+        lmag = torch.log1p(L.abs()); rmag = torch.log1p(R.abs())
+        ild = torch.log(L.abs() + eps) - torch.log(R.abs() + eps)
+        ipd = torch.angle(L * torch.conj(R))
+        return torch.stack([lmag, rmag, ild, torch.cos(ipd), torch.sin(ipd)], 0).float()  # (5,F,T)
+
     def _depth(self, scene, idx):
         d = np.nan_to_num(np.load(os.path.join(
             self.root_dir, scene, f'{self.depth_type}_depth',
@@ -266,8 +286,11 @@ class SoundSpacesDataset(Dataset):
         except Exception as e:
             print(f"[skip {scene}/{idx}] {e}", flush=True)
             return self[(i + 1) % len(self)]
-        return {"spec": spec.contiguous(), "depth": depth.contiguous(),
-                "mask": mask.contiguous(), "key": f"{scene}/{idx}"}
+        out = {"spec": spec.contiguous(), "depth": depth.contiguous(),
+               "mask": mask.contiguous(), "key": f"{scene}/{idx}"}
+        if EMIT_RAW:                                    # PROPOSAL-02: native raw STFT for a learned front-end
+            out["raw"] = self._raw5_native(wav).contiguous()
+        return out
 
 
 def collate(batch):

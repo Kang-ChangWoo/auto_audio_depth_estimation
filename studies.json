@@ -1,9 +1,16 @@
 {
   "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E155",
+  "next_exp_id": "E156",
   "global_champion_commit": "36c6538",
   "global_champion_note": "NEW CHAMPION (S23): 12ch = multi-res STFT (512+128) + interaural coherence at 512 AND 128 + TTA, 3-draw mean 2.0300. Progression 2.099->2.082(TTA)->2.064(multi-res)->2.042(+coh512)->2.030(+coh128). Current train.py at 36c6538.",
   "concluded_studies": [
+    {
+      "study_id": "S28",
+      "lineage": "acoustic-representation-v2",
+      "conclusion": "INTERRUPTED",
+      "best_exp_id": "E146",
+      "note": "Phase-coherence probe (E154) interrupted at epoch1, superseded by operator-approved PROPOSAL-02."
+    },
     {
       "study_id": "S27",
       "lineage": "acoustic-representation-v2",
@@ -105,28 +112,28 @@
   ],
   "strategic_note": "PROJECT AT A STRONG, WELL-CHARACTERIZED FINAL RESULT. Champion = 12ch (multi-res STFT 512+128 + interaural coherence 512+128) + TTA, commit 36c6538, 3-draw mean 2.030. Progression 2.099->2.082(TTA)->2.064(multi-res)->2.042(+coh512)->2.030(+coh128); vs baseline ABS_REL -26% / RMSE ~-9% / d1 +7pts. BOTH major axes now mapped: architecture exhausted (E0-E126), acoustic representation mined (S19/S22/S23 wins; S18/S21/S24/S25/S26 all plateau/fail). Extension space (more scales/smoothing) and genuinely-new-cue space (onset) both saturated. Loop continues with FINAL champion confirmation draws to tighten the reported mean; a materially new gain would likely need new infra/data (learned STFT front-end in the model, a different backbone, or more scenes) beyond the current train.py+FEATURE_FN research surface.",
   "active_study": {
-    "study_id": "S28",
-    "lineage": "acoustic-representation-v2",
-    "parent": "S23 (12ch champion)",
+    "study_id": "S29",
+    "lineage": "learned-frontend",
+    "parent": "S23 (12ch champion) + PROPOSAL-02",
     "type": "new",
     "status": "running",
-    "general_hypothesis": "The winning magnitude-squared coherence weights phase stability by amplitude (ignoring noisy low-energy bins); interaural PHASE coherence (unweighted resultant length of exp(i*IPD)) measures phase stability independent of amplitude, which MIGHT expose direct/diffuse structure in bins the amplitude-weighted version discounts - or might just add low-SNR noise. Final genuine representation probe (low-EV but a real, distinct hypothesis, not churn).",
-    "detailed_hypothesis": "Add unweighted interaural phase coherence at n_fft=512 as an L/R-symmetric channel -> 13ch.",
-    "experiment_note": "E154: multires_coh_pcoh_feat = 12ch + _phasecoh_at(512), in_ch=13.",
+    "general_hypothesis": "All hand-designed representation cues are mined; but a conv encoder cannot compute cross-channel PRODUCTS (why hand-designed coherence helped) NOR see the native echo-timing resolution (the fixed pipeline nearest-upsamples 18 STFT frames to 512, blurring frame-to-frame structure). A LEARNED complex-STFT front-end operating on the raw STFT at NATIVE (F,T) resolution could extract time-frequency features the fixed ERP-reshaped pipeline cannot, AUGMENTING the proven 12ch champion (which keeps the non-conv-derivable coherence).",
+    "detailed_hypothesis": "A small conv front-end processes the raw 5ch native STFT (5,257,18) -> 8 learned feature maps, bilinearly mapped to the ERP grid and concatenated with the 12ch champion features (encoder sees 20ch). PROPOSAL-02 gated seam: prepare.EMIT_RAW passes native raw STFT; front-end lives in the model (gets gradients).",
+    "experiment_note": "E155: prepare.EMIT_RAW=True + FEATURE_FN=multires_coh_feat (12ch) + model.raw_frontend=True, raw_fe_ch=8. Champion byte-identical when EMIT_RAW=False.",
     "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
     "runs": [
       {
-        "exp_id": "E154",
+        "exp_id": "E155",
         "status": "running",
-        "config": "+phase-coherence(512) -> 13ch"
+        "config": "12ch + learned front-end (raw_fe=8) -> 20ch encoder input"
       }
     ],
     "open_risks": [
-      "Likely redundant with magnitude coherence (or noise-dominated in low-amp bins) + 13ch epoch penalty. Expect neutral/worse.",
-      "If it fails, that is the 4th representation fail -> representation axis CONCLUSIVELY saturated; stop probing cheap cues; recommend a bigger GATED swing (learned complex-STFT front-end in the model, needs a prepare.py change to pass raw STFT = PROPOSAL-02) or conclude at 2.030."
+      "The front-end adds params + an extra native STFT in the dataloader -> may cost an anneal epoch (13ch cues went to 8 epochs). Screen honestly vs champion 2.030.",
+      "A tiny conv front-end may not learn much in 9 epochs; if neutral, try raw_fe=16 or a deeper front-end (HPO)."
     ],
-    "decision_rule": "Screen vs champion 2.030. Clearly better (<2.024)+replicate -> new champion. Else -> keep 12ch champion 36c6538, revert; representation conclusively saturated -> next real gain needs new infra (PROPOSAL-02) or the project concludes at its strong final result."
+    "decision_rule": "Screen vs champion 2.030. Clearly better (<2.024)+replicate -> new champion (PROPOSAL-02 works!). Within noise -> front-end capacity too small / native res not helping at 8 epochs -> HPO raw_fe (16), or conclude the learned front-end is neutral. Worse/epoch-busted -> revert (git checkout 36c6538 -- train.py, EMIT_RAW=False)."
   },
   "backlog": [
     {
