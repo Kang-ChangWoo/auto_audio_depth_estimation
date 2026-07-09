@@ -41,19 +41,25 @@ running best highlighted):
 
 ## Network flowchart
 
-Shared audio front-end, then two decoder heads — the BatVision reference (plain U-Net) and
-my model RayDPT (ray-conditioned):
+Two separate top-down networks — **current** (RayDPT, my model) on top, the **BatVision reference**
+below:
 
 ```mermaid
 flowchart TD
-    A["Binaural echo waveform (2ch)"] --> B["STFT"]
-    B --> C["Named cue stack (in_ch)<br/>logL/L · logR/R · ILD · cosIPD · sinIPD"]
-    C --> D["UNet8 encoder<br/>256x512 → 1x2 · skips e2/e3/e4"]
-    D --> E{"decoder"}
-    E -->|reference| F["BatVision U-Net<br/>ConvTranspose decoder + skips"]
-    E -->|my model| G["RayBank ray queries ×<br/>audio cross-attention (scales 16/32/64)"]
-    G --> H["DPT fusion +<br/>local spherical window attention"]
-    F --> I["Sigmoid head"]
-    H --> I
-    I --> J["ERP radial depth<br/>256x512, [0,1] × max_depth"]
+    subgraph MY["current — RayDPT (my model)"]
+        direction TB
+        A1["Binaural echo waveform (2ch)"] --> A2["STFT → named cue stack (in_ch)<br/>logL/L · logR/R · ILD · cosIPD · sinIPD"]
+        A2 --> A3["UNet8 encoder<br/>256x512 → 1x2 · skips e2/e3/e4"]
+        A3 --> A4["RayBank ray queries ×<br/>audio cross-attention (scales 16/32/64)"]
+        A4 --> A5["DPT fusion +<br/>local spherical window attention"]
+        A5 --> A6["Sigmoid head → ERP radial depth<br/>256x512, [0,1] × max_depth"]
+    end
+    subgraph REF["batvision (reference)"]
+        direction TB
+        B1["Binaural echo waveform (2ch)"] --> B2["STFT → magnitude cue stack (in_ch)"]
+        B2 --> B3["UNet8 encoder<br/>256x512 → 1x2 · skips"]
+        B3 --> B4["ConvTranspose decoder + skips"]
+        B4 --> B5["Sigmoid head → ERP radial depth"]
+    end
+    MY ~~~ REF
 ```
