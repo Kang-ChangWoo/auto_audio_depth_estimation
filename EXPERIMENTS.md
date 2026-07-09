@@ -159,18 +159,52 @@ Metric: `compute_errors` in `prepare.py` — **ABS_REL, RMSE, d1 (δ<1.25)**. Li
 | E129 | 3rd TTA confirmation draw — tighten the new champion's mean | 0.3430 | 1.4698 | 0.5808 | confirm (comp 2.0872; TTA 3-draw {2.0720, 2.0782, 2.0872} mean **2.079**±0.008, ~2.6σ below old champion 2.099 — win robust) |
 | E130 | soft-argmax / bin-expectation depth head (N=64 fixed bins, softmax → expectation) instead of direct sigmoid regression — radical decode paradigm (AdaBins-style), keeps ray-conditioning | running | | | — |
 
-## Current champion & summary (~140 experiments)
+## Project summary & champion (~152 experiments, 26 studies)
 
-**CURRENT GLOBAL CHAMPION — S19 multi-resolution STFT (commit `828b9a3`, 3-draw mean comp `2.064`):**
-0.327 / 1.475 / 0.588. A 10ch representation = baseline 5ch (n_fft=512, fine frequency) + short-window
-5ch (n_fft=128, fine time) via the PROPOSAL-01 `prepare.FEATURE_FN` seam, on top of the TTA + fef2779
-architecture. Fine-time-resolution echo-delay features add real depth signal (distance ≈ echo arrival
-time) → the **first gain beyond the architecture ceiling**, found on the acoustic-representation axis
-after the whole `train.py` architecture space was exhausted. Confirmed over 3 draws (E137/E138/E139),
-all below the prior champion's entire distribution. Beats baseline: **ABS_REL −26%, RMSE −7.3%, d1 +6.4 pts**.
+**CURRENT GLOBAL CHAMPION — S23, 12-channel representation (commit `36c6538`, 3-draw mean comp `2.030`):**
+0.327 / 1.452 / 0.597 (abs_rel / rmse / d1). Built purely by enriching the acoustic **representation**
+(via the operator-approved PROPOSAL-01 `prepare.FEATURE_FN` seam), on top of the TTA + fef2779/E116
+architecture. The 12 channels:
+`[ n_fft512 5ch (fine frequency) | n_fft128 5ch (fine time / echo delay) | interaural coherence@512 | interaural coherence@128 ]`.
 
-Prior champion (now `inference-time-tta` lineage champion): **E127/E128 TTA 0.340 / 1.464 / 0.582**
-(comp ~2.082, commit `494b5e2`) — eval-time L/R-flip test-time augmentation, still used under the multi-res rep. Both TTA draws (2.0720, 2.0782) sit BELOW the previous champion's entire draw range (2.087–2.114) → a real, replicated ~0.024 win. Noise σ≈0.008–0.014; only Δ clearing it **AND replicated by ≥2 reruns** is real (E121/E125 lesson: 2 lucky low draws are not a win — need ≥3 for sub-0.015 candidates).
+### The two research phases
+1. **Architecture (E0–E126, `train.py`):** exhaustively mapped — optimisation envelope, coarse/geometry
+   ray attention, decoder fusion & gated skips, depth objective, capacity/resolution, decode paradigm,
+   register tokens, equivariance, and inference ensembling. Ended at the settled TTA champion (2.082).
+   Several exploratory studies FAILed cleanly (geometry-cross-attn S10, bins S13, equivariance S14,
+   conf-TTA S16), confirming the architecture was at its ceiling.
+2. **Representation (E136+, PROPOSAL-01):** once the architecture was ceilinged, the audio representation
+   — fixed inside `prepare.py` — was the last physically-motivated axis. Unblocking it re-opened the
+   frontier and produced the biggest gains.
+
+### Champion progression (every crown gated by 2–3 confirming draws)
+| stage | study | mechanism | composite |
+|---|---|---|---|
+| baseline era | — | single STFT, 5ch | ~2.099 |
+| TTA | S12 | eval-time L/R-flip ensembling (exploit the one exact symmetry) | 2.082 |
+| multi-res STFT | S19 | fine-**time** resolution → echo delay = distance | 2.064 |
+| + coherence@512 | S22 | interaural **coherence** = direct-vs-diffuse cue | 2.042 |
+| + coherence@128 | S23 | coherence at both scales | **2.030** |
+
+**Net vs baseline:** ABS_REL −26%, RMSE ~−9%, d1 +7 pts (0.524→0.597).
+
+### Representation extension space now mined (plateaus)
+Fine-block n_fft is time-driven (S20: 128 optimal). A 3rd resolution scale (S21), coherence smoothing
+(S24), and a 3rd coherence scale (S25) are all redundant/worse — the two proven cues saturate at two
+scales each. S26 (onset/direct-arrival) is the current genuinely-new-cue probe; if it too plateaus the
+axis is at its ceiling and 2.030 stands as the final method.
+
+### Key lessons
+- **Judge by the honest composite** (RMSE + d1 dominant; ABS_REL is gameable). Every representation win
+  improved RMSE/d1, not just ABS_REL.
+- **Never crown a candidate on < 2–3 confirming draws** (the S10/E121–E125 episode: crowned on 2 lucky
+  draws, demoted by the 3rd). All champion changes here were out-of-distribution over ≥3 draws.
+- **Simpler wins ties** (kept 5ch over 3-scale, smooth=3, single-coherence-scale where extensions tied).
+- The gains came from **adding nonlinear features the conv encoder cannot derive** (coherence), not from
+  more capacity or more of the same resolution.
+
+Lineage sub-champions: 11ch coh@512 (`93ef41b`, 2.042); multi-res-10ch (`828b9a3`, 2.064); TTA-5ch
+(`494b5e2`, 2.082); fef2779/E116 architecture base. Both TTA draws (2.0720, 2.0782) sit BELOW the previous champion's entire draw range (2.087–2.114) → a real, replicated ~0.024 win. Noise σ≈0.008–0.014; only Δ clearing it **AND replicated by ≥2 reruns** is real (E121/E125 lesson: 2 lucky low draws are not a win — need ≥3 for sub-0.015 candidates).
 
 **The two standing wins on top of the long-optimized architecture:**
 1. **E116 — drop the vestigial pix2pix encoder tail** (24.47→7.69M params, −69%, provably output-equivalent). Pure simplification.

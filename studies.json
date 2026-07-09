@@ -1,9 +1,16 @@
 {
   "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E152",
+  "next_exp_id": "E153",
   "global_champion_commit": "36c6538",
   "global_champion_note": "NEW CHAMPION (S23): 12ch = multi-res STFT (512+128) + interaural coherence at 512 AND 128 + TTA, 3-draw mean 2.0300. Progression 2.099->2.082(TTA)->2.064(multi-res)->2.042(+coh512)->2.030(+coh128). Current train.py at 36c6538.",
   "concluded_studies": [
+    {
+      "study_id": "S25",
+      "lineage": "acoustic-representation-v2",
+      "conclusion": "FAIL",
+      "best_exp_id": "E146",
+      "note": "3rd coherence scale n_fft=1024 (13ch, E151=2.0603) is +0.030 worse - the 1024 window over the ~59ms cut gives ~3-4 frames -> degenerate coherence. Coherence saturated at 2 scales. 2nd plateau. Keep 12ch champion 36c6538."
+    },
     {
       "study_id": "S24",
       "lineage": "acoustic-representation-v2",
@@ -84,28 +91,28 @@
   ],
   "strategic_note": "BREAKTHROUGH on the acoustic-representation axis (PROPOSAL-01, operator-approved & implemented). After the whole train.py architecture space was exhausted (S10/S13/S14/S16 FAILed; TTA 5ch settled at 2.082), the representation held the real signal: multi-resolution STFT (S19) is the NEW CHAMPION at 2.064 (commit 828b9a3). Now mining this productive axis: S20 tunes the fine-block resolution (E140 n_fft=64 tied 128); next explore a 3rd resolution scale / cross-channel coherence / per-band echo processing. The prepare.FEATURE_FN seam is the live research surface.",
   "active_study": {
-    "study_id": "S25",
+    "study_id": "S26",
     "lineage": "acoustic-representation-v2",
-    "parent": "S23 (12ch coherence champion)",
+    "parent": "S23 (12ch champion)",
     "type": "new",
     "status": "running",
-    "general_hypothesis": "Coherence is scale-dependent and won at 512 (coarse) AND 128 (fine); the diffuse reverberant field's coherence structure may be best captured at an even COARSER (longer-window) scale, so a 3rd coherence at n_fft=1024 could add complementary late-field direct-vs-diffuse information. (Coherence is a nonlinear cross/auto-spectrum ratio the conv encoder cannot derive from the mag/phase channels - unlike temporal-derivative cues - which is why it keeps helping.)",
-    "detailed_hypothesis": "Append a 3rd interaural coherence channel at n_fft=1024 to the 12ch champion -> 13ch.",
-    "experiment_note": "E151: multires_coh_feat appends _coherence_at(wav,1024,256,1024) as a 3rd trailing symmetric channel; in_ch=13.",
+    "general_hypothesis": "The two winning cues target time-freq RESOLUTION (multi-res) and DIRECT-vs-DIFFUSE ratio (coherence); a third, distinct physical cue is the ABSOLUTE ARRIVAL TIME of the direct sound, which sets distance directly (d=c*t/2). The fixed STFT carries timing implicitly (time->azimuth after a coarse 15->512 nearest upsample that blurs frame-to-frame structure); an EXPLICIT onset/transient channel computed at native frame resolution may expose direct-arrival timing the conv encoder cannot recover from the upsampled magnitude.",
+    "detailed_hypothesis": "Add an onset-strength channel = ReLU(logmag - local-temporal-baseline) on summed L+R magnitude (n_fft=512), highlighting the impulsive direct sound / early reflections vs the slowly-varying reverberant tail. L/R-symmetric.",
+    "experiment_note": "E152: multires_coh_onset_feat = 12ch champion + _onset_at(512) -> 13ch, in_ch=13.",
     "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
     "runs": [
       {
-        "exp_id": "E151",
+        "exp_id": "E152",
         "status": "running",
-        "config": "add coherence(1024) -> 13ch"
+        "config": "+onset(512) -> 13ch"
       }
     ],
     "open_risks": [
-      "3rd-scale extensions have twice been redundant (S21 3rd res scale, S24 smooth) -> the coherence sub-axis may be saturated at 2 scales. Screen vs champion 2.030.",
-      "If it ties, that is the 2nd plateau -> conclude the representation axis and do a FINAL champion confirmation + project summary."
+      "Onset is a temporal derivative-like feature the conv MIGHT partially derive; and 13ch may cost an anneal epoch. Screen honestly vs champion 2.030 (a 13ch cue must clear both the epoch penalty AND the noise floor).",
+      "If neutral/worse -> 3rd consecutive representation plateau -> CONCLUDE the representation axis; keep 12ch champion; do final confirmation + summary (already drafted)."
     ],
-    "decision_rule": "Screen vs champion 2.030. Clearly better (<2.024)+replicate -> new champion (13ch). Within noise (2.027-2.033) -> coherence saturated at 2 scales; keep 12ch champion 36c6538, revert; this is the 2nd plateau -> do FINAL 2-3 draw champion confirmation + write project summary in EXPERIMENTS.md. Worse -> drop."
+    "decision_rule": "Screen vs champion 2.030. Clearly better (<2.024)+replicate -> new champion. Within noise / worse -> onset redundant or epoch-penalised; keep 12ch champion 36c6538, revert; declare the acoustic-representation-v2 axis at ceiling (3 plateaus) -> final champion confirmation draws + the project summary stands."
   },
   "backlog": [
     {
