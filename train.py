@@ -121,9 +121,10 @@ def multires_coh_feat(wav, ds):
     only the 512 coherence -> 11ch.) Coherence is a direct-vs-diffuse cue distinct from ILD/IPD; the
     two scales may capture complementary direct/diffuse structure. swap_lr_multi passes both through."""
     base = multires_feat(wav, ds)                                # (10,H,W)
-    coh512 = _coherence_at(wav, 512, 160, 512, ds.H, ds.W, smooth=5)   # E149 (S24): smooth 3->5
-    coh128 = _coherence_at(wav, 128, 40, 128, ds.H, ds.W, smooth=5)   # E146 fine-scale, E149 smooth=5
-    return torch.cat([base, coh512, coh128], dim=0)             # (12,H,W)
+    coh512 = _coherence_at(wav, 512, 160, 512, ds.H, ds.W)      # (1,H,W) symmetric
+    coh128 = _coherence_at(wav, 128, 40, 128, ds.H, ds.W)      # (1,H,W) symmetric — E146 fine-scale
+    coh1024 = _coherence_at(wav, 1024, 256, 1024, ds.H, ds.W)  # (1,H,W) symmetric — E151 (S25) coarse late-field
+    return torch.cat([base, coh512, coh128, coh1024], dim=0)    # (13,H,W)
 
 
 # ============================================================
@@ -983,7 +984,7 @@ if __name__ == '__main__':
     # PROPOSAL-01 seam -> 11ch. The coherence channel is L/R-symmetric (swap_lr_multi passes it through).
     # (Champion = 10ch multires_feat 512+128, commit 828b9a3; revert with git checkout 828b9a3 -- train.py.)
     prepare.FEATURE_FN = multires_coh_feat
-    cfg.dataset.in_ch = 12   # E146 (S23): 10ch multi-res + coherence at 512 AND 128 (champion=11ch, 1 coherence, commit 93ef41b)
+    cfg.dataset.in_ch = 13   # E151 (S25): 10ch multi-res + coherence at 512,128 AND 1024 (champion=12ch, 2 coherence, commit 36c6538)
 
     print('=' * 60)
     print(f'RayDPT — mode={args.mode}')
