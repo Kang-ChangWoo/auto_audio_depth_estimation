@@ -188,11 +188,22 @@ architecture. The 12 channels:
 
 **Net vs baseline:** ABS_REL −26%, RMSE ~−9%, d1 +7 pts (0.524→0.597).
 
-### Representation extension space now mined (plateaus)
+### Representation extension space mined (plateaus)
 Fine-block n_fft is time-driven (S20: 128 optimal). A 3rd resolution scale (S21), coherence smoothing
-(S24), and a 3rd coherence scale (S25) are all redundant/worse — the two proven cues saturate at two
-scales each. S26 (onset/direct-arrival) is the current genuinely-new-cue probe; if it too plateaus the
-axis is at its ceiling and 2.030 stands as the final method.
+(S24), a 3rd coherence scale (S25), onset/direct-arrival (S26), and phase-coherence (S28) are all
+redundant/worse — the two proven cues saturate at two scales each. The hand-designed representation
+axis is at its ceiling.
+
+### Third axis: learned front-end (PROPOSAL-02, S29 — FAIL)
+A learned complex-STFT front-end (a conv on the raw STFT at native (F,T) resolution, augmenting the 12ch)
+was tried under the operator-approved PROPOSAL-02 seam (`prepare.EMIT_RAW`). Over 3 runs (E155 random-init
+2.060, E156 zero-init 2.043, E157 deeper raw_fe=16 2.043) it never beat the champion: zero-init starts
+IDENTICAL to the champion yet lands at ~champion-minus-one-anneal-epoch, so the learned native-res
+features add ~nothing; raw_fe 8≡16 shows it is not capacity-limited; and a conv front-end fundamentally
+**cannot compute the coherence products** (L·conj(R)) that carry the signal — which the hand-designed 12ch
+already provides. The extra native STFT also costs an anneal epoch (net negative). Clean informative
+negative. **All three research axes (architecture, hand-designed representation, learned front-end) are
+now explored; 2.030 is the settled final method.**
 
 ### Key lessons
 - **Judge by the honest composite** (RMSE + d1 dominant; ABS_REL is gameable). Every representation win

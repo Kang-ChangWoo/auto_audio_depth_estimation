@@ -438,20 +438,7 @@ class RayDPT(nn.Module):
         self.H, self.W = cfg.img_h, cfg.img_w
         ngf = getattr(cfg, "ngf", 64); dim = cfg.dim; heads = cfg.n_heads
         nL = getattr(cfg, "ray_cross_layers", 2)
-        # PROPOSAL-02: optional learned complex-STFT front-end. A small conv stack processes the raw
-        # 5ch STFT at NATIVE (F,T) resolution (where the true echo-timing structure lives, before the
-        # fixed pipeline's lossy time upsample), producing raw_fe learned feature maps that are
-        # bilinearly mapped to the ERP grid and CONCATENATED with the hand-designed spec -> the encoder
-        # sees in_ch + raw_fe channels. raw_fe=0 (default) -> unchanged champion.
-        self.raw_fe = getattr(cfg, "raw_fe_ch", 0) if getattr(cfg, "raw_frontend", False) else 0
-        if self.raw_fe:
-            last = nn.Conv2d(64, self.raw_fe, 3, 1, 1)
-            # E157: deeper/wider front-end (5->32->64->64->raw_fe) for more capacity to extract
-            # native-(F,T)-resolution features. ZERO-INIT the last conv (E156): starts == champion,
-            # adds features only if they help.
-            self.frontend = nn.Sequential(conv_bn(5, 32), conv_bn(32, 64), conv_bn(64, 64), last, nn.GELU())
-            nn.init.zeros_(last.weight); nn.init.zeros_(last.bias)
-        self.enc = UNet8Encoder(getattr(cfg, "in_ch", 2) + self.raw_fe, ngf)
+        self.enc = UNet8Encoder(getattr(cfg, "in_ch", 2), ngf)
 
         def bank(h, w):
             pc = copy.copy(cfg); pc.img_h, pc.img_w = h, w
@@ -533,12 +520,8 @@ class RayDPT(nn.Module):
             q = self_attn(q)
         return q.transpose(1, 2).reshape(B, -1, h, w)
 
-    def forward(self, spec, coarse_feat=None, sh_basis=None, raw=None):
+    def forward(self, spec, coarse_feat=None, sh_basis=None):
         B = spec.size(0)
-        if self.raw_fe and raw is not None:                       # PROPOSAL-02 learned STFT front-end
-            fe = self.frontend(raw)                               # (B, raw_fe, F, T) native-resolution
-            fe = F.interpolate(fe, (self.H, self.W), mode='bilinear', align_corners=False)
-            spec = torch.cat([spec, fe], dim=1)                   # augment the hand-designed spec
         e1 = self.enc.e1(spec); e2 = self.enc.e2(e1); e3 = self.enc.e3(e2); e4 = self.enc.e4(e3)
         kv4 = self.kv_e4(e4.flatten(2).transpose(1, 2))        # (B,512,dim)
         if self.lite:
@@ -714,14 +697,12 @@ def evaluate(model, loader, mcfg, device, max_depth, collect_vis=None,
     for b in loader:
         spec = b["spec"].to(device, non_blocking=True)
         gt = b["depth"].to(device); mask = b["mask"].to(device)
-        raw = b["raw"].to(device, non_blocking=True) if "raw" in b else None   # PROPOSAL-02 native STFT
-        out = model(spec, raw=raw)
+        out = model(spec)
         # E127: L/R-flip test-time augmentation. The model is trained L/R-equivariant (flip aug), so
         # average its prediction with the mirrored-input prediction (swap audio L/R, flip depth width
         # back). Deterministic honest ensembling over the horizontal symmetry -> lower RMSE variance.
         # Eval-only (training loop unchanged); costs one extra forward per batch.
-        raw_f = swap_audio_lr(raw) if raw is not None else None   # raw is 5ch -> plain L/R swap
-        out_f = model(swap_lr_multi(spec), raw=raw_f)
+        out_f = model(swap_lr_multi(spec))
         out["D"] = 0.5 * (out["D"] + torch.flip(out_f["D"], dims=[-1]))
         loss, _ = composite_loss(out, gt, mask, mcfg)
         val_losses.append(float(loss.detach()))
@@ -817,7 +798,6 @@ def train(cfg):
         for i, b in enumerate(train_loader):
             spec = b["spec"].to(device, non_blocking=True)
             gt = b["depth"].to(device); mask = b["mask"].to(device)
-            raw = b["raw"].to(device, non_blocking=True) if "raw" in b else None   # PROPOSAL-02
             if cfg.mode.flip_aug:                    # L/R mirror aug (per-sample, p=0.5)
                 fm = torch.rand(spec.size(0), device=device) < 0.5
                 if fm.any():
@@ -825,11 +805,9 @@ def train(cfg):
                     spec[fm] = swap_lr_multi(spec[fm])
                     gt[fm] = torch.flip(gt[fm], dims=[-1])
                     mask[fm] = torch.flip(mask[fm], dims=[-1])
-                    if raw is not None:
-                        raw = raw.clone(); raw[fm] = swap_audio_lr(raw[fm])   # raw is 5ch -> plain swap
             optimizer.zero_grad()
             with torch.amp.autocast('cuda', dtype=torch.bfloat16):
-                out = model(spec, raw=raw)
+                out = model(spec)
                 loss, parts = composite_loss(out, gt, mask, mcfg)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -1001,16 +979,11 @@ if __name__ == '__main__':
     args = parse_args()
     cfg = make_config(args)
 
-    # E155 (S29, PROPOSAL-02): the 12ch multi-res+coherence champion (hand-designed, via FEATURE_FN)
-    # AUGMENTED by a LEARNED complex-STFT front-end that processes the raw 5ch STFT at native (F,T)
-    # resolution (EMIT_RAW). The front-end adds raw_fe learned feature maps to the encoder input.
-    # (Champion = 12ch multires_coh_feat, commit 36c6538; revert with git checkout 36c6538 -- train.py
-    #  and set prepare.EMIT_RAW=False.)
+    # E143 (S22, acoustic-representation): multi-res champion (10ch) + interaural coherence (1ch) via the
+    # PROPOSAL-01 seam -> 11ch. The coherence channel is L/R-symmetric (swap_lr_multi passes it through).
+    # (Champion = 10ch multires_feat 512+128, commit 828b9a3; revert with git checkout 828b9a3 -- train.py.)
     prepare.FEATURE_FN = multires_coh_feat
-    prepare.EMIT_RAW = True
-    cfg.dataset.in_ch = 12
-    cfg.model.raw_frontend = True
-    cfg.model.raw_fe_ch = 16   # E157 (S29 HPO): deeper+wider zero-init front-end (E155 raw_fe=8 random, E156 raw_fe=8 zero-init)
+    cfg.dataset.in_ch = 12   # E146 (S23): 10ch multi-res + coherence at 512 AND 128 (champion=11ch, 1 coherence, commit 93ef41b)
 
     print('=' * 60)
     print(f'RayDPT — mode={args.mode}')

@@ -5,6 +5,13 @@
   "global_champion_note": "NEW CHAMPION (S23): 12ch = multi-res STFT (512+128) + interaural coherence at 512 AND 128 + TTA, 3-draw mean 2.0300. Progression 2.099->2.082(TTA)->2.064(multi-res)->2.042(+coh512)->2.030(+coh128). Current train.py at 36c6538.",
   "concluded_studies": [
     {
+      "study_id": "S29",
+      "lineage": "learned-frontend",
+      "conclusion": "FAIL",
+      "best_exp_id": "E146",
+      "note": "PROPOSAL-02 learned complex-STFT front-end (E155/E156/E157) does not beat the hand-designed 12ch within the 1hr budget. Zero-init starts==champion + adds ~nothing; extra native STFT costs an anneal epoch; conv cannot compute coherence products (already in 12ch). Not capacity-limited (raw_fe 8==16)."
+    },
+    {
       "study_id": "S28",
       "lineage": "acoustic-representation-v2",
       "conclusion": "INTERRUPTED",
@@ -110,42 +117,31 @@
       "note": "Confidence-weighted TTA (E134=2.0966) is worse than uniform 50/50 (2.083); uniform is near-optimal for two symmetric views, learned per-pixel confidence is noisy on held-out scenes. TTA blend already optimal."
     }
   ],
-  "strategic_note": "PROJECT AT A STRONG, WELL-CHARACTERIZED FINAL RESULT. Champion = 12ch (multi-res STFT 512+128 + interaural coherence 512+128) + TTA, commit 36c6538, 3-draw mean 2.030. Progression 2.099->2.082(TTA)->2.064(multi-res)->2.042(+coh512)->2.030(+coh128); vs baseline ABS_REL -26% / RMSE ~-9% / d1 +7pts. BOTH major axes now mapped: architecture exhausted (E0-E126), acoustic representation mined (S19/S22/S23 wins; S18/S21/S24/S25/S26 all plateau/fail). Extension space (more scales/smoothing) and genuinely-new-cue space (onset) both saturated. Loop continues with FINAL champion confirmation draws to tighten the reported mean; a materially new gain would likely need new infra/data (learned STFT front-end in the model, a different backbone, or more scenes) beyond the current train.py+FEATURE_FN research surface.",
+  "strategic_note": "PROJECT COMPLETE at a strong, well-characterized final result. Champion = 12ch multi-res STFT(512+128) + interaural coherence(512+128) + TTA, commit 36c6538, mean 2.030 (5 draws, std 0.0016). ALL THREE research axes explored: (1) architecture (E0-E126, mapped/exhausted); (2) hand-designed acoustic representation (PROPOSAL-01: multi-res S19 + coherence S22/S23 = the wins; smooth/3rd-scale/onset/phase-coh plateaus); (3) learned complex-STFT front-end (PROPOSAL-02: S29 FAIL - conv cannot beat hand-designed within budget). Progression 2.099->2.082(TTA)->2.064(multi-res)->2.042(+coh512)->2.030(+coh128); vs baseline ABS_REL -26% / RMSE ~-9% / d1 +7pts. The loop stays alive with occasional champion confirmation draws; a materially larger gain would need a bigger swing (a learned bilinear/product layer that CAN compute coherence-family features, or more scenes/data) - operator-gated. No more low-EV cue/front-end churn.",
   "active_study": {
-    "study_id": "S29",
-    "lineage": "learned-frontend",
-    "parent": "S23 (12ch champion) + PROPOSAL-02",
-    "type": "new",
+    "study_id": "S30",
+    "lineage": "acoustic-representation-v2",
+    "parent": "S23 (12ch champion)",
+    "type": "confirm",
     "status": "running",
-    "general_hypothesis": "All hand-designed representation cues are mined; but a conv encoder cannot compute cross-channel PRODUCTS (why hand-designed coherence helped) NOR see the native echo-timing resolution (the fixed pipeline nearest-upsamples 18 STFT frames to 512, blurring frame-to-frame structure). A LEARNED complex-STFT front-end operating on the raw STFT at NATIVE (F,T) resolution could extract time-frequency features the fixed ERP-reshaped pipeline cannot, AUGMENTING the proven 12ch champion (which keeps the non-conv-derivable coherence).",
-    "detailed_hypothesis": "A small conv front-end processes the raw 5ch native STFT (5,257,18) -> 8 learned feature maps, bilinearly mapped to the ERP grid and concatenated with the 12ch champion features (encoder sees 20ch). PROPOSAL-02 gated seam: prepare.EMIT_RAW passes native raw STFT; front-end lives in the model (gets gradients).",
-    "experiment_note": "E155: prepare.EMIT_RAW=True + FEATURE_FN=multires_coh_feat (12ch) + model.raw_frontend=True, raw_fe_ch=8. Champion byte-identical when EMIT_RAW=False.",
-    "hpo_stage": "hpo-3",
-    "hpo_runs_used": 2,
+    "general_hypothesis": "Project at terminal strong result; both hand-designed and learned representation axes explored. Keep the loop alive with champion confirmation draws characterizing the settled final method (2.030).",
+    "detailed_hypothesis": "Re-run the 12ch champion (36c6538) for an additional confirmation draw.",
+    "experiment_note": "E158: re-run champion 36c6538 unchanged; 5th->6th confirm draw of S23.",
+    "confirms": {
+      "study_id": "S23",
+      "exp_id": "E146",
+      "commit": "36c6538"
+    },
+    "hpo_stage": "n/a-confirm",
+    "hpo_runs_used": 0,
     "runs": [
       {
-        "exp_id": "E155",
-        "status": "done",
-        "comp": 2.06,
-        "verdict": "random-init dilutes"
-      },
-      {
-        "exp_id": "E156",
-        "status": "done",
-        "comp": 2.0428,
-        "verdict": "zero-init ~= champion-minus-epoch-penalty; features add ~nothing"
-      },
-      {
-        "exp_id": "E157",
+        "exp_id": "E158",
         "status": "running",
-        "config": "deeper+wider zero-init front-end raw_fe=16 (66k params)"
+        "note": "champion confirmation draw"
       }
     ],
-    "open_risks": [
-      "The front-end adds params + an extra native STFT in the dataloader -> may cost an anneal epoch (13ch cues went to 8 epochs). Screen honestly vs champion 2.030.",
-      "A tiny conv front-end may not learn much in 9 epochs; if neutral, try raw_fe=16 or a deeper front-end (HPO)."
-    ],
-    "decision_rule": "Screen vs champion 2.030. Clearly better (<2.024)+replicate -> new champion (PROPOSAL-02 works!). Within noise -> front-end capacity too small / native res not helping at 8 epochs -> HPO raw_fe (16), or conclude the learned front-end is neutral. Worse/epoch-busted -> revert (git checkout 36c6538 -- train.py, EMIT_RAW=False)."
+    "decision_rule": "Record the draw; update champion mean. This is the honest terminal activity. Do not churn low-EV variants. If the operator wants a bigger gated swing (bilinear/product layer, more data), surface it; otherwise the champion 2.030 stands as the final result."
   },
   "backlog": [
     {
