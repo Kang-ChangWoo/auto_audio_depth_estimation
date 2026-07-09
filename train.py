@@ -445,11 +445,11 @@ class RayDPT(nn.Module):
         # sees in_ch + raw_fe channels. raw_fe=0 (default) -> unchanged champion.
         self.raw_fe = getattr(cfg, "raw_fe_ch", 0) if getattr(cfg, "raw_frontend", False) else 0
         if self.raw_fe:
-            last = nn.Conv2d(32, self.raw_fe, 3, 1, 1)
-            self.frontend = nn.Sequential(conv_bn(5, 32), conv_bn(32, 32), last, nn.GELU())
-            # E156: ZERO-INIT the last conv so the front-end outputs ~0 initially -> the model STARTS
-            # identical to the 12ch champion and learns to ADD native-resolution features only if they
-            # help (no random-channel dilution / optimisation disruption).
+            last = nn.Conv2d(64, self.raw_fe, 3, 1, 1)
+            # E157: deeper/wider front-end (5->32->64->64->raw_fe) for more capacity to extract
+            # native-(F,T)-resolution features. ZERO-INIT the last conv (E156): starts == champion,
+            # adds features only if they help.
+            self.frontend = nn.Sequential(conv_bn(5, 32), conv_bn(32, 64), conv_bn(64, 64), last, nn.GELU())
             nn.init.zeros_(last.weight); nn.init.zeros_(last.bias)
         self.enc = UNet8Encoder(getattr(cfg, "in_ch", 2) + self.raw_fe, ngf)
 
@@ -1010,7 +1010,7 @@ if __name__ == '__main__':
     prepare.EMIT_RAW = True
     cfg.dataset.in_ch = 12
     cfg.model.raw_frontend = True
-    cfg.model.raw_fe_ch = 8
+    cfg.model.raw_fe_ch = 16   # E157 (S29 HPO): deeper+wider zero-init front-end (E155 raw_fe=8 random, E156 raw_fe=8 zero-init)
 
     print('=' * 60)
     print(f'RayDPT — mode={args.mode}')
