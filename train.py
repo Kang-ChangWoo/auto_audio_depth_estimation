@@ -126,6 +126,8 @@ def make_config(args):
             experiment_name=args.experiment_name,
             eval_on=args.eval_on,
             vis_every=args.vis_every,
+            max_iters=getattr(args, 'max_iters', 0),             # >0: stop each epoch after N train iters (smoke/debug)
+            max_val_batches=getattr(args, 'max_val_batches', 0),  # >0: evaluate only N val batches (smoke/debug)
         ),
     )
     return cfg
@@ -461,15 +463,18 @@ def _build_optimizer(model, cfg):
 
 @torch.no_grad()
 def evaluate(model, loader, mcfg, device, max_depth, collect_vis=None,
-             dataset=None, dataset_dir=None, depth_type='erp'):
+             dataset=None, dataset_dir=None, depth_type='erp', max_batches=0):
     """Run the model over `loader`; return (mean_errors, val_loss, vis_data).
 
     mean_errors = mean over samples of compute_errors() -> [abs_rel, rmse, a1, a2, a3, log10, mae].
+    max_batches>0 evaluates only that many batches (smoke/debug).
     """
     model.eval()
     errors, val_losses, vis_data = [], [], []
     seen = 0
-    for b in loader:
+    for bi, b in enumerate(loader):
+        if max_batches and bi >= max_batches:
+            break
         spec = b["spec"].to(device, non_blocking=True)
         gt = b["depth"].to(device); mask = b["mask"].to(device)
         out = model(spec)
@@ -586,7 +591,12 @@ def train(cfg):
                       f'mae:{accum["mae"]/(i+1):.4f} lc:{accum["lc"]/(i+1):.4f} '
                       f'low:{accum["llow"]/(i+1):.4f}', flush=True)
 
-        epoch_loss = accum['total'] / n_batches
+            if cfg.mode.max_iters and (i + 1) >= cfg.mode.max_iters:
+                print(f'  [smoke] stopping epoch after {i+1} iters (--max-iters)', flush=True)
+                break
+
+        n_ran = min(n_batches, cfg.mode.max_iters) if cfg.mode.max_iters else n_batches
+        epoch_loss = accum['total'] / max(1, n_ran)
         print(f'Epoch [{epoch}/{cfg.mode.epochs}] Loss: {epoch_loss:.4f} '
               f'Time: {time.time()-t0:.1f}s LR: {scheduler.get_last_lr()[0]:.6f}')
 
@@ -595,7 +605,8 @@ def train(cfg):
             mean_errors, val_loss, vis_data = evaluate(
                 model, val_loader, mcfg, device, max_depth,
                 collect_vis=vis_indices, dataset=val_set,
-                dataset_dir=dataset_dir, depth_type=depth_type)
+                dataset_dir=dataset_dir, depth_type=depth_type,
+                max_batches=cfg.mode.max_val_batches)
             abs_rel = mean_errors[0]; rmse = mean_errors[1]; d1 = mean_errors[2]
             print(f'  Val Loss: {val_loss:.4f} | '
                   f'ABS_REL: {abs_rel:.4f} RMSE: {rmse:.4f} '
@@ -712,6 +723,10 @@ def parse_args():
                    help='Checkpoint epoch to resume')
     p.add_argument('--vis-every', type=int, default=100,
                    help='Visualize every N samples during test (0=skip)')
+    p.add_argument('--max-iters', type=int, default=0,
+                   help='Smoke/debug: stop each epoch after N training iterations (0=full epoch)')
+    p.add_argument('--max-val-batches', type=int, default=0,
+                   help='Smoke/debug: evaluate only N validation batches (0=full val set)')
 
     return p.parse_args()
 
