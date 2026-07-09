@@ -94,6 +94,7 @@ def make_config(args):
             stft_nfft=args.stft_nfft,
             stft_hop=args.stft_hop,
             stft_win=args.stft_win,
+            feat_interp=args.feat_interp,   # nearest | bilinear resize of the (freq,time) grid
             audio_window_m=10.0,
         ),
         model=Cfg(
@@ -491,6 +492,9 @@ def parse_args():
                    help='STFT hop. Sets the time-of-flight quantum: depth res = c*hop/(2*sr). '
                         '160 -> 0.567m; 40 -> 0.142m')
     p.add_argument('--stft-win', type=int, default=400, help='STFT window length')
+    p.add_argument('--feat-interp', type=str, default='nearest', choices=['nearest', 'bilinear'],
+                   help="resize mode for the (freq,time)->(H,W) feature grid. 'nearest' emits a "
+                        "staircase along the time axis; 'bilinear' smooths it without adding information.")
     # --- objective: auxiliary low-frequency regularisers (defaults = historical) ---
     p.add_argument('--w-coarse-layout', type=float, default=1.0,
                    help='weight of the 16x32 coarse-layout MAE (low frequency). 0 disables it.')

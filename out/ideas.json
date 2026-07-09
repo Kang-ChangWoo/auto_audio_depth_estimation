@@ -19,7 +19,8 @@
       "evidence_required": "Arm B (win 64) must improve RMSE while arm A (hop only) does not. A d1-only gain does NOT count (per D3, d1 is the cue-driven metric).",
       "unblocked_by": "The STFT analysis window is now editable research logic (--stft-nfft/--stft-hop/--stft-win) read from cfg.dataset. Defaults verified bit-identical; changing them leaves cut/depth/in_ch/shape untouched.",
       "strengthened_by": "(a) I2's oracle diagnostic: the decoder's 64x128 output resolution imposes a ceiling of composite 0.2399 while the model sits at 1.8567 -- the bottleneck is NOT downstream of the decoder, so it is upstream: information. (b) The S0 2x2 dissociation: interaural cues buy d1 (angle) and log1p buys rmse (range), yet the best rmse is still 1.3088 m -- and the analysis window smears an echo over 1.417 m of one-way depth, essentially the same size. Range error and window smear coincide.",
-      "next_action": "RUNNING in the queue after E4: arm A = batvision_5ch_win400_hop40, arm B = batvision_5ch_win64_hop16. Control = E2."
+      "next_action": "Arm B (win64 hop16) running. Then I10 decides WHY arm A moved.",
+      "arm_A_result": "E5 (win400 hop40, smear UNCHANGED 1.417m): composite 1.8514 vs control E2 1.8646, delta +0.0132 ABOVE sigma~0.008. rmse -0.0227 (1.3207 -> 1.2980), d1 -0.0019 (flat), abs_rel -0.0089. The arm designed to show NO effect improved RMSE -- the exact metric I1 predicted. Per the pre-registered rule this WEAKENS the resolution story: sampling density alone moves range accuracy."
     },
     {
       "id": "I2",
@@ -144,6 +145,22 @@
       "budget_risk": "none.",
       "evidence_required": "bit-identical forward output.",
       "next_action": "Fold into the I8 throughput study as a free simplification; verify bit-identical output before training."
+    },
+    {
+      "id": "I10",
+      "status": "probing",
+      "origin": "E5 improved although its temporal resolution was unchanged -- an unexplained result",
+      "target_bottleneck": "the nearest-neighbour resize in _features() turns the time axis into a coarse staircase",
+      "mechanism_family": "acoustic-representation / interpolation",
+      "causal_distance": "mid",
+      "general_hypothesis": "An input transform that is a modelling convenience can silently be a defect. If a representation is resized with nearest-neighbour along an axis that carries a physical quantity, the network sees a staircase where the physics is smooth, and may spend capacity on the staircase.",
+      "detailed_hypothesis": "Nyquist: the win=400 window has an envelope bandwidth ~120 Hz, so hop=160 already samples at 1.2x Nyquist and hop=40 is a 4x OVERSAMPLE -- it adds almost no information. What it does change is the picture: _features resizes (freq, T) to (256,512) with mode='nearest', so T=18 becomes 28.4 px blocks and T=71 becomes 7.2 px blocks. E5's gain may therefore be interpolation smoothness, not temporal information. Test: hold the information EXACTLY at E2's (win 400, hop 160) and switch the resize to bilinear.",
+      "expected_metric_effect": "If E5's gain was smoothness, bilinear at hop=160 recovers most of the -0.0227 RMSE gain at zero information cost.",
+      "main_falsification_condition": "bilinear at hop=160 gives no RMSE gain -> E5's improvement really did come from the extra time samples, and the nearest resize is not the defect.",
+      "minimal_falsifiable_test": "run_base.py --use-log False --feat-interp bilinear (win 400, hop 160). One run. Control = E2.",
+      "budget_risk": "none. Identical shapes, identical model, identical frame count.",
+      "evidence_required": "RMSE gain comparable to E5's, with information held fixed.",
+      "next_action": "queued in utils/run_queue3.sh after the I6/I7 discriminator."
     }
   ],
   "discrepancies": [
@@ -189,6 +206,14 @@
       "why_it_matters": "E4's composite 2.0471 vs E3's 1.8567 CANNOT be read as 'RayDPT is the worse model'. One model converged and then overfit for 12 epochs; the other never reached convergence. Under a wall-clock budget, throughput is silently part of the score. Every RayDPT-vs-batvision statement in this phase must carry epochs_ran, and no RayDPT mechanism can be fairly judged until RayDPT can converge inside the budget.",
       "diagnostic_value": "Reframes the research: the first-order problem for RayDPT is not its ray conditioning, its decoder, or its representation -- it is throughput (I8). It also retro-explains why D2 (batvision's overfitting turn at epoch 13-14) and this are the same confound seen from opposite ends: batvision has budget to spare, RayDPT has none.",
       "next_action": "I8: bf16 autocast as the minimal pure-speed change; re-measure s/epoch, epochs_ran, best_epoch. Also I9: delete the 16.78M dead encoder params."
+    },
+    {
+      "id": "D6",
+      "status": "open",
+      "observation": "I1's CONTROL arm improved. E5 (win400 hop40) cut RMSE by 0.0227 and the composite by 0.0132 (above sigma) versus E2, despite leaving the analysis window -- and therefore the temporal smear of 1.417 m -- completely unchanged.",
+      "why_it_matters": "The arm was designed to isolate 'sampling density' from 'resolution' and to show nothing. It showed something, and in RMSE, the very metric reserved as evidence FOR the resolution mechanism. A Nyquist check says hop=160 already samples the window's envelope at 1.2x Nyquist, so arm A added ~no information. Something other than information improved range accuracy.",
+      "diagnostic_value": "Forces a third explanation: the nearest-neighbour resize (I10). If bilinear at hop=160 recovers the gain, then BOTH E5's reading and I1's original framing were wrong, and the real defect is an interpolation choice buried in _features -- editable research logic that nobody had questioned.",
+      "next_action": "I10 run, queued. Do not interpret arm B until I10 lands."
     }
   ]
 }

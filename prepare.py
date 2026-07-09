@@ -188,6 +188,7 @@ class SoundSpacesDataset(Dataset):
         self.nfft = int(getattr(d, 'stft_nfft', _NFFT))
         self.hop = int(getattr(d, 'stft_hop', _HOP))
         self.stft_win = int(getattr(d, 'stft_win', _WIN))
+        self.feat_interp = str(getattr(d, 'feat_interp', 'nearest'))   # nearest | bilinear
 
         scene_split = get_scene_split(self.root_dir, d.split_ratio, seed=d.split_seed)
         self.scenes = scene_split[split]
@@ -251,8 +252,14 @@ class SoundSpacesDataset(Dataset):
             if f['feat_sinIPD']:
                 chans.append(torch.sin(ipd))
         feat = torch.stack(chans, 0)                           # (in_ch, F, T')
+        # The (F, T') grid is resized to (H, W); the WIDTH axis is STFT TIME, and with the
+        # default hop only T'=18 frames are stretched over 512 columns. 'nearest' therefore
+        # emits a staircase of ~28 px blocks. 'bilinear' removes the staircase WITHOUT adding
+        # any information -- the discriminating control for whether E5's gain was interpolation
+        # smoothness rather than temporal information (idea I10).
+        kw = {} if self.feat_interp == 'nearest' else {'align_corners': False}
         return F.interpolate(feat.unsqueeze(0), (self.H, self.W),
-                             mode='nearest').squeeze(0).float()
+                             mode=self.feat_interp, **kw).squeeze(0).float()
 
     def _depth(self, scene, idx):
         d = np.nan_to_num(np.load(os.path.join(

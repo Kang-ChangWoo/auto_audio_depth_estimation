@@ -37,3 +37,5 @@ out/grid_driver.log
 out/.queue.lock
 out/.queue2.lock
 out/queue2_driver.log
+out/.queue3.lock
+out/queue3_driver.log
