@@ -126,28 +126,6 @@ def multires_coh_feat(wav, ds):
     return torch.cat([base, coh512, coh128], dim=0)             # (12,H,W)
 
 
-def _phasecoh_at(wav, n_fft, hop, win, H, W, smooth=3):
-    """Interaural PHASE coherence = resultant vector length of exp(i*IPD) over a short time window
-    (|E[cos IPD]|,|E[sin IPD]| -> sqrt). Unlike the amplitude-weighted magnitude-squared coherence,
-    this measures phase stability INDEPENDENT of amplitude. ~1 = stable phase (direct), ~0 = random
-    (diffuse). L/R-SYMMETRIC (IPD->-IPD under swap; cos even, sin odd -> squared -> invariant)."""
-    w = torch.hann_window(win, device=wav.device, dtype=wav.dtype)
-    st = torch.stft(wav, n_fft, hop, win, w, return_complex=True)   # (2,F,T)
-    ipd = torch.angle(st[0] * torch.conj(st[1]))                   # (F,T)
-    sm = lambda x: F.avg_pool1d(x.unsqueeze(0), smooth, 1, smooth // 2).squeeze(0)
-    c = sm(torch.cos(ipd)); s = sm(torch.sin(ipd))
-    pcoh = torch.sqrt(c ** 2 + s ** 2 + 1e-8)                      # (F,T) in [0,1]
-    return F.interpolate(pcoh[None, None], (H, W), mode='nearest').squeeze(0).float()
-
-
-def multires_coh_pcoh_feat(wav, ds):
-    """E154 (S28): 12ch champion + interaural PHASE coherence (n_fft=512) -> 13ch. Tests whether
-    amplitude-INDEPENDENT phase stability adds to the amplitude-weighted magnitude coherence."""
-    base = multires_coh_feat(wav, ds)                            # (12,H,W)
-    pcoh = _phasecoh_at(wav, 512, 160, 512, ds.H, ds.W)         # (1,H,W) symmetric
-    return torch.cat([base, pcoh], dim=0)                        # (13,H,W)
-
-
 # ============================================================
 # Constants (fixed, do not modify)
 # ============================================================
@@ -1004,8 +982,8 @@ if __name__ == '__main__':
     # E143 (S22, acoustic-representation): multi-res champion (10ch) + interaural coherence (1ch) via the
     # PROPOSAL-01 seam -> 11ch. The coherence channel is L/R-symmetric (swap_lr_multi passes it through).
     # (Champion = 10ch multires_feat 512+128, commit 828b9a3; revert with git checkout 828b9a3 -- train.py.)
-    prepare.FEATURE_FN = multires_coh_pcoh_feat
-    cfg.dataset.in_ch = 13   # E154 (S28): 12ch champion + interaural PHASE coherence (champion=12ch, commit 36c6538)
+    prepare.FEATURE_FN = multires_coh_feat
+    cfg.dataset.in_ch = 12   # E146 (S23): 10ch multi-res + coherence at 512 AND 128 (champion=11ch, 1 coherence, commit 93ef41b)
 
     print('=' * 60)
     print(f'RayDPT — mode={args.mode}')
