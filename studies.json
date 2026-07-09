@@ -1,6 +1,6 @@
 {
   "_comment": "Active research state for Auto Audio Depth Estimation. One study = one structural hypothesis and its HPO/confirmation progression. When a study concludes, append a PASS/FAIL row to hypotheses.tsv, update archive.json, then open the next study. Adaptive-HPO ladder: structural-screen -> 3 -> 5 -> 7 -> 10, each extension justified by evidence. Never crown on <2-3 confirming draws (S10/E125 lesson).",
-  "next_exp_id": "E150",
+  "next_exp_id": "E151",
   "global_champion_commit": "36c6538",
   "global_champion_note": "NEW CHAMPION (S23): 12ch = multi-res STFT (512+128) + interaural coherence at 512 AND 128 + TTA, 3-draw mean 2.0300. Progression 2.099->2.082(TTA)->2.064(multi-res)->2.042(+coh512)->2.030(+coh128). Current train.py at 36c6538.",
   "concluded_studies": [
@@ -86,12 +86,20 @@
     "detailed_hypothesis": "Sweep the coherence smoothing taps: 5 (and maybe 7) vs the current 3, applied to both coherence channels.",
     "experiment_note": "E149: _coherence_at smooth=5 for both coherence channels (currently 3). Judged vs champion 3-draw mean 2.030.",
     "hpo_stage": "hpo-3",
-    "hpo_runs_used": 0,
+    "hpo_runs_used": 1,
     "runs": [
       {
         "exp_id": "E149",
+        "status": "done",
+        "comp": 2.0201,
+        "d1": 0.5998,
+        "rmse": 1.4514,
+        "verdict": "best-ever d1/RMSE; 0.008 below champion best draw - clearly better, confirm"
+      },
+      {
+        "exp_id": "E150",
         "status": "running",
-        "config": "coherence smooth taps 3->5"
+        "note": "confirmation of smooth=5"
       }
     ],
     "open_risks": [
