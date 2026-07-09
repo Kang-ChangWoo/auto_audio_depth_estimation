@@ -110,8 +110,8 @@
       ]
     }
   ],
-  "mode": "explore",
-  "mode_reason": "S0 and S1 concluded. S1 revealed that RayDPT cannot be judged until it can converge in the budget (D5, I8) -- but the GPU is already committed to the I1 arms, and I1 is a causally distant, physics-grounded EXPLORE probe on the cheapest parent. Run it, then return to EXPLOIT for RayDPT throughput.",
+  "mode": "exploit",
+  "mode_reason": "RayDPT's throughput (I8) now gates every RayDPT judgement, and the user asked for a run that reaches 25 epochs. Three output-equivalent speedups are in (dead-tail deletion, unfold-free attention, bf16); the batch tune is split into its own experiment so it cannot confound the throughput claim.",
   "studies_since_synthesize": 2,
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",

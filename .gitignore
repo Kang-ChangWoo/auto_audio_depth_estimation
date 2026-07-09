@@ -39,3 +39,7 @@ out/.queue2.lock
 out/queue2_driver.log
 out/.queue3.lock
 out/queue3_driver.log
+out/raydpt_batch.txt
+out/bench.log
+out/.queue4.lock
+out/queue4_driver.log

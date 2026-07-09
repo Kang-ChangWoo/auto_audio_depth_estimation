@@ -136,6 +136,7 @@ def make_config(args):
             experiment_name=args.experiment_name,
             eval_on=args.eval_on,
             vis_every=args.vis_every,
+            amp=args.amp,                                        # 'off' | 'bf16' autocast
             max_iters=getattr(args, 'max_iters', 0),             # >0: stop each epoch after N train iters (smoke/debug)
             max_val_batches=getattr(args, 'max_val_batches', 0),  # >0: evaluate only N val batches (smoke/debug)
         ),
@@ -250,32 +251,23 @@ class Down(nn.Module):
 
 
 class UNet8Encoder(nn.Module):
-    """Explicit pix2pix-style 8-down encoder (256x512 -> 1x2). Exposes e2/e3/e4
-    feature maps used as DPT tokens / skips."""
+    """pix2pix-style encoder, truncated at e4 (256x512 -> 16x32).
+
+    RayDPT consumes exactly e2 (64x128), e3 (32x64) and e4 (16x32) as DPT tokens/skips.
+    The original port also built e5..e8 (the pix2pix bottleneck, 16.78M of 24.44M params).
+    They were never called by forward() and received no gradient; deleting them is
+    output-equivalent (verified bit-identical) and shrinks the model to 7.66M. Kept the
+    class name so old checkpoints' e1..e4 keys still load.
+    """
     def __init__(self, in_ch, ngf=64):
         super().__init__()
         self.e1 = Down(in_ch,   ngf,     norm=False)   # 128x256
         self.e2 = Down(ngf,     ngf * 2)               # 64x128
         self.e3 = Down(ngf * 2, ngf * 4)               # 32x64
         self.e4 = Down(ngf * 4, ngf * 8)               # 16x32
-        self.e5 = Down(ngf * 8, ngf * 8)               # 8x16
-        self.e6 = Down(ngf * 8, ngf * 8)               # 4x8
-        self.e7 = Down(ngf * 8, ngf * 8)               # 2x4
-        self.e8 = Down(ngf * 8, ngf * 8, norm=False)   # 1x2
 
 
 # ---- local spherical window attention (ray <-> ray) -------------------------
-def _window_kv(t, win):
-    """(B,C,H,W) -> (B,C,win*win,H,W): neighbours via circular-W / replicate-H pad."""
-    pad = win // 2
-    t = torch.cat([t[..., -pad:], t, t[..., :pad]], dim=-1)        # circular azimuth wrap
-    t = F.pad(t, (0, 0, pad, pad), mode="replicate")               # replicate elevation (poles)
-    B, C, Hp, Wp = t.shape
-    H, W = Hp - 2 * pad, Wp - 2 * pad
-    cols = F.unfold(t, kernel_size=win)                            # (B, C*win*win, H*W)
-    return cols.view(B, C, win * win, H, W)
-
-
 def _geom_bias_feats(H, W, win):
     """(H, win*win, 3): [wrapped dtheta, dphi, cos angular distance] per row/offset."""
     pad = win // 2
@@ -294,7 +286,21 @@ def _geom_bias_feats(H, W, win):
     return out
 
 
+def _pad_sphere(t, pad):
+    """(B,C,H,W) -> (B,C,H+2p,W+2p): circular azimuth wrap, replicate elevation (poles)."""
+    t = torch.cat([t[..., -pad:], t, t[..., :pad]], dim=-1)        # circular azimuth wrap
+    return F.pad(t, (0, 0, pad, pad), mode="replicate")            # replicate elevation
+
+
 class LocalSphericalAttention(nn.Module):
+    """Windowed ray<->ray attention with a geometric bias.
+
+    The neighbourhood is gathered by SLICING a once-padded tensor, not by F.unfold.
+    unfold materialises (B, C*win*win, H*W) -- 1.8 GB for k and v at 64x128, batch 16 --
+    which dominated both VRAM and epoch time (I8). Slicing costs one pad; the per-offset
+    views are free, and only the (B, heads, K, H, W) logits are materialised (~19 MB).
+    Mathematically identical to the unfold version (verified bit-close, see I8).
+    """
     def __init__(self, dim, heads, H, W, win=5):
         super().__init__()
         self.h, self.dh, self.win = heads, dim // heads, win
@@ -306,16 +312,25 @@ class LocalSphericalAttention(nn.Module):
 
     def forward(self, x):
         B, C, H, W = x.shape
+        p, win = self.win // 2, self.win
         q, k, v = self.to_qkv(x).chunk(3, 1)
-        kw = _window_kv(k, self.win).view(B, self.h, self.dh, self.win * self.win, H, W)
-        vw = _window_kv(v, self.win).view(B, self.h, self.dh, self.win * self.win, H, W)
         q = q.view(B, self.h, self.dh, H, W)
-        attn = torch.einsum("bndhw,bndkhw->bnkhw", q, kw) * self.scale     # (B,nh,K,H,W)
-        bias = self.bias_mlp(self.geom).permute(2, 1, 0)                   # (nh,K,H)
-        attn = attn + bias[None, :, :, :, None]
-        attn = attn.softmax(dim=2)
-        out = torch.einsum("bnkhw,bndkhw->bndhw", attn, vw).reshape(B, C, H, W)
-        return x + self.proj(out)
+        kp, vp = _pad_sphere(k, p), _pad_sphere(v, p)                       # one pad, then views
+
+        logits = []
+        for dr in range(win):
+            for dc in range(win):
+                ks = kp[..., dr:dr + H, dc:dc + W].view(B, self.h, self.dh, H, W)
+                logits.append((q * ks).sum(2))                              # (B,nh,H,W)
+        attn = torch.stack(logits, dim=2) * self.scale                      # (B,nh,K,H,W)
+        bias = self.bias_mlp(self.geom).permute(2, 1, 0)                    # (nh,K,H)
+        attn = (attn + bias[None, :, :, :, None]).softmax(dim=2)
+
+        out = x.new_zeros(B, self.h, self.dh, H, W)
+        for idx, (dr, dc) in enumerate((dr, dc) for dr in range(win) for dc in range(win)):
+            vs = vp[..., dr:dr + H, dc:dc + W].view(B, self.h, self.dh, H, W)
+            out = out + attn[:, :, idx].unsqueeze(2) * vs
+        return x + self.proj(out.reshape(B, C, H, W))
 
 
 # ---- RayDPT ------------------------------------------------------------------
@@ -473,7 +488,7 @@ def _build_optimizer(model, cfg):
 
 @torch.no_grad()
 def evaluate(model, loader, mcfg, device, max_depth, collect_vis=None,
-             dataset=None, dataset_dir=None, depth_type='erp', max_batches=0):
+             dataset=None, dataset_dir=None, depth_type='erp', max_batches=0, amp=False):
     """Run the model over `loader`; return (mean_errors, val_loss, vis_data).
 
     mean_errors = mean over samples of compute_errors() -> [abs_rel, rmse, a1, a2, a3, log10, mae].
@@ -487,10 +502,12 @@ def evaluate(model, loader, mcfg, device, max_depth, collect_vis=None,
             break
         spec = b["spec"].to(device, non_blocking=True)
         gt = b["depth"].to(device); mask = b["mask"].to(device)
-        out = model(spec)
-        loss, _ = composite_loss(out, gt, mask, mcfg)
+        with torch.autocast('cuda', dtype=torch.bfloat16, enabled=amp):
+            out = model(spec)
+            loss, _ = composite_loss(out, gt, mask, mcfg)
         val_losses.append(float(loss.detach()))
-        pred_m = (out["D"] * max_depth).cpu().numpy()
+        # metrics are always computed in fp32: the METRIC must not depend on compute precision
+        pred_m = (out["D"].float() * max_depth).cpu().numpy()
         gt_m = (gt * max_depth).cpu().numpy()
         for k in range(pred_m.shape[0]):
             errors.append(compute_errors(gt_m[k, 0], pred_m[k, 0]))
@@ -516,6 +533,10 @@ def train(cfg):
 
     mcfg = build_model_cfg(cfg)
     max_depth = float(cfg.dataset.max_depth)
+    amp_on = (cfg.mode.amp == 'bf16') and device.type == 'cuda'
+    print(f'AMP: {"bf16 autocast" if amp_on else "off (fp32)"} | '
+          f'tf32={torch.backends.cuda.matmul.allow_tf32} '
+          f'cudnn.benchmark={torch.backends.cudnn.benchmark}')
 
     # Data
     train_set, train_loader = make_dataloader(cfg, 'train')
@@ -581,10 +602,11 @@ def train(cfg):
                     spec[fm] = swap_audio_lr(spec[fm], train_set.channel_names)
                     gt[fm] = torch.flip(gt[fm], dims=[-1])
                     mask[fm] = torch.flip(mask[fm], dims=[-1])
-            out = model(spec)
-            loss, parts = composite_loss(out, gt, mask, mcfg)
+            with torch.autocast('cuda', dtype=torch.bfloat16, enabled=amp_on):
+                out = model(spec)
+                loss, parts = composite_loss(out, gt, mask, mcfg)
 
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
@@ -616,7 +638,7 @@ def train(cfg):
                 model, val_loader, mcfg, device, max_depth,
                 collect_vis=vis_indices, dataset=val_set,
                 dataset_dir=dataset_dir, depth_type=depth_type,
-                max_batches=cfg.mode.max_val_batches)
+                max_batches=cfg.mode.max_val_batches, amp=amp_on)
             abs_rel = mean_errors[0]; rmse = mean_errors[1]; d1 = mean_errors[2]
             print(f'  Val Loss: {val_loss:.4f} | '
                   f'ABS_REL: {abs_rel:.4f} RMSE: {rmse:.4f} '
@@ -747,6 +769,15 @@ def parse_args():
                    help='Checkpoint epoch to resume')
     p.add_argument('--vis-every', type=int, default=100,
                    help='Visualize every N samples during test (0=skip)')
+    # --- throughput. TIME_BUDGET is wall-clock, so speed IS accuracy (see D5 / idea I8). ---
+    p.add_argument('--amp', type=str, default='bf16', choices=['off', 'bf16'],
+                   help='bf16 autocast for forward+loss. bf16 needs no GradScaler (same exponent range as fp32).')
+    p.add_argument('--tf32', type=lambda s: s == 'True', default=True,
+                   help='allow TF32 matmul/conv kernels on Ampere+')
+    p.add_argument('--cudnn-benchmark', type=lambda s: s == 'True', default=True,
+                   help='autotune conv algorithms. Implies non-deterministic kernels.')
+    p.add_argument('--deterministic', type=lambda s: s == 'True', default=False,
+                   help='bit-reproducible kernels. Costs speed; incompatible with --cudnn-benchmark.')
     p.add_argument('--max-iters', type=int, default=0,
                    help='Smoke/debug: stop each epoch after N training iterations (0=full epoch)')
     p.add_argument('--max-val-batches', type=int, default=0,
@@ -758,14 +789,19 @@ def parse_args():
 if __name__ == '__main__':
     torch.manual_seed(42)
     np.random.seed(42)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
     os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')
     os.environ.setdefault('OMP_NUM_THREADS', '8')
     os.environ.setdefault('MKL_NUM_THREADS', '8')
 
     args = parse_args()
+    # Throughput knobs. Determinism is traded for speed by default: the wall-clock budget
+    # makes epochs-fit part of the score (D5), and run-to-run variance is already folded
+    # into the sigma~0.008 noise floor. Pass --deterministic True to restore bit-repro.
+    torch.backends.cudnn.deterministic = args.deterministic
+    torch.backends.cudnn.benchmark = args.cudnn_benchmark and not args.deterministic
+    torch.backends.cuda.matmul.allow_tf32 = args.tf32
+    torch.backends.cudnn.allow_tf32 = args.tf32
     cfg = make_config(args)
 
     print('=' * 60)

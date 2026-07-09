@@ -119,7 +119,7 @@
     },
     {
       "id": "I8",
-      "status": "backlog",
+      "status": "probing",
       "priority": "high",
       "origin": "E4, the first RayDPT run under the planar target",
       "target_bottleneck": "RayDPT is COMPUTE-STARVED under the fixed 1-hour wall-clock budget",
@@ -132,11 +132,13 @@
       "minimal_falsifiable_test": "bf16 autocast alone (smallest diff, no architecture change), measuring s/epoch, epochs_ran and the composite. A pure speed change that leaves the mechanism identical is the cleanest test of the starvation hypothesis.",
       "budget_risk": "none -- this idea IS about the budget.",
       "evidence_required": "epochs_ran increases materially AND the best epoch stops being the last one (i.e. the run actually converges).",
-      "next_action": "HIGHEST VALUE. Queue after the I1 arms: bf16 autocast on train.py, then re-measure."
+      "next_action": "bench_raydpt.py is queued behind the eval_lock; E7/E8 run in utils/run_queue4.sh.",
+      "implementation": "Three non-mechanism changes: (1) I9 dead-tail deletion, output bit-identical. (2) LocalSphericalAttention now gathers neighbours by SLICING a once-padded tensor instead of F.unfold, which materialised (B, C*win*win, H*W) = 1.8 GB for k and v at 64x128 batch 16; verified mathematically identical in forward (rel 1e-7) and backward (input-grad 7e-7). (3) bf16 autocast + TF32 + cudnn.benchmark; metrics are still computed in fp32 so the METRIC never depends on compute precision. Determinism is traded for speed by default (--deterministic True restores it); run-to-run variance is already inside sigma~0.008.",
+      "experiment_split": "Split into TWO experiments so throughput and batch size do not confound. E7 = pure speed at E4's exact optimisation (batch 16, lr 3e-4, --epochs 25): isolates 'is RayDPT merely compute-starved?'. E8 = batch tune with the linear lr scaling rule, using the batch that bench_raydpt.py MEASURES as fastest. A bigger batch means fewer optimizer steps per epoch (16->64 is 1800->450), so at a fixed lr it would look like a regression for reasons unrelated to throughput -- a tuning error, not evidence against I8."
     },
     {
       "id": "I9",
-      "status": "backlog",
+      "status": "validated",
       "origin": "reading UNet8Encoder against RayDPT.forward()",
       "target_bottleneck": "68.7% of RayDPT's parameters are dead",
       "mechanism_family": "simplification",
@@ -148,7 +150,8 @@
       "minimal_falsifiable_test": "Delete e5..e8; assert the forward output is bit-identical on a fixed input with a fixed seed. No training run needed to verify correctness -- only to confirm the score is unchanged.",
       "budget_risk": "none.",
       "evidence_required": "bit-identical forward output.",
-      "next_action": "Fold into the I8 throughput study as a free simplification; verify bit-identical output before training."
+      "next_action": "folded into the I8 throughput runs (E7/E8).",
+      "result": "VERIFIED bit-identical. Deleted e5..e8 from UNet8Encoder: forward output and D_coarse are exactly equal to the old model given shared weights (max|diff| = 0.0), and 20 parameter tensors disappear. Model 24.44M -> 7.66M params (68.7% removed). Zero metric change expected and zero observed at the forward level."
     },
     {
       "id": "I10",

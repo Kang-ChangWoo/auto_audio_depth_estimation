@@ -7,13 +7,13 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | | |
 |---|---|
-| **Mode** | `EXPLORE` — 1 structural run + 0-2 focused probes -> CANDIDATE / DROP / INCONCLUSIVE |
+| **Mode** | `EXPLOIT` — adaptive HPO ladder 3 -> 5 -> 7 -> 10, each step justified by evidence -> PASS / FAIL |
 | **Active study** | `S2` [new] acoustic-representation (*running*) |
 | **Research question** | Depth from echoes is a time-of-flight measurement: a surface at distance d returns its echo at t=2d/c. If the input representation cannot resolve t, no decoder can resolve d. The analysis window, not  |
 | **Current action** | E5 batvision_5ch_win400_hop40, E6 batvision_5ch_win64_hop16, on run_base.py (cheapest parent). Control = E2. |
 | **Latest result** | *(no scored run in this study yet)* |
 | **Next decision** | Per D3 the gain must appear in RMSE (range), not d1 (angle) -- the interaural cues already own d1. Neither arm improves RMSE -> DROP I1. Both improve equally -> the gain is sampling density/capacity,  |
-| **Why this mode** | S0 and S1 concluded. S1 revealed that RayDPT cannot be judged until it can converge in the budget (D5, I8) -- but the GPU is already committed to the I1 arms, and I1 is a causally distant, physics-gro |
+| **Why this mode** | RayDPT's throughput (I8) now gates every RayDPT judgement, and the user asked for a run that reaches 25 epochs. Three output-equivalent speedups are in (dead-tail deletion, unfold-free attention, bf16 |
 
 ### Current hypothesis
 
@@ -30,8 +30,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I5` | ray conditioning / encoder-decoder correspondence | mid | RayDPT's DPT skip connections impose a FALSE spatial correspondence between the spectrogram's axes and the ERP's axes | inconclusive | none. Do not spend GPU on the skip ablation on this rationale. Revive only with an indepen |
 | `I6` | depth objective design | mid | the objective devotes most of its gradient to low-frequency terms, so the model may be trained to be blurry | backlog | expose w_coarse_layout / w_low as CLI flags, then queue the ablation after the I1 arms. |
 | `I7` | sensing physics / angular resolution | far | two microphones may fundamentally under-determine high azimuthal frequencies | backlog | none directly -- I7 is decided by I6's outcome. Do NOT call this a task ceiling; it is a s |
-| `I8` | throughput / training-optimization | near | RayDPT is COMPUTE-STARVED under the fixed 1-hour wall-clock budget | backlog | HIGHEST VALUE. Queue after the I1 arms: bf16 autocast on train.py, then re-measure. |
-| `I9` | simplification | near | 68.7% of RayDPT's parameters are dead | backlog | Fold into the I8 throughput study as a free simplification; verify bit-identical output be |
+| `I8` | throughput / training-optimization | near | RayDPT is COMPUTE-STARVED under the fixed 1-hour wall-clock budget | probing | bench_raydpt.py is queued behind the eval_lock; E7/E8 run in utils/run_queue4.sh. |
 | `I10` | acoustic-representation / interpolation | mid | the nearest-neighbour resize in _features() turns the time axis into a coarse staircase | probing | queued in utils/run_queue3.sh after the I6/I7 discriminator. |
 
 ### Open discrepancies
@@ -51,14 +50,14 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-10T08:33 | `exploit` | idea_added | VALIDATED: e5..e8 deletion is output bit-identical (max\|diff\|=0.0). RayDPT 24.44M -> 7.66M params. |
+| 2026-07-10T08:33 | `exploit` | mode_changed | RayDPT's throughput (I8) now gates every RayDPT judgement, and the user asked for a run that reaches 25 epochs. Three output-equiv |
 | 2026-07-10T07:36 | `explore` | discrepancy_recorded | D7: the two I1 arms improved through OPPOSITE metrics, inverting the physical story. The only variable monotone with the composite |
 | 2026-07-10T07:36 | `explore` | experiment_completed | I1 arm B (win64 hop16, 6.2x finer smear): composite 1.8379, best batvision so far. But the gain is d1 (+0.0067) and abs_rel, NOT r |
 | 2026-07-10T06:36 | `explore` | discrepancy_recorded | D6: I1's CONTROL arm improved. E5 (win400 hop40) cut RMSE 0.0227 and composite 0.0132 (above sigma) with the temporal smear UNCHAN |
 | 2026-07-10T06:34 | `explore` | experiment_completed | I1 arm A (win400 hop40, density only, smear UNCHANGED at 1.417m): composite 1.8514 vs control E2 1.8646, delta +0.0132 ABOVE sigma |
 | 2026-07-10T05:33 | `explore` | discrepancy_recorded | D5: RayDPT is compute-starved. Under a wall-clock budget throughput is silently part of the score. 64x128 attention (lsa64+cross64 |
 | 2026-07-10T05:33 | `explore` | experiment_completed | RayDPT planar anchor: composite 2.0471 (rmse 1.3987, d1 0.5423), but ONLY 5 epochs fit (713.5s/ep vs batvision 130s). Best = last  |
-| 2026-07-10T05:00 | `exploit` | idea_added | Competing explanation for the same low-pass observation: two microphones give a broad directional response, so fine azimuthal stru |
-| 2026-07-10T05:00 | `exploit` | idea_added | Objective is 58.2% low-frequency at convergence (coarse-layout 38.4% + low-pass 19.7% vs dense 41.8%). Exposed --w-coarse-layout / |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->
