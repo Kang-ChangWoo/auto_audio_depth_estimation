@@ -4,7 +4,7 @@
   "reset_note": "Fresh from original baseline f677b0f + mask-weighted coarse/low loss targets + composite abs_rel weight 0.75->0.35 + PLANAR (cubemap) depth target.",
   "depth_convention": "planar (cubemap perpendicular-Z); stored erp_depth used as-is; radial_factor removed",
   "metric": "composite (selection) = rmse/1.6 + (1-d1)/0.46 + 0.35*abs_rel  (lower better; RMSE+d1 dominate; abs_rel de-weighted)",
-  "next_exp_id": "E5",
+  "next_exp_id": "E7",
   "global_champion": null,
   "concluded_studies": [
     {
@@ -75,26 +75,59 @@
       ],
       "decision_rule": "Rank by the honest composite. The winning cell becomes the reference number RayDPT must beat. The qualitative figure shows ONE column per channel count, always the NON-LOG variant (operator instruction), regardless of which log setting wins the composite; the log variants stay in out/results.tsv. Gaps below ~0.015 composite are near-noise -> do not crown without confirmation.",
       "conclusion": "PASS"
+    },
+    {
+      "study_id": "S1",
+      "lineage": "raydpt-baseline",
+      "parent": null,
+      "type": "new",
+      "status": "concluded",
+      "general_hypothesis": "RayDPT (my ray-conditioned model) must be re-anchored under the PLANAR target before any of its mechanisms can be judged. Nothing measured before commit 87b3047 is comparable, so the model currently has NO valid baseline in this phase and no RayDPT improvement can be attributed.",
+      "detailed_hypothesis": "Run train.py unchanged (5ch log, flip-aug, no TTA) for one wall-clock hour. This produces the parent against which decoder, representation and optimisation mechanisms will be compared, and gives the first honest RayDPT-vs-batvision number under the planar target. The reference to beat is E3 = 1.8567.",
+      "experiment_note": "E4: python train.py --mode train (defaults). Queued in utils/run_queue.sh; started 04:28.",
+      "hpo_stage": "structural-screen",
+      "hpo_runs_used": 0,
+      "runs": [
+        {
+          "exp_id": "E4",
+          "name": "raydpt_e4_planar",
+          "abs_rel": 0.5081,
+          "rmse": 1.3987,
+          "d1": 0.5423,
+          "composite": 2.0471,
+          "best_epoch": 5,
+          "epochs_ran": 5,
+          "sec_per_epoch": 713.5,
+          "vram_gb": 16.2,
+          "status": "keep"
+        }
+      ],
+      "decision_rule": "This is an ANCHOR, not a competition: E4 is recorded whatever it scores. Report which metrics RayDPT wins/loses vs E3 separately (per S0, d1 is the cue-driven metric and rmse the range metric). If RayDPT trails badly, that is a research finding about ray-conditioning under a piecewise-constant target, not a failure to be patched immediately.",
+      "conclusion": "ANCHOR RECORDED (not a competition)",
+      "observations": [
+        "RayDPT is COMPUTE-STARVED: 5 epochs vs batvision's 25 under the same wall-clock budget, best checkpoint = last epoch, all val metrics still improving. The 2.0471 vs 1.8567 gap measures budget, not architecture. 64x128 attention (lsa64 + cross64) is 57% of forward cost; F.unfold in _window_kv materialises 1.8GB at batch 16.",
+        "68.7% of RayDPT's parameters (e5..e8, 16.78M of 24.44M) are dead: never used in forward, no gradients."
+      ]
     }
   ],
-  "mode": "exploit",
-  "mode_reason": "S0 concluded PASS: the reference is anchored at composite 1.8567 and the representation question is answered (cues->angle, log->range, additive). Now EXPLOIT the prerequisite: E4 re-anchors RayDPT (my model) under the planar target, which every RayDPT improvement needs as a valid parent. The I1 explore probe follows immediately after, on the cheapest parent.",
-  "studies_since_synthesize": 1,
+  "mode": "explore",
+  "mode_reason": "S0 and S1 concluded. S1 revealed that RayDPT cannot be judged until it can converge in the budget (D5, I8) -- but the GPU is already committed to the I1 arms, and I1 is a causally distant, physics-grounded EXPLORE probe on the cheapest parent. Run it, then return to EXPLOIT for RayDPT throughput.",
+  "studies_since_synthesize": 2,
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",
   "active_study": {
-    "study_id": "S1",
-    "lineage": "raydpt-baseline",
-    "parent": null,
+    "study_id": "S2",
+    "lineage": "acoustic-representation",
+    "parent": "E2 (batvision_5ch_nolog, win400 hop160)",
     "type": "new",
     "status": "running",
-    "general_hypothesis": "RayDPT (my ray-conditioned model) must be re-anchored under the PLANAR target before any of its mechanisms can be judged. Nothing measured before commit 87b3047 is comparable, so the model currently has NO valid baseline in this phase and no RayDPT improvement can be attributed.",
-    "detailed_hypothesis": "Run train.py unchanged (5ch log, flip-aug, no TTA) for one wall-clock hour. This produces the parent against which decoder, representation and optimisation mechanisms will be compared, and gives the first honest RayDPT-vs-batvision number under the planar target. The reference to beat is E3 = 1.8567.",
-    "experiment_note": "E4: python train.py --mode train (defaults). Queued in utils/run_queue.sh; started 04:28.",
+    "general_hypothesis": "Depth from echoes is a time-of-flight measurement: a surface at distance d returns its echo at t=2d/c. If the input representation cannot resolve t, no decoder can resolve d. The analysis window, not the hop, sets that resolution.",
+    "detailed_hypothesis": "win=400 smears an echo over c*win/(2*sr)=1.417 m of one-way depth -- essentially the achieved RMSE of 1.3088 m. Arm A (win 400, hop 40) raises sampling density while leaving the smear unchanged; arm B (win 64, hop 16) cuts the smear to 0.227 m, paying frequency resolution. Only B should improve RMSE if temporal resolution binds.",
+    "experiment_note": "E5 batvision_5ch_win400_hop40, E6 batvision_5ch_win64_hop16, on run_base.py (cheapest parent). Control = E2.",
     "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
     "runs": [],
-    "decision_rule": "This is an ANCHOR, not a competition: E4 is recorded whatever it scores. Report which metrics RayDPT wins/loses vs E3 separately (per S0, d1 is the cue-driven metric and rmse the range metric). If RayDPT trails badly, that is a research finding about ray-conditioning under a piecewise-constant target, not a failure to be patched immediately."
+    "decision_rule": "Per D3 the gain must appear in RMSE (range), not d1 (angle) -- the interaural cues already own d1. Neither arm improves RMSE -> DROP I1. Both improve equally -> the gain is sampling density/capacity, not resolution; the mechanism story is wrong even if the score moves."
   },
   "backlog": [
     {

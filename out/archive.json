@@ -27,8 +27,23 @@
     "raydpt-baseline": {
       "mechanism": "ray-conditioned DPT: per-ray RayBank queries x audio cross-attention, depth decoded per ray direction",
       "role": "my model; the architectural invariant of this project",
-      "status": "E4 running: first RayDPT run under the planar target",
-      "champion": null
+      "status": "anchored (E4), COMPUTE-STARVED under the wall-clock budget",
+      "champion": {
+        "exp_id": "E4",
+        "name": "raydpt_e4_planar",
+        "commit": "9dd3bce",
+        "abs_rel": 0.5081,
+        "rmse": 1.3987,
+        "d1": 0.5423,
+        "composite": 2.0471,
+        "best_epoch": 5,
+        "epochs_ran": 5,
+        "sec_per_epoch": 713.5,
+        "vram_gb": 16.2,
+        "provisional": true,
+        "note": "ANCHOR, not a verdict. Only 5 epochs fit the 1h budget (batvision fits 25); the best checkpoint is the LAST epoch and every val metric was still improving. Do NOT read the 2.0471-vs-1.8567 gap as an architectural result -- see D5."
+      },
+      "dead_parameters": "e5..e8 = 16.78M of 24.44M (68.7%): built by UNet8Encoder, never used in forward, receive no gradient. See I9."
     }
   },
   "specialists": [],

@@ -111,6 +111,39 @@
       "budget_risk": "none for now (tested via I6).",
       "evidence_required": "survives if and only if I6's ablation fails to restore high-frequency content.",
       "next_action": "none directly -- I7 is decided by I6's outcome. Do NOT call this a task ceiling; it is a scoped hypothesis about angular observability with two receivers."
+    },
+    {
+      "id": "I8",
+      "status": "backlog",
+      "priority": "high",
+      "origin": "E4, the first RayDPT run under the planar target",
+      "target_bottleneck": "RayDPT is COMPUTE-STARVED under the fixed 1-hour wall-clock budget",
+      "mechanism_family": "throughput / training-optimization",
+      "causal_distance": "near",
+      "general_hypothesis": "When the budget is wall-clock, throughput IS accuracy. A model that fits 5 epochs cannot be compared with one that fits 25; the slower model is penalised for its speed, not judged on its mechanism. Before any RayDPT mechanism can be evaluated, RayDPT must be able to converge inside the budget.",
+      "detailed_hypothesis": "E4 ran 713.5 s/epoch vs batvision's ~130 s, so only 5 epochs fit against batvision's 25. Its best checkpoint is the LAST epoch and every val metric was still improving monotonically (rmse 1.485->1.424->1.399, d1 0.513->0.530->0.542). So E4's composite 2.0471 vs E3's 1.8567 measures budget, not architecture. MEASURED module cost (CPU forward, indicative): the 64x128 scale dominates -- lsa64 29.3% + cross64 27.7% = 57% of forward. LocalSphericalAttention builds its neighbourhood with F.unfold, materialising (B, C*win*win, H*W): 1.8 GB at 64x128 for k and v at batch 16, which also explains the 16.2 GB peak VRAM. Levers, in order of expected value/risk: bf16 autocast; replace the unfold in _window_kv with a gather/shift-based neighbourhood; drop or cheapen the 64-scale cross-attention.",
+      "expected_metric_effect": "epochs_ran rises toward batvision's; the composite improves BECAUSE the model reaches convergence, not because the mechanism changed. Report epochs_ran alongside every number.",
+      "main_falsification_condition": "Throughput improves but the composite does not, AND the best epoch is again the last -- then RayDPT is not merely starved and its per-epoch learning is genuinely weaker.",
+      "minimal_falsifiable_test": "bf16 autocast alone (smallest diff, no architecture change), measuring s/epoch, epochs_ran and the composite. A pure speed change that leaves the mechanism identical is the cleanest test of the starvation hypothesis.",
+      "budget_risk": "none -- this idea IS about the budget.",
+      "evidence_required": "epochs_ran increases materially AND the best epoch stops being the last one (i.e. the run actually converges).",
+      "next_action": "HIGHEST VALUE. Queue after the I1 arms: bf16 autocast on train.py, then re-measure."
+    },
+    {
+      "id": "I9",
+      "status": "backlog",
+      "origin": "reading UNet8Encoder against RayDPT.forward()",
+      "target_bottleneck": "68.7% of RayDPT's parameters are dead",
+      "mechanism_family": "simplification",
+      "causal_distance": "near",
+      "general_hypothesis": "program.md: a gain from deleting code is the best kind. Dead parameters are not free -- they occupy VRAM, they mislead every parameter-count comparison, and they hide the model's real size from the researcher.",
+      "detailed_hypothesis": "UNet8Encoder builds e1..e8 but RayDPT.forward() only consumes e1..e4. VERIFIED: e5..e8 hold 16.781M of the model's 24.439M parameters (68.7%) and receive NO gradient after a backward pass (p.grad is None). They cost ~67 MB of VRAM and no compute. Deleting them is provably output-equivalent.",
+      "expected_metric_effect": "EXACTLY ZERO change to any metric -- that is the point, and it is the test. Model size drops 24.44M -> 7.66M; VRAM falls slightly.",
+      "main_falsification_condition": "Any metric changes at all. That would mean e5..e8 were reachable after all, and the deletion is wrong.",
+      "minimal_falsifiable_test": "Delete e5..e8; assert the forward output is bit-identical on a fixed input with a fixed seed. No training run needed to verify correctness -- only to confirm the score is unchanged.",
+      "budget_risk": "none.",
+      "evidence_required": "bit-identical forward output.",
+      "next_action": "Fold into the I8 throughput study as a free simplification; verify bit-identical output before training."
     }
   ],
   "discrepancies": [
@@ -148,6 +181,14 @@
       "diagnostic_value": "Distinguishes two very different stories: (a) the model is under-fitting and simply produces blurry output; (b) the representation injects a spatial artefact the model faithfully reproduces. These call for opposite interventions.",
       "next_action": "none. Superseded by I6 vs I7.",
       "resolution": "The banding is NOT an interpolation artefact. Azimuthal FFT (24 val samples, E3 batvision): no peak at the 18-block staircase frequency k=18 (prominence 0.806, i.e. a dip) nor at its harmonics. What I read as banding is the k=4 component -- the four walls of a room -- which the model OVER-represents (pred/gt 1.94). The real characterisation: the model is a LOW-PASS predictor, holding 97.4% of its azimuthal power in k<=6 versus GT's 75.8%, and only ~5% of GT's power at k>=17. This resolves D4 and spawns two competing explanations, I6 (the objective is 58% low-frequency) and I7 (two microphones under-determine fine azimuth), discriminated by I6's ablation."
+    },
+    {
+      "id": "D5",
+      "status": "open",
+      "observation": "E4 (RayDPT) fitted only 5 epochs in the 1-hour budget (713.5 s/epoch) versus batvision's 25 (~130 s/epoch). Its best checkpoint is the LAST epoch and all val metrics were still improving monotonically. Peak VRAM 16.2 GB vs 2.4 GB.",
+      "why_it_matters": "E4's composite 2.0471 vs E3's 1.8567 CANNOT be read as 'RayDPT is the worse model'. One model converged and then overfit for 12 epochs; the other never reached convergence. Under a wall-clock budget, throughput is silently part of the score. Every RayDPT-vs-batvision statement in this phase must carry epochs_ran, and no RayDPT mechanism can be fairly judged until RayDPT can converge inside the budget.",
+      "diagnostic_value": "Reframes the research: the first-order problem for RayDPT is not its ray conditioning, its decoder, or its representation -- it is throughput (I8). It also retro-explains why D2 (batvision's overfitting turn at epoch 13-14) and this are the same confound seen from opposite ends: batvision has budget to spare, RayDPT has none.",
+      "next_action": "I8: bf16 autocast as the minimal pure-speed change; re-measure s/epoch, epochs_ran, best_epoch. Also I9: delete the 16.78M dead encoder params."
     }
   ]
 }
