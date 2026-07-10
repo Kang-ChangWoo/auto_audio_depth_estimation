@@ -101,7 +101,7 @@ def _args(**over):
              stft_nfft=512, stft_hop=160, stft_win=400,
              w_coarse_layout=1.0, w_low=0.5, feat_interp='nearest', amp='off',
              raydpt_lite=False, decode_scale=32, ray_cross_layers=2, ffn_mult=2, cross_kv32='e4', cross_kv16='e4', main_loss='mae',
-             dim=192, n_heads=4, raydpt_win32=3, raydpt_win64=3, time_budget=3600, coarse_norm=False,
+             dim=192, n_heads=4, raydpt_win32=3, raydpt_win64=3, time_budget=3600, coarse_norm=False, depth_volume=False,
              max_iters=0, max_val_batches=0)
     a.update(over)
     return SimpleNamespace(**a)

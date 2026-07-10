@@ -338,6 +338,24 @@
       "caveat": "E20's composite of 1.9176 is +0.0083 against E11's 1.9093 -- just over the sigma of 0.008 -- but E20 differs from E11 in TWO ways (the knobs AND the lr), so the gap cannot be attributed. E22 (E11's architecture at lr 6e-4) fills the 2x2.",
       "ladder": "Monotone, and it kills the linear scaling rule for this model. fast config @ 1.2e-3 DIVERGED (E17); @ 6e-4 stable, 1.9176 (E20); @ 3e-4 stable, 1.9099 (E21). 3e-4 is the ORIGINAL batch-16 lr -- so scaling lr with batch was never needed, and doing it put every run on the edge of divergence.",
       "practical_result": "E21 matches the E11 champion (1.9093) to +0.0007 -- one tenth of sigma -- with 10% fewer parameters (5.29M vs 5.89M) and 118.8 vs 143.3 s/epoch, a 1.21x speedup. Its rmse is actually better (1.3231 vs 1.3276); d1 is identical (0.5706 vs 0.5710)."
+    },
+    {
+      "id": "I19",
+      "status": "probing",
+      "priority": "high",
+      "origin": "the measured far-field failure (D9 reframed) + the physical meaning of the encoder's width axis",
+      "target_bottleneck": "the model must LEARN that echo delay encodes depth, and it fails to, collapsing far surfaces toward the median",
+      "mechanism_family": "ray conditioning / physically-structured decoding",
+      "causal_distance": "far",
+      "general_hypothesis": "Depth from echoes is a time-of-flight measurement: a surface at depth d returns its echo at t = 2d/c. A network that regresses a scalar depth must discover that correspondence from data. A network whose ARCHITECTURE encodes it does not. Bake the physics into where the model looks, instead of paying for it in capacity and in a loss that hedges toward the median.",
+      "detailed_hypothesis": "The encoder's WIDTH axis is time -- spec is (freq 256, time 512), so e3 is (freq 32, time 64) -- and its 64 columns map one-to-one onto depth hypotheses spanning 0.08-9.92 m. EchoDelayVolume: for each ray r and hypothesis j, the ray query attends over FREQUENCY within time column j alone (azimuth lives in the per-frequency ILD/IPD; time must not be mixed across hypotheses); a small MLP scores each hypothesis; a softmax over the DEPTH axis gives p(d|ray); depth_r = sum_j p_j d_j, a soft-argmax over echo delay. +34k parameters.",
+      "why_it_attacks_the_measured_failure": "(a) Far-field range compression: at GT 8-9 m RayDPT predicts 4.97 m and scores d1 0.1751 against batvision's 0.4023. A distribution over depth bins has no conditional-median collapse, and the evidence for a far surface sits in a LATE column that the structure now points at directly. E9-vs-E12 already showed fine time-resolved tokens buy +0.0965 of far-field d1. (b) It replaces coarse_head -- a sigmoid one 1x1 conv from the deepest attention output, which saturated and diverged (D11) -- with a softmax over physically meaningful bins.",
+      "expected_metric_effect": "the 7-10 m deciles improve; overall d1 rises; RMSE improves. If only ABS_REL moves, the mechanism is unsupported.",
+      "main_falsification_condition": "the 7-10 m deciles do not improve over E21 -> DROP, whatever the composite does. Exactly the test that killed I13.",
+      "minimal_falsifiable_test": "E24: the current defaults + --depth-volume True. E21 (1.9099) is the control -- the defaults ARE its config, so the run differs in one thing.",
+      "budget_risk": "low; +34k params, benchmarked before the run.",
+      "evidence_required": "far-decile d1 improves AND overall d1 clears sigma.",
+      "next_action": "E24 queued behind the attribution runs; the queue benchmarks cost first."
     }
   ],
   "discrepancies": [

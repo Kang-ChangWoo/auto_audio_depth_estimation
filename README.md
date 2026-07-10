@@ -32,6 +32,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I10` | acoustic-representation / interpolation | mid | the nearest-neighbour resize in _features() turns the time axis into a coarse staircase | inconclusive | deferred confirm: run `--feat-interp bilinear --stft-hop 40` after the RayDPT throughput s |
 | `I14` | ray conditioning / audio token routing | mid | far-field rays cannot see the late, weak echo that carries distance | probing | E16 (control) then E15b (treatment), both at lr 6e-4. Pre-registered falsification unchang |
 | `I16` | throughput / experiment economics | near | iteration speed IS a research variable under a wall-clock budget | candidate | Answerable at last: E22 vs E20 isolates win32/ffn at matched lr. Until then the fast defau |
+| `I19` | ray conditioning / physically-structured decoding | far | the model must LEARN that echo delay encodes depth, and it fails to, collapsing far surfaces toward the median | probing | E24 queued behind the attribution runs; the queue benchmarks cost first. |
 
 ### Open discrepancies
 
@@ -48,6 +49,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-10T20:48 | `exploit` | idea_added | STRUCTURAL, not a loss change. The encoder's width axis IS time, so e3's 64 columns are depth hypotheses (d = c*t/2, 0.08-9.92m).  |
 | 2026-07-10T20:33 | `exploit` | experiment_completed | fast config at lr 3e-4: composite 1.9099, stable (max mae jump 0.99), converged (best ep19/25). Matches the E11 champion (1.9093)  |
 | 2026-07-10T19:33 | `exploit` | experiment_completed | I18 CONFIRMED: at lr 6e-4 the fast config is stable (mae never rose between epochs, max ratio 0.99 vs 1.46/1.51 at lr 1.2e-3) and  |
 | 2026-07-10T18:30 | `exploit` | experiment_completed | DIVERGED at ep7 despite w_coarse_layout=0, never recovered (val d1 0.5342 -> 0.1307; lc pinned at 0.1849, D_coarse saturated to a  |
@@ -55,7 +57,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | 2026-07-10T17:58 | `exploit` | experiment_completed | DIVERGED at epoch 5 (lc 0.0633 -> 0.3209, never recovers). Recorded as discard. Not a test of the fast knobs' accuracy -- a second |
 | 2026-07-10T16:44 | `explore` | discrepancy_recorded | D11: E15 DIVERGED at epoch 4 with the parent's lr. The blow-up is entirely in lc, the coarse-layout term (0.4402 vs 0.0618) -- and |
 | 2026-07-10T16:25 | `explore` | idea_added | From data already collected: E9 (cr32 on 2048 fine tokens) scores d1 0.2544 at GT 8-9m; E12 (512 coarse) only 0.1579. Far surfaces |
-| 2026-07-10T16:25 | `explore` | candidate_dropped | PRE-REGISTERED FALSIFICATION MET: both relative dense terms made the 7-10m deciles WORSE (rel_mae -0.19/-0.13/-0.22; log_mae -0.13 |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->

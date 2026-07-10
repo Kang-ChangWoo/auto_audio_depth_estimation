@@ -120,6 +120,7 @@ def make_config(args):
             cross_kv32=args.cross_kv32,
             cross_kv16=args.cross_kv16,
             coarse_norm=args.coarse_norm,
+            depth_volume=args.depth_volume,
             # ray-feature bank flags
             use_xyz=True,
             use_fourier_pe=True,
@@ -347,6 +348,56 @@ class LocalSphericalAttention(nn.Module):
         return x + self.proj(out)
 
 
+# ---- echo-delay cost volume (idea I19) ---------------------------------------
+class EchoDelayVolume(nn.Module):
+    """Per-ray depth distribution over ECHO DELAY, not a scalar regression.
+
+    The physics the model currently has to LEARN: a surface at depth d returns its echo at
+    t = 2d/c. The encoder's width axis IS time -- spec is (freq 256, time 512), so e3 is
+    (freq 32, time 64) -- and its 64 time columns therefore correspond one-to-one with depth
+    hypotheses spanning 0..10 m. This module hands the model that correspondence instead.
+
+    For each ray r and each depth hypothesis j:
+      1. the ray query attends over FREQUENCY within time column j alone. Azimuth lives in the
+         per-frequency ILD/IPD, so frequency is the axis a direction-conditioned query should
+         read; time is the axis that encodes distance and must NOT be mixed across hypotheses.
+      2. the pooled feature f[r,j] is "what ray r sees at depth d_j".
+      3. a small MLP scores each hypothesis; a softmax over the DEPTH axis makes a distribution.
+      4. depth_r = sum_j p_j * d_j -- a soft-argmax over echo delay.
+
+    Two measured failures this attacks. Far-field range compression (at GT 8-9 m RayDPT predicts
+    4.97 m and scores d1 0.1751 against batvision's 0.4023): a distribution over depth bins has no
+    conditional-median collapse, and the evidence for a far surface sits in a LATE column the
+    structure now points at directly. And the old coarse_head -- a sigmoid one 1x1 conv from the
+    deepest attention output, which saturated and diverged (D11) -- is replaced by a softmax over
+    physically meaningful bins.
+    """
+
+    def __init__(self, e3_ch, dim, dv=48, n_bins=64, max_depth=10.0,
+                 cut=2823, sample_rate=48000, c=340.0):
+        super().__init__()
+        self.dv = dv
+        self.proj = nn.Conv2d(e3_ch, dv, 1)                      # e3 -> (B, dv, F, T)
+        self.q = nn.Linear(dim, dv)
+        self.score = nn.Sequential(nn.Linear(dv, 64), nn.GELU(), nn.Linear(64, 1))
+        self.ctx = nn.Linear(dv, dim)
+        # depth of each time column, normalised by max_depth (the model's output convention)
+        j = torch.arange(n_bins, dtype=torch.float32)
+        t = (j + 0.5) / n_bins * (cut / sample_rate)             # seconds
+        self.register_buffer('bins', (c * t / 2.0) / max_depth)  # (T,) in [0,1]
+
+    def forward(self, q_rays, e3):
+        A = self.proj(e3)                                        # (B,dv,F,T)
+        q = self.q(q_rays)                                       # (B,N,dv)
+        logits = torch.einsum('bnd,bdft->bnft', q, A) * (self.dv ** -0.5)
+        a = logits.softmax(dim=2)                                # over FREQUENCY, within a column
+        feat = torch.einsum('bnft,bdft->bntd', a, A)             # (B,N,T,dv)
+        p = self.score(feat).squeeze(-1).softmax(dim=-1)         # over DEPTH bins  (B,N,T)
+        depth = (p * self.bins).sum(-1)                          # (B,N) normalised depth
+        ctx = self.ctx((p.unsqueeze(-1) * feat).sum(2))          # (B,N,dim)
+        return depth, ctx
+
+
 # ---- RayDPT ------------------------------------------------------------------
 class RayDPT(nn.Module):
     def __init__(self, cfg):
@@ -384,6 +435,8 @@ class RayDPT(nn.Module):
         # (D11). `--coarse-norm True` inserts a GroupNorm so the head is insensitive to F16's scale.
         self.coarse_norm = (nn.GroupNorm(1, dim) if bool(getattr(cfg, "coarse_norm", False))
                             else nn.Identity())
+        self.depth_volume = (EchoDelayVolume(ngf * 4, dim, max_depth=float(getattr(cfg, "max_depth", 10.0)))
+                             if bool(getattr(cfg, "depth_volume", False)) else None)
         self.coarse_head = nn.Conv2d(dim, 1, 1)
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
         self.lite = getattr(cfg, "raydpt_lite", False)        # 2-scale (32,64) lite variant
@@ -430,7 +483,14 @@ class RayDPT(nn.Module):
             F16 = self._cross(self.rp16, self.rf16, self.cr16, kv16, B, 16, 32)
             F32 = self._cross(self.rp32, self.rf32, self.cr32, kv32, B, 32, 64)
             m16 = F16 + self.se4(e4)                             # 16x32
-            d_c = torch.sigmoid(self.coarse_head(self.coarse_norm(m16)))   # (B,1,16,32) coarse layout
+            if self.depth_volume is not None:
+                # per-ray soft-argmax over echo delay; no sigmoid, no scalar regression
+                q16 = m16.flatten(2).transpose(1, 2)             # (B,512,dim)
+                dv, ctx = self.depth_volume(q16, e3)
+                m16 = m16 + ctx.transpose(1, 2).reshape(B, -1, 16, 32)
+                d_c = dv.reshape(B, 1, 16, 32)
+            else:
+                d_c = torch.sigmoid(self.coarse_head(self.coarse_norm(m16)))   # (B,1,16,32) coarse layout
             x = self.lsa32(self.refine32(self.up(m16) + F32 + self.se3(e3)))   # 32x64
             if self.decode_scale == 64:
                 F64 = self._cross(self.rp64, self.rf64, self.cr64, kv4, B, 64, 128)
@@ -845,6 +905,10 @@ def parse_args():
                    help='CrossBlocks per ray scale. 2 = original. Halving it halves the '
                         'audio<->ray cross-attention cost, the dominant term.')
     # --- architecture knobs the GPU profiler showed dominate (see README "fast baseline") ---
+    p.add_argument('--depth-volume', type=lambda s: s == 'True', default=False,
+                   help='EchoDelayVolume: per-ray soft-argmax over echo delay, replacing the scalar '
+                        'sigmoid coarse head. The encoder width axis IS time, so its 64 columns are '
+                        'depth hypotheses (idea I19).')
     p.add_argument('--coarse-norm', type=lambda s: s == 'True', default=False,
                    help='GroupNorm before coarse_head. Decouples the auxiliary sigmoid from F16\'s '
                         'magnitude, which is what saturated in E15/E17 (D11, idea I15).')
