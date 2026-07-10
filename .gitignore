@@ -57,3 +57,5 @@ out/.queue10.lock
 out/queue10_driver.log
 out/.queue11.lock
 out/queue11_driver.log
+out/.fastbase.lock
+out/fastbase_driver.log

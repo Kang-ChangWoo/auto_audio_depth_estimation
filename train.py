@@ -48,6 +48,10 @@ from utils.evallock import eval_lock
 # Constants (fixed, do not modify)
 # ============================================================
 
+# Scored runs use 3600 s. A shorter budget is for SCREENING only: it changes how many epochs
+# fit, and epochs-fit is silently part of the score (D5), so a screening number is NEVER
+# comparable with a scored one. train() prints a loud banner and record_run.py refuses to file
+# a short-budget run as `keep`.
 TIME_BUDGET = 3600  # training wall-clock budget in seconds (1 hour)
 
 
@@ -100,11 +104,11 @@ def make_config(args):
         model=Cfg(
             name='raydpt',
             ngf=64,
-            dim=192,
-            n_heads=4,
+            dim=args.dim,
+            n_heads=args.n_heads,
             ray_cross_layers=args.ray_cross_layers,
-            raydpt_win32=5,
-            raydpt_win64=3,
+            raydpt_win32=args.raydpt_win32,
+            raydpt_win64=args.raydpt_win64,
             raydpt_lite=args.raydpt_lite,
             # Decode scale. 64 = the original 3-scale pyramid (16/32/64). 32 = drop the
             # 64-scale (cr64 + lsa64 + refine64 = 54% of forward) and upsample x8 instead of
@@ -146,7 +150,8 @@ def make_config(args):
             experiment_name=args.experiment_name,
             eval_on=args.eval_on,
             vis_every=args.vis_every,
-            amp=args.amp,                                        # 'off' | 'bf16' autocast
+            amp=args.amp,
+            time_budget=args.time_budget,                                        # 'off' | 'bf16' autocast
             max_iters=getattr(args, 'max_iters', 0),             # >0: stop each epoch after N train iters (smoke/debug)
             max_val_batches=getattr(args, 'max_val_batches', 0),  # >0: evaluate only N val batches (smoke/debug)
         ),
@@ -641,6 +646,13 @@ def train(cfg):
     dataset_dir = cfg.dataset.dataset_dir
     depth_type = cfg.dataset.depth_type
 
+    budget = int(cfg.mode.time_budget)
+    if budget != TIME_BUDGET:
+        print('=' * 72, flush=True)
+        print(f'!! SCREENING RUN: time budget {budget}s, not the scored {TIME_BUDGET}s.', flush=True)
+        print('!! epochs-fit is part of the score (D5) -- this number is NON-AUTHORITATIVE.', flush=True)
+        print('=' * 72, flush=True)
+
     training_start = time.time()
     for epoch in range(start_epoch, cfg.mode.epochs + 1):
         model.train()
@@ -719,8 +731,8 @@ def train(cfg):
 
         # Time budget check
         elapsed = time.time() - training_start
-        if elapsed >= TIME_BUDGET:
-            print(f'\nTime budget reached ({elapsed:.1f}s >= {TIME_BUDGET}s). Stopping.')
+        if elapsed >= budget:
+            print(f'\nTime budget reached ({elapsed:.1f}s >= {budget}s). Stopping.')
             break
 
     total_time = time.time() - training_start
@@ -785,9 +797,9 @@ def parse_args():
                    default='/home/rvi-lab/workspace/sound-spaces/dataset_simplified',
                    help='Path to SoundSpaces dataset')
 
-    p.add_argument('--batch-size', type=int, default=16)
-    p.add_argument('--epochs', type=int, default=40)
-    p.add_argument('--lr', type=float, default=3e-4)
+    p.add_argument('--batch-size', type=int, default=64)
+    p.add_argument('--epochs', type=int, default=28)
+    p.add_argument('--lr', type=float, default=1.2e-3)
     p.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam', 'SGD'])
     p.add_argument('--num-workers', type=int, default=16)
 
@@ -821,17 +833,28 @@ def parse_args():
     p.add_argument('--ray-cross-layers', type=int, default=2,
                    help='CrossBlocks per ray scale. 2 = original. Halving it halves the '
                         'audio<->ray cross-attention cost, the dominant term.')
+    # --- architecture knobs the GPU profiler showed dominate (see README "fast baseline") ---
+    p.add_argument('--dim', type=int, default=192, help='ray/token width')
+    p.add_argument('--n-heads', type=int, default=4)
+    p.add_argument('--raydpt-win32', type=int, default=3,
+                   help='local spherical attention window at 32x64. 5 -> 25 offsets, 3 -> 9; '
+                        'measured 1.20x faster at win=3.')
+    p.add_argument('--raydpt-win64', type=int, default=3,
+                   help='local spherical attention window at 64x128 (unused when decode-scale=32)')
+    p.add_argument('--time-budget', type=int, default=3600,
+                   help='wall-clock seconds. 3600 = scored. Anything else is a SCREENING run and '
+                        'its metrics are NON-AUTHORITATIVE (epochs-fit is part of the score).')
     p.add_argument('--main-loss', type=str, default='mae', choices=['mae', 'rel_mae', 'log_mae'],
                    help="dense term. 'mae' drives to the conditional median and compresses far depth; "
                         "'rel_mae'/'log_mae' charge relative error, aligning the loss with d1 (idea I13).")
-    p.add_argument('--ffn-mult', type=int, default=4,
+    p.add_argument('--ffn-mult', type=int, default=2,
                    help='CrossBlock FFN expansion. Most per-token FLOPs live here (idea I12).')
-    p.add_argument('--cross-kv32', type=str, default='e3', choices=['e3', 'e4'],
+    p.add_argument('--cross-kv32', type=str, default='e4', choices=['e3', 'e4'],
                    help="audio tokens the 32-scale rays attend to: e3 (2048, original) or e4 (512, 4x cheaper)")
     p.add_argument('--cross-kv16', type=str, default='e4', choices=['e3', 'e4'],
                    help="audio tokens the COARSE 16-scale rays attend to. e3 costs 512x2048 pairs -- "
                         "as cheap as cr32-on-e4 -- and carries the late-echo detail far depth needs (I14).")
-    p.add_argument('--decode-scale', type=int, default=64, choices=[32, 64],
+    p.add_argument('--decode-scale', type=int, default=32, choices=[32, 64],
                    help='finest ray-decode resolution: 64 -> 64x128 (original), 32 -> 32x64 '
                         '(drops cr64+lsa64+refine64, 54%% of forward). Ray-conditioning is kept.')
 

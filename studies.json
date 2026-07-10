@@ -1,10 +1,10 @@
 {
-  "_comment": "Active research state for Auto Audio Depth Estimation - 2026-July RayDPT-validation phase. June improvement phase (champion composite ~2.03) is archived on branch 2026-June-RayDPT-improvement. This phase restarts from the ORIGINAL RayDPT baseline (f677b0f, 5ch) with THREE changes: (1) LOSS FIX - coarse-layout & low-pass loss TARGETS use MASK-WEIGHTED pooling (old avg-pool/blur diluted the target with invalid gt=0 pixels); (2) selection composite ABS_REL weight reduced (effective 0.75 -> 0.35) since abs_rel is gameable and varies most; (3) DEPTH TARGET is now PLANAR (cubemap perpendicular-Z) - the along-ray/radial rescaling was removed from prepare._depth (87b3047). compute_errors (eval metric) unchanged. Because the target changed, NO metric from before 87b3047 is comparable: this phase re-establishes every number from scratch. State files: out/results.tsv, out/hypothesis.tsv, out/hypothesis_details.tsv, studies.json; helper utils/research.py.",
-  "phase": "2026-July RayDPT-validation (planar depth)",
+  "_comment": "Phase branch 2026-July-RayDPT-fast. Forked from 2026-July-RayDPT-validation at commit 040f0ed with all 15 experiments, study conclusions, archive, ideas and discrepancies intact -- the validation branch is read-only history and its numbers remain comparable (same evaluator, split, target, score formula, and the same 3600s scored budget). What changes here is only train.py's DEFAULTS and two measured architecture knobs. Nothing about the benchmark moves.",
+  "phase": "2026-July RayDPT-fast (efficiency phase)",
   "reset_note": "Fresh from original baseline f677b0f + mask-weighted coarse/low loss targets + composite abs_rel weight 0.75->0.35 + PLANAR (cubemap) depth target.",
   "depth_convention": "planar (cubemap perpendicular-Z); stored erp_depth used as-is; radial_factor removed",
   "metric": "composite (selection) = rmse/1.6 + (1-d1)/0.46 + 0.35*abs_rel  (lower better; RMSE+d1 dominate; abs_rel de-weighted)",
-  "next_exp_id": "E16",
+  "next_exp_id": "E18",
   "global_champion": null,
   "concluded_studies": [
     {
@@ -257,24 +257,24 @@
       ]
     }
   ],
-  "mode": "explore",
-  "mode_reason": "The spatial diagnostic redirected the research: the deficit is far-field compression, a property of the OBJECTIVE, not of ray-conditioning. A causally different mechanism (relative/log dense loss) is now the highest-information experiment.",
+  "mode": "exploit",
+  "mode_reason": "Operator asked for a good starting RayDPT that is fast to experiment with. The bottleneck on iteration speed is measured, not guessed: cr32 37.1% and lsa32 33.5% of forward.",
   "studies_since_synthesize": 0,
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",
   "active_study": {
-    "study_id": "S7",
-    "lineage": "ray-token-routing",
+    "study_id": "F0",
+    "lineage": "raydpt-fast-baseline",
     "parent": "E11 (raydpt_e11_d32L2_kve4)",
-    "type": "new",
+    "type": "refine",
     "status": "running",
-    "general_hypothesis": "A ray can only estimate distance from evidence it can attend to. Far surfaces return late, weak echoes -- late frames on the spectrogram's time axis -- and every encoder pooling step dilutes them. What matters is not how much attention costs, but WHICH tokens it is spent on.",
-    "detailed_hypothesis": "E9 vs E12 (identical but for the KV set) show fine tokens buy +0.0965 of far-field d1. cr32-on-e3 is unaffordable (E10 never converged), but attention costs (queries x kv), so routing fine tokens to the 512-query coarse scale costs the same as cr32-on-e4. Parameter count unchanged.",
-    "experiment_note": "E15 raydpt_e15_kv16e3: --cross-kv16 e3 on E11's architecture. Measured 169.5 s/epoch = 21.2 epochs.",
+    "general_hypothesis": "Research throughput is a first-class research variable. Under a fixed wall-clock budget, a cheaper model that converges further is not merely faster to study -- it scores better, and it lets more hypotheses be tested per day. But a speed change that quietly costs accuracy buys nothing, so every knob must be paid for in a scored run.",
+    "detailed_hypothesis": "GPU profiling of the E11 champion (batch 64, bf16): cr32 37.1%, lsa32 33.5%, enc 13.9%, cr16 10.0% of forward. Two knobs follow. raydpt_win32 5->3 shrinks the local spherical attention from 25 offsets to 9 (measured 1.20x). ffn_mult 4->2 halves the CrossBlock FFN (1.10x on top). Together 169.1 -> 127.7 s/epoch, 21.3 -> 28.2 epochs/h, 5.89M -> 5.29M params.",
+    "experiment_note": "E17 raydpt_e17_fastbase: the new defaults, scored at the full 3600s budget, --epochs 28.",
     "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
     "runs": [],
-    "decision_rule": "PRE-REGISTERED: the 7-10m deciles must improve over E11, or I14 is dropped whatever the composite does -- exactly as I13 was. Overall d1 must clear sigma to be crowned. ABS_REL is not evidence."
+    "decision_rule": "Adopt iff E17's composite is within sigma (0.008) of E11's 1.9093, or better. Both knobs are CAPACITY cuts, so speed alone proves nothing. A win does not prove the knobs are free -- it proves the trade is favourable at this budget. If E17 loses by more than sigma, revert win32/ffn to E11's values and keep only the reorganised defaults."
   },
   "backlog": [
     {
@@ -322,5 +322,6 @@
       "type": "refine",
       "idea": "Drop the vestigial pix2pix encoder tail (24.44M->7.69M, provably equivalent) - re-apply early once baseline confirmed."
     }
-  ]
+  ],
+  "fork_note": "RayDPT re-initialised from the E11 champion (composite 1.9093, d1 0.5710, 23 epochs, CONVERGED) rather than from the original E4 anchor, which never converged. Defaults now reproduce E11 plus two profiler-selected knobs (raydpt_win32 3, ffn_mult 2)."
 }

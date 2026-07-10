@@ -277,6 +277,22 @@
       "budget_risk": "none.",
       "evidence_required": "parent unchanged AND treatment stable.",
       "next_action": "deferred until I14 is decided at the safe lr; a stability fix must not be bundled with the mechanism it would rescue."
+    },
+    {
+      "id": "I16",
+      "status": "probing",
+      "origin": "operator request for a fast experimentation baseline; GPU profile of the E11 champion",
+      "target_bottleneck": "iteration speed IS a research variable under a wall-clock budget",
+      "mechanism_family": "throughput / experiment economics",
+      "causal_distance": "near",
+      "general_hypothesis": "Under a fixed wall-clock budget, a cheaper model that converges further scores better AND lets more hypotheses be tested per day. Both effects compound. But a speed change that quietly costs accuracy buys nothing.",
+      "detailed_hypothesis": "Profiled at the champion's config: cr32 37.1%, lsa32 33.5% of forward. raydpt_win32 5->3 cuts lsa32's neighbourhood from 25 offsets to 9 (1.20x); ffn_mult 4->2 halves the CrossBlock FFN (1.10x more). Together 1.32x: 28.2 epochs/h against 21.3.",
+      "expected_metric_effect": "composite within sigma of E11's 1.9093, or better thanks to the extra epochs.",
+      "main_falsification_condition": "E17 loses by more than sigma -> the knobs cost real capacity; revert them and keep only the reorganised defaults.",
+      "minimal_falsifiable_test": "E17: the new defaults, scored at the full 3600s budget.",
+      "budget_risk": "none -- it is the budget that is being bought.",
+      "evidence_required": "a SCORED run, not a benchmark. Speed was measured; accuracy must be paid for.",
+      "next_action": "E17 running."
     }
   ],
   "discrepancies": [

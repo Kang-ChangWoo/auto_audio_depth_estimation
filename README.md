@@ -7,19 +7,19 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | | |
 |---|---|
-| **Mode** | `EXPLORE` — 1 structural run + 0-2 focused probes -> CANDIDATE / DROP / INCONCLUSIVE |
-| **Active study** | `S7` [new] ray-token-routing (*running*) |
-| **Research question** | A ray can only estimate distance from evidence it can attend to. Far surfaces return late, weak echoes -- late frames on the spectrogram's time axis -- and every encoder pooling step dilutes them. Wha |
-| **Current action** | E15 raydpt_e15_kv16e3: --cross-kv16 e3 on E11's architecture. Measured 169.5 s/epoch = 21.2 epochs. |
+| **Mode** | `EXPLOIT` — adaptive HPO ladder 3 -> 5 -> 7 -> 10, each step justified by evidence -> PASS / FAIL |
+| **Active study** | `F0` [refine] raydpt-fast-baseline (*running*) |
+| **Research question** | Research throughput is a first-class research variable. Under a fixed wall-clock budget, a cheaper model that converges further is not merely faster to study -- it scores better, and it lets more hypo |
+| **Current action** | E17 raydpt_e17_fastbase: the new defaults, scored at the full 3600s budget, --epochs 28. |
 | **Latest result** | *(no scored run in this study yet)* |
-| **Next decision** | PRE-REGISTERED: the 7-10m deciles must improve over E11, or I14 is dropped whatever the composite does -- exactly as I13 was. Overall d1 must clear sigma to be crowned. ABS_REL is not evidence. |
-| **Why this mode** | The spatial diagnostic redirected the research: the deficit is far-field compression, a property of the OBJECTIVE, not of ray-conditioning. A causally different mechanism (relative/log dense loss) is  |
+| **Next decision** | Adopt iff E17's composite is within sigma (0.008) of E11's 1.9093, or better. Both knobs are CAPACITY cuts, so speed alone proves nothing. A win does not prove the knobs are free -- it proves the trad |
+| **Why this mode** | Operator asked for a good starting RayDPT that is fast to experiment with. The bottleneck on iteration speed is measured, not guessed: cr32 37.1% and lsa32 33.5% of forward. |
 
 ### Current hypothesis
 
-- **General** — A ray can only estimate distance from evidence it can attend to. Far surfaces return late, weak echoes -- late frames on the spectrogram's time axis -- and every encoder pooling step dilutes them. What matters is not how much attention costs, but WHICH tokens it is spent on.
-- **Detailed** — E9 vs E12 (identical but for the KV set) show fine tokens buy +0.0965 of far-field d1. cr32-on-e3 is unaffordable (E10 never converged), but attention costs (queries x kv), so routing fine tokens to the 512-query coarse scale costs the same as cr32-on-e4. Parameter count unchanged.
-- **Implementation note** — E15 raydpt_e15_kv16e3: --cross-kv16 e3 on E11's architecture. Measured 169.5 s/epoch = 21.2 epochs.
+- **General** — Research throughput is a first-class research variable. Under a fixed wall-clock budget, a cheaper model that converges further is not merely faster to study -- it scores better, and it lets more hypotheses be tested per day. But a speed change that quietly costs accuracy buys nothing, so every knob must be paid for in a scored run.
+- **Detailed** — GPU profiling of the E11 champion (batch 64, bf16): cr32 37.1%, lsa32 33.5%, enc 13.9%, cr16 10.0% of forward. Two knobs follow. raydpt_win32 5->3 shrinks the local spherical attention from 25 offsets to 9 (measured 1.20x). ffn_mult 4->2 halves the CrossBlock FFN (1.10x on top). Together 169.1 -> 127.7 s/epoch, 21.3 -> 28.2 epochs/h, 5.89M -> 5.29M params.
+- **Implementation note** — E17 raydpt_e17_fastbase: the new defaults, scored at the full 3600s budget, --epochs 28.
 
 ### Research portfolio
 
@@ -32,6 +32,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I10` | acoustic-representation / interpolation | mid | the nearest-neighbour resize in _features() turns the time axis into a coarse staircase | inconclusive | deferred confirm: run `--feat-interp bilinear --stft-hop 40` after the RayDPT throughput s |
 | `I14` | ray conditioning / audio token routing | mid | far-field rays cannot see the late, weak echo that carries distance | probing | E16 (control) then E15b (treatment), both at lr 6e-4. Pre-registered falsification unchang |
 | `I15` | architecture / stability | near | RayDPT's coarse head is a sigmoid one 1x1 conv away from the deepest ray-attention output, with no normalisation between | backlog | deferred until I14 is decided at the safe lr; a stability fix must not be bundled with the |
+| `I16` | throughput / experiment economics | near | iteration speed IS a research variable under a wall-clock budget | probing | E17 running. |
 
 ### Open discrepancies
 

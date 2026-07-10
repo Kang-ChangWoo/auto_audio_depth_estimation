@@ -26,6 +26,7 @@ sys.path.insert(0, ROOT)
 def parse_log(path):
     """Pull the final best-checkpoint metrics and the run's shape out of a training log."""
     txt = open(path).read()
+    screening = 'SCREENING RUN' in txt
     best = re.findall(r'Best model saved \(score ([\d.]+) \| ABS_REL ([\d.]+) '
                       r'RMSE ([\d.]+) d1 ([\d.]+)\)', txt)
     if not best:
@@ -39,7 +40,7 @@ def parse_log(path):
     # best epoch = index of the last "Best model saved" among validation blocks
     n_best = len(best)
     val_blocks = len(re.findall(r'Val Loss:', txt))
-    return dict(composite=comp, abs_rel=abs_rel, rmse=rmse, d1=d1, epochs_ran=epochs,
+    return dict(screening=screening, composite=comp, abs_rel=abs_rel, rmse=rmse, d1=d1, epochs_ran=epochs,
                 vram_gb=round(float(vram.group(1)) / 1000, 1) if vram else 0.0,
                 sec_per_epoch=round(sum(ep_times) / len(ep_times), 1) if ep_times else 0.0,
                 training_seconds=float(secs.group(1)) if secs else 0.0,
@@ -73,6 +74,11 @@ def main():
           f"peak {m['vram_gb']}GB  best-updates {m['n_best_updates']}/{m['val_blocks']} vals")
     if m['n_best_updates'] == m['val_blocks'] and m['val_blocks'] > 0:
         print("  !! best checkpoint is the LAST epoch -- the run had not converged (see D5)")
+    if m['screening'] and a.status == 'keep':
+        raise SystemExit(
+            "  !! this is a SCREENING run (shortened time budget). epochs-fit is part of the score\n"
+            "     (D5), so it is NOT comparable with a scored run and must not be filed as `keep`.\n"
+            "     Re-run at the full budget, or record it with --status discard.")
     if a.dry_run:
         print('\n[dry-run] results.tsv row would be:\n  ' + row.rstrip())
         return
