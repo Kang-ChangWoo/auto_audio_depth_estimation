@@ -372,7 +372,7 @@
     },
     {
       "id": "I20",
-      "status": "probing",
+      "status": "dropped",
       "priority": "high",
       "origin": "DC2 -- extend the one confirmed mechanism at finer time resolution",
       "target_bottleneck": "EchoDelayVolume reads e3 (time 64), which is the STFT's 512 columns pooled 8x -- its delay resolution may be the limit",
@@ -385,11 +385,14 @@
       "budget_risk": "low; ~free params. e2 has 2x the columns so the volume's attention is 2x -- benchmark.",
       "next_action": "E29 running.",
       "composite": "E29 composite 1.9006 vs E24 1.8987, delta +0.0019 (below sigma). Converged (best 14/22). The far-decile verdict -- the actual pre-registered test -- is pending: the diagnostic correctly blocked on the eval_lock while E30 trains, rather than stealing the GPU.",
-      "note": "e2 doubles the volume's time columns (128 vs 64) but costs ~0 params; s/epoch 153 vs E24's 130 (the fast parent), still converges. Whether the finer delay resolution actually moves the far field is the open question."
+      "note": "e2 doubles the volume's time columns (128 vs 64) but costs ~0 params; s/epoch 153 vs E24's 130 (the fast parent), still converges. Whether the finer delay resolution actually moves the far field is the open question.",
+      "why_dropped": "PRE-REGISTERED FALSIFICATION FAILED. Reading e2 (time 128) instead of e3 (time 64) did NOT improve the far deciles over E24 -- all three regressed: 7-8m -0.0427, 8-9m -0.0442, 9-10m -0.0154. Doubling the volume's delay resolution did not sharpen the far field. Composite was neutral (+0.0019) but the composite is not the test.",
+      "interpretation": "The volume's LIMIT is not its time resolution. e3's 64 columns already resolve 0-10m at 0.16m spacing, finer than the achieved RMSE (1.3m). More columns cannot help a model whose far-field error is ~1.3m, not 0.16m. The through-line ('finer time = better far field') held ACROSS very different resolutions (18->71 STFT frames, e4->e3 tokens) but SATURATES within the volume itself.",
+      "scope_of_negative_evidence": "Refutes finer TIME BINNING of the echo-delay volume, on the fast parent. It does not refute the volume itself (I19 stands, scoped) nor coarser-grained time-resolution levers upstream."
     },
     {
       "id": "I21",
-      "status": "probing",
+      "status": "dropped",
       "origin": "the scope of I19 (E27): EchoDelayVolume competes with dense capacity, so pair it with a DIFFERENT far-field path",
       "target_bottleneck": "combine two non-overlapping far-field mechanisms",
       "mechanism_family": "combine",
@@ -400,7 +403,10 @@
       "main_falsification_condition": "no improvement over E24, OR divergence (kv=e3 fell over at lr 1.2e-3, D11; must be stable at 3e-4).",
       "budget_risk": "medium; kv=e3 is 4x cr32 attention. E10 showed it fits at ~15 epochs at 2 layers, but the fast config is cheaper.",
       "next_action": "E30 running; watch for the D11 divergence signature (lc/mae spike).",
-      "e30_stability": "STABLE at lr 3e-4: E30 (EDE + cross_kv32=e3) trained normally through epoch 2 (mae 0.1010 -> 0.0679), no D11 spike. First confirmation that I18's lr fix makes kv=e3 -- which diverged at lr 1.2e-3 -- trainable. 217 s/epoch."
+      "e30_stability": "STABLE at lr 3e-4: E30 (EDE + cross_kv32=e3) trained normally through epoch 2 (mae 0.1010 -> 0.0679), no D11 spike. First confirmation that I18's lr fix makes kv=e3 -- which diverged at lr 1.2e-3 -- trainable. 217 s/epoch.",
+      "why_dropped": "PRE-REGISTERED FALSIFICATION FAILED, and it is confounded on top. E30 (EchoDelayVolume + kv=e3) regressed every far decile vs E24 (7-8m -0.0416, 8-9m -0.0243, 9-10m -0.0349) and its composite is 1.9508, far worse. It was ALSO budget-starved: kv=e3 is 4x cr32 attention (218.5 s/epoch), so only 16 epochs fit vs E24's 24.",
+      "interpretation": "The two far-field paths do NOT compose -- they behave like E27's EDE+dense: redundant, not complementary. Both the volume and kv=e3 target the SAME signal (fine echo timing), so stacking them adds cost without adding information, exactly as D12 warned when the paths overlap. The scope prediction was wrong: 'different path' is not enough; the paths must carry DIFFERENT information, and these carry the same.",
+      "what_survives": "E30 confirmed kv=e3 is STABLE at lr 3e-4 (I18's fix), which reopens kv=e3 as a research knob that D11 had closed. That is a real infrastructure gain even though the combine failed."
     }
   ],
   "discrepancies": [
@@ -520,6 +526,14 @@
       "next_action": "This is evidence about WHERE the far-field capacity lives, not a defect to patch. The productive combine is EchoDelayVolume with the ONE change that gave the fine time tokens directly (kv=e3 routing, I14) -- not with the champion's extra dense capacity.",
       "resolution": "PARENT-DEPENDENCE IS REAL, not a budget artefact. E27 (champion + EDE, --epochs 21, cosine fully annealed to lr 0, converged) scored 1.9271 vs E23's 1.8962 -- WORSE than the unconverged E25, and the far deciles it was designed to fix REGRESSED: 8-9 m -0.0362, 9-10 m -0.0230 (against E24's +0.076 and +0.060 on the fast parent). The mean predicted depth at GT 8-9 m FELL from 5.044 m to 4.824 m. So the schedule fix removed the confound and the mechanism still loses on the champion.",
       "mechanism": "The two parents differ only in win32 (3 vs 5) and ffn_mult (2 vs 4) -- both are cross_kv32=e4. The champion already does far-field better than the fast model WITHOUT EchoDelayVolume (E23 8-9 m d1 0.2306 vs E21 0.1845). So the wider local attention and larger FFN are ALREADY buying the far-field accuracy EchoDelayVolume targets, and stacking the two makes them compete for the same capacity rather than compose. EchoDelayVolume helps a WEAK model and hinders a strong one."
+    },
+    {
+      "id": "D13",
+      "status": "open",
+      "observation": "THREE ways of adding far-field time resolution to a model that already has EchoDelayVolume all FAILED to improve the far deciles: finer volume bins (E29 e2), fine-token routing (E30 kv=e3), and the champion's dense capacity (E27). Yet EchoDelayVolume itself, added to a bare model, DID improve them (E24).",
+      "why_it_matters": "It is the signature of a SATURATING resource. The first dose of far-field time-resolution structure helps (E24: +0.06-0.08); every additional dose, by any path, does nothing or hurts. So RayDPT's far-field d1 is now limited by something OTHER than how much echo-timing structure the decoder has. The remaining suspects have not been touched: angular observability with two mics (I7), or the ENCODER discarding time before the volume ever reads it -- e3 is the STFT's 512 columns pooled 8x by the encoder, and no amount of downstream structure recovers what the encoder averaged away.",
+      "diagnostic_value": "Redirects the far-field question from the DECODER (exhausted: E24/E27/E29/E30) to the ENCODER and the REPRESENTATION. If the encoder's pooling is the limit, a volume read from a LESS-pooled feature -- or the raw STFT -- should help where e2 did not. If even that saturates, the limit is the sensor (I7).",
+      "next_action": "Test whether the ENCODER is the bottleneck: EchoDelayVolume reading a minimally-pooled time axis (e2 was only 2x; try the STFT's own time resolution). If that also saturates, the far field is sensor-limited and the lever moves to the representation (multi-window STFT) or is a genuine ceiling."
     }
   ],
   "divergence_checkpoints": [

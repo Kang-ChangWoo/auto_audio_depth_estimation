@@ -336,10 +336,44 @@
         "Cause: the champion's wider LSA (win5) and larger FFN (ffn4) already provide far-field accuracy (E23 8-9m d1 0.2306 vs fast 0.1845), so the mechanism competes with existing capacity rather than adding to it.",
         "A specialist that helps a starved decoder and hinders a strong one. Real, reproducible, scoped -- but not a champion."
       ]
+    },
+    {
+      "study_id": "G1",
+      "lineage": "echo-delay-volume",
+      "parent": "E24 (raydpt_e24_echodelay, fast parent)",
+      "type": "refine",
+      "status": "concluded",
+      "general_hypothesis": "The echo-delay cost volume is the project's one confirmed mechanism (pre-registered far-decile prediction held on the fast parent). Its through-line is time resolution: every far-field result -- E9/E12 fine tokens, E24 itself, batvision's full-res skips -- says the lever is resolving echo arrival time finely. So push the volume's own time resolution, and pair it with a second far-field path.",
+      "detailed_hypothesis": "E29 (I20): read e2 (time 128) for 2x delay resolution. E30 (I21): combine with fine-token routing (cross_kv32=e3). Both extend E24 on the fast parent, control E24 (1.8987), each differing in one variable.",
+      "experiment_note": "E29 --depth-volume-src e2; E30 --cross-kv32 e3. Both on win32=3 ffn=2 lr 3e-4.",
+      "hpo_stage": "structural-screen",
+      "hpo_runs_used": 0,
+      "runs": [
+        {
+          "exp_id": "E29",
+          "composite": 1.9006,
+          "far_delta": "-0.04 to -0.02",
+          "verdict": "FAIL"
+        },
+        {
+          "exp_id": "E30",
+          "composite": 1.9508,
+          "far_delta": "-0.04 to -0.02",
+          "verdict": "FAIL, budget-starved"
+        }
+      ],
+      "decision_rule": "Pre-registered, per idea I19's line: the 7-10m deciles must improve over E24, or drop. Judge on far deciles and d1; ABS_REL is not evidence. E30 additionally must not diverge (D11).",
+      "conclusion": "FAIL (both pre-registered far-decile tests failed); EchoDelayVolume saturates",
+      "observations": [
+        "Finer volume time bins (e2) did not improve the far field: the volume's 64 columns already out-resolve the achieved RMSE.",
+        "EchoDelayVolume + kv=e3 do not compose: same signal, different path -- redundant like E27's EDE+dense.",
+        "D13: far-field time-resolution structure in the DECODER has saturated. The limit is upstream (encoder pooling) or the sensor (I7).",
+        "Side gain: kv=e3 is stable at lr 3e-4, reopening a knob D11 had closed."
+      ]
     }
   ],
-  "mode": "exploit",
-  "mode_reason": "DC2 chose to extend the one confirmed mechanism (EchoDelayVolume) along its through-line -- finer time resolution -- and test its scope-predicted combine. Both on the fast parent where it works.",
+  "mode": "synthesize",
+  "mode_reason": "Four studies since DC2's opening (G0, G1) and both G1 arms failed the same test. The decoder-side far-field lever is exhausted (E24/E27/E29/E30 all agree). A divergence checkpoint must move the far-field question upstream, to the encoder or the representation.",
   "studies_since_synthesize": 0,
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",
@@ -348,14 +382,34 @@
     "lineage": "echo-delay-volume",
     "parent": "E24 (raydpt_e24_echodelay, fast parent)",
     "type": "refine",
-    "status": "running",
+    "status": "concluded",
     "general_hypothesis": "The echo-delay cost volume is the project's one confirmed mechanism (pre-registered far-decile prediction held on the fast parent). Its through-line is time resolution: every far-field result -- E9/E12 fine tokens, E24 itself, batvision's full-res skips -- says the lever is resolving echo arrival time finely. So push the volume's own time resolution, and pair it with a second far-field path.",
     "detailed_hypothesis": "E29 (I20): read e2 (time 128) for 2x delay resolution. E30 (I21): combine with fine-token routing (cross_kv32=e3). Both extend E24 on the fast parent, control E24 (1.8987), each differing in one variable.",
     "experiment_note": "E29 --depth-volume-src e2; E30 --cross-kv32 e3. Both on win32=3 ffn=2 lr 3e-4.",
     "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
-    "runs": [],
-    "decision_rule": "Pre-registered, per idea I19's line: the 7-10m deciles must improve over E24, or drop. Judge on far deciles and d1; ABS_REL is not evidence. E30 additionally must not diverge (D11)."
+    "runs": [
+      {
+        "exp_id": "E29",
+        "composite": 1.9006,
+        "far_delta": "-0.04 to -0.02",
+        "verdict": "FAIL"
+      },
+      {
+        "exp_id": "E30",
+        "composite": 1.9508,
+        "far_delta": "-0.04 to -0.02",
+        "verdict": "FAIL, budget-starved"
+      }
+    ],
+    "decision_rule": "Pre-registered, per idea I19's line: the 7-10m deciles must improve over E24, or drop. Judge on far deciles and d1; ABS_REL is not evidence. E30 additionally must not diverge (D11).",
+    "conclusion": "FAIL (both pre-registered far-decile tests failed); EchoDelayVolume saturates",
+    "observations": [
+      "Finer volume time bins (e2) did not improve the far field: the volume's 64 columns already out-resolve the achieved RMSE.",
+      "EchoDelayVolume + kv=e3 do not compose: same signal, different path -- redundant like E27's EDE+dense.",
+      "D13: far-field time-resolution structure in the DECODER has saturated. The limit is upstream (encoder pooling) or the sensor (I7).",
+      "Side gain: kv=e3 is stable at lr 3e-4, reopening a knob D11 had closed."
+    ]
   },
   "backlog": [
     {
