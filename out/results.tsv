@@ -12,3 +12,4 @@ bb9692d	0.4468	1.3195	0.5631	20.1	keep	E9 RayDPT decode32 xlayers1 batch64 lr1.2
 bc415a2	0.4187	1.3284	0.5665	28.2	keep	E10 RayDPT decode32 xlayers2 batch64 (S4: was the cross-layer cut load-bearing?)
 c147692	0.4199	1.3276	0.5710	16.0	keep	E11 RayDPT decode32 xlayers2 kv=e4 batch64 (S5/H2: first CONVERGED 2-layer RayDPT)
 1b995ab	0.4125	1.3409	0.5664	12.8	keep	E12 RayDPT decode32 xlayers1 kv=e4 (S5 attribution: 2x2 missing cell)
+d38ecc7	0.3082	1.5628	0.5464	16.0	keep	E13 RayDPT E11 arch + rel_mae dense loss (S6/I13: far-field compression)

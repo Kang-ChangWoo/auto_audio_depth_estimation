@@ -236,7 +236,10 @@
       "minimal_falsifiable_test": "two arms on the RayDPT champion E11's exact architecture: --main-loss rel_mae and --main-loss log_mae. Re-run utils/diag_d1.py on the winner and read the far deciles.",
       "budget_risk": "none. Identical architecture and cost.",
       "evidence_required": "far-decile d1 improves AND overall d1 improves beyond sigma, with the RMSE cost accounted for.",
-      "next_action": "E13 (rel_mae) and E14 (log_mae) running."
+      "next_action": "Read E14 (log_mae). Then run the far-decile check on both, which is the pre-registered falsification test and is still owed.",
+      "e13_result": "REL_MAE FAILED, and my mechanism reasoning had a sign error. d1 fell -0.0246 (0.5710 -> 0.5464), RMSE rose +0.2352, composite 1.9093 -> 2.0707. ABS_REL improved -0.1117 exactly as predicted and exactly as pre-registered to be NOT evidence.",
+      "sign_error": "|D-gt|/gt divides by gt, so a far pixel's error is CHEAPER, not dearer. I wanted to charge far mistakes more and did the opposite. Worse, the term is ASYMMETRIC: under-prediction is bounded (D->0 gives loss 1.0) while over-prediction is unbounded. At gt=1, predicting half costs 0.500 and predicting double costs 1.000. Under uncertainty, calling it short is always cheaper -- the loss ACTIVELY REWARDS the compression it was meant to cure. E13 compressing harder is the mechanism working exactly as (mis)designed.",
+      "what_survives": "The DIAGNOSIS stands and is independent of the failed cure: far-field compression is measured, not inferred (GT 8.5 m -> batvision 5.74 m, RayDPT 4.97 m), and it is where d1 is lost. What is refuted is one particular remedy. log_mae is symmetric in the ratio (half and double both cost 0.693), so it carries none of rel_mae's under-prediction incentive; E14 now discriminates 'relative losses are wrong here' from 'rel_mae's asymmetry was wrong'."
     }
   ],
   "discrepancies": [
