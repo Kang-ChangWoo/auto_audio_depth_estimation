@@ -124,7 +124,7 @@
     },
     {
       "id": "I8",
-      "status": "probing",
+      "status": "candidate",
       "priority": "high",
       "origin": "E4, the first RayDPT run under the planar target",
       "target_bottleneck": "RayDPT is COMPUTE-STARVED under the fixed 1-hour wall-clock budget",
@@ -137,9 +137,13 @@
       "minimal_falsifiable_test": "bf16 autocast alone (smallest diff, no architecture change), measuring s/epoch, epochs_ran and the composite. A pure speed change that leaves the mechanism identical is the cleanest test of the starvation hypothesis.",
       "budget_risk": "none -- this idea IS about the budget.",
       "evidence_required": "epochs_ran increases materially AND the best epoch stops being the last one (i.e. the run actually converges).",
-      "next_action": "bench_raydpt.py is queued behind the eval_lock; E7/E8 run in utils/run_queue4.sh.",
+      "next_action": "E9 (raydpt_e9_d32L1_b64) is running: a COMPOUND change answering exactly one question -- does a RayDPT that CONVERGES beat one that does not (D5)? Nothing may be attributed to any single component; ablations follow if it wins.",
       "implementation": "Three non-mechanism changes: (1) I9 dead-tail deletion, output bit-identical. (2) LocalSphericalAttention now gathers neighbours by SLICING a once-padded tensor instead of F.unfold, which materialised (B, C*win*win, H*W) = 1.8 GB for k and v at 64x128 batch 16; verified mathematically identical in forward (rel 1e-7) and backward (input-grad 7e-7). (3) bf16 autocast + TF32 + cudnn.benchmark; metrics are still computed in fp32 so the METRIC never depends on compute precision. Determinism is traded for speed by default (--deterministic True restores it); run-to-run variance is already inside sigma~0.008.",
-      "experiment_split": "Split into TWO experiments so throughput and batch size do not confound. E7 = pure speed at E4's exact optimisation (batch 16, lr 3e-4, --epochs 25): isolates 'is RayDPT merely compute-starved?'. E8 = batch tune with the linear lr scaling rule, using the batch that bench_raydpt.py MEASURES as fastest. A bigger batch means fewer optimizer steps per epoch (16->64 is 1800->450), so at a fixed lr it would look like a regression for reasons unrelated to throughput -- a tuning error, not evidence against I8."
+      "experiment_split": "Split into TWO experiments so throughput and batch size do not confound. E7 = pure speed at E4's exact optimisation (batch 16, lr 3e-4, --epochs 25): isolates 'is RayDPT merely compute-starved?'. E8 = batch tune with the linear lr scaling rule, using the batch that bench_raydpt.py MEASURES as fastest. A bigger batch means fewer optimizer steps per epoch (16->64 is 1800->450), so at a fixed lr it would look like a regression for reasons unrelated to throughput -- a tuning error, not evidence against I8.",
+      "measured_profile": "GPU profile, batch 16 bf16, forward: cr64 35.2%, cr32 29.0%, lsa64 15.3%, lsa32 8.1%, refine64 3.7%, enc 3.4%. Cross-attention is 67% of forward. Full train step 278.6 ms = 501 s/epoch; 25 epochs needs 80 ms/step.",
+      "pure_speed_exhausted": "bf16 + TF32 + cudnn.benchmark + the ORIGINAL unfold attention gives ~1.4x (713 -> 500 s/epoch) = 7.2 epochs. Both of my LSA rewrites were SLOWER on the real device and were reverted; the CPU forward-time proxy that motivated them was wrong. torch.compile is unavailable here (triton ImportError). Pure speed cannot reach 25 epochs.",
+      "capacity_change": "Reaching 25 epochs requires reducing compute, which is a CAPACITY change and is recorded as such. MEASURED: decode_scale 32 (drop cr64+lsa64+refine64) 500 -> 216.5 s/epoch; plus ray_cross_layers 1 -> 147.3 s/epoch at batch 64 = 24.4 epochs/h, 5.00M params, 20.1 GB peak. Ray-conditioning is preserved (per-ray RayBank queries x audio cross-attention, depth decoded per ray direction); only the decode RESOLUTION and the cross-attention DEPTH change.",
+      "justification": "I2's oracle licenses the decode cut: a PERFECT predictor at 32x64 scores composite 0.3527 while RayDPT sits at 2.0471. The 64-scale buys resolution the model cannot use, and under a wall-clock budget that compute must be repaid in epochs."
     },
     {
       "id": "I9",

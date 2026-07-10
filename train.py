@@ -102,10 +102,16 @@ def make_config(args):
             ngf=64,
             dim=192,
             n_heads=4,
-            ray_cross_layers=2,
+            ray_cross_layers=args.ray_cross_layers,
             raydpt_win32=5,
             raydpt_win64=3,
             raydpt_lite=args.raydpt_lite,
+            # Decode scale. 64 = the original 3-scale pyramid (16/32/64). 32 = drop the
+            # 64-scale (cr64 + lsa64 + refine64 = 54% of forward) and upsample x8 instead of
+            # x4. Justified by I2's oracle: a PERFECT predictor at 32x64 scores composite
+            # 0.3527, while RayDPT sits at 2.0471 -- the 64-scale buys resolution the model
+            # cannot use, and under a wall-clock budget that compute must be repaid in epochs.
+            decode_scale=args.decode_scale,
             # ray-feature bank flags
             use_xyz=True,
             use_fourier_pe=True,
@@ -364,6 +370,10 @@ class RayDPT(nn.Module):
         self.coarse_head = nn.Conv2d(dim, 1, 1)
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
         self.lite = getattr(cfg, "raydpt_lite", False)        # 2-scale (32,64) lite variant
+        self.decode_scale = int(getattr(cfg, "decode_scale", 64))
+        if self.decode_scale == 32:      # the 64-scale modules are never built
+            self.rf64 = None; self.rp64 = None; self.cr64 = None
+            self.se2 = None; self.refine64 = None; self.lsa64 = None
 
     def _cross(self, rp, rf, blocks, kv, B, h, w):
         q = rp(rf)[None].expand(B, -1, -1)
@@ -387,11 +397,12 @@ class RayDPT(nn.Module):
             kv3 = self.kv_e3(e3.flatten(2).transpose(1, 2))     # (B,2048,dim)
             F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4, B, 16, 32)
             F32 = self._cross(self.rp32, self.rf32, self.cr32, kv3, B, 32, 64)
-            F64 = self._cross(self.rp64, self.rf64, self.cr64, kv4, B, 64, 128)
             m16 = F16 + self.se4(e4)                             # 16x32
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
             x = self.lsa32(self.refine32(self.up(m16) + F32 + self.se3(e3)))   # 32x64
-            x = self.lsa64(self.refine64(self.up(x) + F64 + self.se2(e2)))     # 64x128
+            if self.decode_scale == 64:
+                F64 = self._cross(self.rp64, self.rf64, self.cr64, kv4, B, 64, 128)
+                x = self.lsa64(self.refine64(self.up(x) + F64 + self.se2(e2)))  # 64x128
         D = torch.sigmoid(self.head(x))
         D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
         return {"D": D, "D0": D, "extras": {"D_coarse": d_c}}
@@ -761,6 +772,12 @@ def parse_args():
                    help='weight of the sigma=3 low-pass MAE (low frequency). 0 disables it.')
     p.add_argument('--raydpt-lite', type=lambda s: s == 'True', default=False,
                    help='2-scale (32,64) lite RayDPT variant')
+    p.add_argument('--ray-cross-layers', type=int, default=2,
+                   help='CrossBlocks per ray scale. 2 = original. Halving it halves the '
+                        'audio<->ray cross-attention cost, the dominant term.')
+    p.add_argument('--decode-scale', type=int, default=64, choices=[32, 64],
+                   help='finest ray-decode resolution: 64 -> 64x128 (original), 32 -> 32x64 '
+                        '(drops cr64+lsa64+refine64, 54%% of forward). Ray-conditioning is kept.')
 
     p.add_argument('--experiment-name', type=str, default='raydpt_5chflip')
     p.add_argument('--checkpoint', type=str, default=None,

@@ -93,7 +93,7 @@ def _args(**over):
              feat_ILD=True, feat_cosIPD=True, feat_sinIPD=True,
              stft_nfft=512, stft_hop=160, stft_win=400,
              w_coarse_layout=1.0, w_low=0.5, feat_interp='nearest', amp='off',
-             raydpt_lite=False, max_iters=0, max_val_batches=0)
+             raydpt_lite=False, decode_scale=64, ray_cross_layers=2, max_iters=0, max_val_batches=0)
     a.update(over)
     return SimpleNamespace(**a)
 

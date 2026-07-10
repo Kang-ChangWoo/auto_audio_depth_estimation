@@ -4,7 +4,7 @@
   "reset_note": "Fresh from original baseline f677b0f + mask-weighted coarse/low loss targets + composite abs_rel weight 0.75->0.35 + PLANAR (cubemap) depth target.",
   "depth_convention": "planar (cubemap perpendicular-Z); stored erp_depth used as-is; radial_factor removed",
   "metric": "composite (selection) = rmse/1.6 + (1-d1)/0.46 + 0.35*abs_rel  (lower better; RMSE+d1 dominate; abs_rel de-weighted)",
-  "next_exp_id": "E9",
+  "next_exp_id": "E10",
   "global_champion": null,
   "concluded_studies": [
     {
@@ -111,23 +111,23 @@
     }
   ],
   "mode": "exploit",
-  "mode_reason": "RayDPT's throughput (I8) now gates every RayDPT judgement, and the user asked for a run that reaches 25 epochs. Three output-equivalent speedups are in (dead-tail deletion, unfold-free attention, bf16); the batch tune is split into its own experiment so it cannot confound the throughput claim.",
+  "mode_reason": "RayDPT's throughput gates every RayDPT judgement (D5); the operator asked for a run that reaches 25 epochs. Measured, not guessed.",
   "studies_since_synthesize": 2,
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",
   "active_study": {
-    "study_id": "S2",
-    "lineage": "acoustic-representation",
-    "parent": "E2 (batvision_5ch_nolog, win400 hop160)",
-    "type": "new",
+    "study_id": "S3",
+    "lineage": "raydpt-throughput",
+    "parent": "E4 (raydpt_e4_planar)",
+    "type": "refine",
     "status": "running",
-    "general_hypothesis": "Depth from echoes is a time-of-flight measurement: a surface at distance d returns its echo at t=2d/c. If the input representation cannot resolve t, no decoder can resolve d. The analysis window, not the hop, sets that resolution.",
-    "detailed_hypothesis": "win=400 smears an echo over c*win/(2*sr)=1.417 m of one-way depth -- essentially the achieved RMSE of 1.3088 m. Arm A (win 400, hop 40) raises sampling density while leaving the smear unchanged; arm B (win 64, hop 16) cuts the smear to 0.227 m, paying frequency resolution. Only B should improve RMSE if temporal resolution binds.",
-    "experiment_note": "E5 batvision_5ch_win400_hop40, E6 batvision_5ch_win64_hop16, on run_base.py (cheapest parent). Control = E2.",
+    "general_hypothesis": "Under a wall-clock budget, compute spent per step must be repaid in epochs. A model that cannot converge inside the budget is not being evaluated on its mechanism -- it is being penalised for its speed. Before RayDPT's ray-conditioning can be judged at all, RayDPT must be able to converge.",
+    "detailed_hypothesis": "E4 fitted 5 epochs at 713 s/epoch, best checkpoint = last epoch, all val metrics still improving. Profiling shows cross-attention is 67% of forward, and I2's oracle shows the 64x128 decode scale imposes a ceiling (composite 0.3527 even at 32x64) that the model, at 2.0471, is nowhere near. Cutting the decode scale to 32x64 and the cross-attention to one layer per scale gives a MEASURED 147.3 s/epoch = 24.4 epochs/h, while preserving ray-conditioning. A converged cheap ray model should beat an unconverged expensive one.",
+    "experiment_note": "E9 raydpt_e9_d32L1_b64: --decode-scale 32 --ray-cross-layers 1 --batch-size 64 --lr 1.2e-3 (linear scaling) --amp bf16 --epochs 25. COMPOUND change; attribute nothing to a single part.",
     "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
     "runs": [],
-    "decision_rule": "Per D3 the gain must appear in RMSE (range), not d1 (angle) -- the interaural cues already own d1. Neither arm improves RMSE -> DROP I1. Both improve equally -> the gain is sampling density/capacity, not resolution; the mechanism story is wrong even if the score moves."
+    "decision_rule": "The question is convergence, not victory. Success = epochs_ran approaches 25 AND the best epoch is no longer the last, i.e. the run actually converges. If the composite also beats E4's 2.0471, D5 is confirmed and RayDPT was merely starved. If it converges but scores WORSE than E4, then the capacity we removed was load-bearing and the cut is the wrong one -- record that, do not patch it away. Ablate the compound change only after it is known to converge."
   },
   "backlog": [
     {

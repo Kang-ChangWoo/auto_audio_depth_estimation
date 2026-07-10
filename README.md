@@ -8,18 +8,18 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | | |
 |---|---|
 | **Mode** | `EXPLOIT` — adaptive HPO ladder 3 -> 5 -> 7 -> 10, each step justified by evidence -> PASS / FAIL |
-| **Active study** | `S2` [new] acoustic-representation (*running*) |
-| **Research question** | Depth from echoes is a time-of-flight measurement: a surface at distance d returns its echo at t=2d/c. If the input representation cannot resolve t, no decoder can resolve d. The analysis window, not  |
-| **Current action** | E5 batvision_5ch_win400_hop40, E6 batvision_5ch_win64_hop16, on run_base.py (cheapest parent). Control = E2. |
+| **Active study** | `S3` [refine] raydpt-throughput (*running*) |
+| **Research question** | Under a wall-clock budget, compute spent per step must be repaid in epochs. A model that cannot converge inside the budget is not being evaluated on its mechanism -- it is being penalised for its spee |
+| **Current action** | E9 raydpt_e9_d32L1_b64: --decode-scale 32 --ray-cross-layers 1 --batch-size 64 --lr 1.2e-3 (linear scaling) --amp bf16 --epochs 25. COMPOUND change; attribute nothing to a single p |
 | **Latest result** | *(no scored run in this study yet)* |
-| **Next decision** | Per D3 the gain must appear in RMSE (range), not d1 (angle) -- the interaural cues already own d1. Neither arm improves RMSE -> DROP I1. Both improve equally -> the gain is sampling density/capacity,  |
-| **Why this mode** | RayDPT's throughput (I8) now gates every RayDPT judgement, and the user asked for a run that reaches 25 epochs. Three output-equivalent speedups are in (dead-tail deletion, unfold-free attention, bf16 |
+| **Next decision** | The question is convergence, not victory. Success = epochs_ran approaches 25 AND the best epoch is no longer the last, i.e. the run actually converges. If the composite also beats E4's 2.0471, D5 is c |
+| **Why this mode** | RayDPT's throughput gates every RayDPT judgement (D5); the operator asked for a run that reaches 25 epochs. Measured, not guessed. |
 
 ### Current hypothesis
 
-- **General** — Depth from echoes is a time-of-flight measurement: a surface at distance d returns its echo at t=2d/c. If the input representation cannot resolve t, no decoder can resolve d. The analysis window, not the hop, sets that resolution.
-- **Detailed** — win=400 smears an echo over c*win/(2*sr)=1.417 m of one-way depth -- essentially the achieved RMSE of 1.3088 m. Arm A (win 400, hop 40) raises sampling density while leaving the smear unchanged; arm B (win 64, hop 16) cuts the smear to 0.227 m, paying frequency resolution. Only B should improve RMSE if temporal resolution binds.
-- **Implementation note** — E5 batvision_5ch_win400_hop40, E6 batvision_5ch_win64_hop16, on run_base.py (cheapest parent). Control = E2.
+- **General** — Under a wall-clock budget, compute spent per step must be repaid in epochs. A model that cannot converge inside the budget is not being evaluated on its mechanism -- it is being penalised for its speed. Before RayDPT's ray-conditioning can be judged at all, RayDPT must be able to converge.
+- **Detailed** — E4 fitted 5 epochs at 713 s/epoch, best checkpoint = last epoch, all val metrics still improving. Profiling shows cross-attention is 67% of forward, and I2's oracle shows the 64x128 decode scale imposes a ceiling (composite 0.3527 even at 32x64) that the model, at 2.0471, is nowhere near. Cutting the decode scale to 32x64 and the cross-attention to one layer per scale gives a MEASURED 147.3 s/epoch = 24.4 epochs/h, while preserving ray-conditioning. A converged cheap ray model should beat an unconverged expensive one.
+- **Implementation note** — E9 raydpt_e9_d32L1_b64: --decode-scale 32 --ray-cross-layers 1 --batch-size 64 --lr 1.2e-3 (linear scaling) --amp bf16 --epochs 25. COMPOUND change; attribute nothing to a single part.
 
 ### Research portfolio
 
@@ -29,7 +29,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I3` | training-optimization | near | the 1h wall-clock budget is spent on epochs that make the model worse | backlog | queue after the RayDPT planar re-anchor (E4); this is a confound affecting EVERY future ru |
 | `I5` | ray conditioning / encoder-decoder correspondence | mid | RayDPT's DPT skip connections impose a FALSE spatial correspondence between the spectrogram's axes and the ERP's axes | inconclusive | none. Do not spend GPU on the skip ablation on this rationale. Revive only with an indepen |
 | `I7` | sensing physics / angular resolution | far | two microphones may fundamentally under-determine high azimuthal frequencies | candidate | Do not chase high-frequency power as a goal. Re-test the observability claim once RayDPT c |
-| `I8` | throughput / training-optimization | near | RayDPT is COMPUTE-STARVED under the fixed 1-hour wall-clock budget | probing | bench_raydpt.py is queued behind the eval_lock; E7/E8 run in utils/run_queue4.sh. |
+| `I8` | throughput / training-optimization | near | RayDPT is COMPUTE-STARVED under the fixed 1-hour wall-clock budget | candidate | E9 (raydpt_e9_d32L1_b64) is running: a COMPOUND change answering exactly one question -- d |
 | `I10` | acoustic-representation / interpolation | mid | the nearest-neighbour resize in _features() turns the time axis into a coarse staircase | inconclusive | deferred confirm: run `--feat-interp bilinear --stft-hop 40` after the RayDPT throughput s |
 | `I11` | encoder-decoder capacity / information bottleneck | mid | batvision reconstructs the whole 256x512 ERP map through a 1x2 bottleneck | backlog | run the diagnostic the moment E7 lands. |
 
@@ -50,6 +50,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-10T09:51 | `exploit` | direction_changed | Pure speed exhausted at 1.4x (500 s/epoch, 7.2 epochs). Reaching 25 epochs needs a CAPACITY cut, recorded as such: decode_scale 32 |
 | 2026-07-10T09:42 | `exploit` | experiment_completed | I10 discriminator (bilinear at hop160, information identical to E2): rmse -0.0119 (52% of E5's gain, predicted direction) but d1 - |
 | 2026-07-10T08:43 | `exploit` | discrepancy_recorded | Throughput reality check: bench measures 519 s/epoch at best (batch 48, bf16) = 6.9 epochs in the budget, versus 144 s/epoch neede |
 | 2026-07-10T08:43 | `exploit` | experiment_completed | batvision 5ch log, aux losses ZEROED: composite 1.8613 vs E3's 1.8567 (delta +0.0046, below sigma). Azimuthal high-frequency power |
@@ -57,7 +58,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | 2026-07-10T08:40 | `exploit` | candidate_dropped | REFUTED: zeroing both low-frequency auxiliaries (58.2% of the gradient) moved the composite by +0.0046 (below sigma) and high-freq |
 | 2026-07-10T08:33 | `exploit` | idea_added | VALIDATED: e5..e8 deletion is output bit-identical (max\|diff\|=0.0). RayDPT 24.44M -> 7.66M params. |
 | 2026-07-10T08:33 | `exploit` | mode_changed | RayDPT's throughput (I8) now gates every RayDPT judgement, and the user asked for a run that reaches 25 epochs. Three output-equiv |
-| 2026-07-10T07:36 | `explore` | discrepancy_recorded | D7: the two I1 arms improved through OPPOSITE metrics, inverting the physical story. The only variable monotone with the composite |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->

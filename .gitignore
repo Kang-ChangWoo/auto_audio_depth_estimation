@@ -43,3 +43,5 @@ out/raydpt_batch.txt
 out/bench.log
 out/.queue4.lock
 out/queue4_driver.log
+out/.queue5.lock
+out/queue5_driver.log
