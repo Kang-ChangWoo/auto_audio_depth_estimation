@@ -73,3 +73,5 @@ out/.g1.lock
 out/g1_driver.log
 out/.g2.lock
 out/g2_driver.log
+out/.g3.lock
+out/g3_driver.log

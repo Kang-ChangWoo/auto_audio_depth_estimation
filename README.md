@@ -7,19 +7,19 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | | |
 |---|---|
-| **Mode** | `SYNTHESIZE` — no runs; review evidence, find contradictions, pick the highest-information next question |
-| **Active study** | `S8` [new] synthesize (*pending*) |
-| **Research question** | Pending divergence checkpoint. |
-| **Current action** | TBD |
+| **Mode** | `EXPLOIT` — adaptive HPO ladder 3 -> 5 -> 7 -> 10, each step justified by evidence -> PASS / FAIL |
+| **Active study** | `G1` [refine] echo-delay-volume (*running*) |
+| **Research question** | The echo-delay cost volume is the project's one confirmed mechanism (pre-registered far-decile prediction held on the fast parent). Its through-line is time resolution: every far-field result -- E9/E1 |
+| **Current action** | E29 --depth-volume-src e2; E30 --cross-kv32 e3. Both on win32=3 ffn=2 lr 3e-4. |
 | **Latest result** | *(no scored run in this study yet)* |
-| **Next decision** | Highest information value; the champion still trails the reference by 0.0395 and the far field is where. |
-| **Why this mode** | I19 is confirmed as a scoped mechanism but is not a champion; three studies concluded (F1, G0, and the fast-baseline F0). A divergence checkpoint is due before committing GPU to the next direction. |
+| **Next decision** | Pre-registered, per idea I19's line: the 7-10m deciles must improve over E24, or drop. Judge on far deciles and d1; ABS_REL is not evidence. E30 additionally must not diverge (D11). |
+| **Why this mode** | DC2 chose to extend the one confirmed mechanism (EchoDelayVolume) along its through-line -- finer time resolution -- and test its scope-predicted combine. Both on the fast parent where it works. |
 
 ### Current hypothesis
 
-- **General** — Pending divergence checkpoint.
-- **Detailed** — TBD
-- **Implementation note** — TBD
+- **General** — The echo-delay cost volume is the project's one confirmed mechanism (pre-registered far-decile prediction held on the fast parent). Its through-line is time resolution: every far-field result -- E9/E12 fine tokens, E24 itself, batvision's full-res skips -- says the lever is resolving echo arrival time finely. So push the volume's own time resolution, and pair it with a second far-field path.
+- **Detailed** — E29 (I20): read e2 (time 128) for 2x delay resolution. E30 (I21): combine with fine-token routing (cross_kv32=e3). Both extend E24 on the fast parent, control E24 (1.8987), each differing in one variable.
+- **Implementation note** — E29 --depth-volume-src e2; E30 --cross-kv32 e3. Both on win32=3 ffn=2 lr 3e-4.
 
 ### Research portfolio
 
@@ -32,6 +32,8 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I10` | acoustic-representation / interpolation | mid | the nearest-neighbour resize in _features() turns the time axis into a coarse staircase | inconclusive | deferred confirm: run `--feat-interp bilinear --stft-hop 40` after the RayDPT throughput s |
 | `I14` | ray conditioning / audio token routing | mid | far-field rays cannot see the late, weak echo that carries distance | probing | E16 (control) then E15b (treatment), both at lr 6e-4. Pre-registered falsification unchang |
 | `I19` | ray conditioning / physically-structured decoding | far | the model must LEARN that echo delay encodes depth, and it fails to, collapsing far surfaces toward the median | inconclusive | Do NOT crown. Test the ONE compatible combination the scope predicts: EchoDelayVolume + fi |
+| `I20` | echo-delay volume / time resolution | near (extends I19) | EchoDelayVolume reads e3 (time 64), which is the STFT's 512 columns pooled 8x -- its delay resolution may be the limit | probing | E29 running. |
+| `I21` | combine | mid | combine two non-overlapping far-field mechanisms | probing | E30 running; watch for the D11 divergence signature (lc/mae spike). |
 
 ### Open discrepancies
 
@@ -48,6 +50,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-11T03:26 | `synthesize` | divergence_checkpoint | DC2 after F0/F1/G0. Six competing hypotheses across five families (time resolution, combine, decoder/skip, data sampling, sensing  |
 | 2026-07-11T03:24 | `synthesize` | experiment_completed | Champion + EchoDelayVolume, converged (cosine annealed to lr 0): composite 1.9271, WORSE than E23 by 0.0309, and the far deciles i |
 | 2026-07-11T00:42 | `verify` | discrepancy_recorded | D12: the same mechanism beats its control on the fast parent (+0.0112) and loses on the champion parent (-0.0121), both above sigm |
 | 2026-07-11T00:42 | `verify` | experiment_completed | INCONCLUSIVE, not negative. Champion + EchoDelayVolume scored 1.9083 vs E23's 1.8962 -- opposite sign from E24 -- but it did NOT c |
@@ -55,7 +58,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | 2026-07-10T22:37 | `exploit` | experiment_completed | NEW RayDPT CHAMPION 1.8962 (win5/ffn4 @ lr 3e-4, 22 epochs, stable). Closing the 2x2 OVERTURNED the previous reading: lr 3e-4 gain |
 | 2026-07-10T21:33 | `exploit` | experiment_completed | Control win5/ffn4 @ lr 6e-4: composite 1.9125, stable. 2x2 complete except E23. At matched lr the fast knobs cost +0.0051 (below s |
 | 2026-07-10T20:48 | `exploit` | idea_added | STRUCTURAL, not a loss change. The encoder's width axis IS time, so e3's 64 columns are depth hypotheses (d = c*t/2, 0.08-9.92m).  |
-| 2026-07-10T20:33 | `exploit` | experiment_completed | fast config at lr 3e-4: composite 1.9099, stable (max mae jump 0.99), converged (best ep19/25). Matches the E11 champion (1.9093)  |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->

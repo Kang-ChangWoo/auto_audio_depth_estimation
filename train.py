@@ -121,6 +121,7 @@ def make_config(args):
             cross_kv16=args.cross_kv16,
             coarse_norm=args.coarse_norm,
             depth_volume=args.depth_volume,
+            depth_volume_src=args.depth_volume_src,
             # ray-feature bank flags
             use_xyz=True,
             use_fourier_pe=True,
@@ -375,6 +376,8 @@ class EchoDelayVolume(nn.Module):
 
     def __init__(self, e3_ch, dim, dv=48, n_bins=64, max_depth=10.0,
                  cut=2823, sample_rate=48000, c=340.0):
+        # n_bins = number of TIME columns of the source feature (e3 -> 64, e2 -> 128).
+        # Each column is a depth hypothesis d = c*t/2; more columns = finer delay resolution.
         super().__init__()
         self.dv = dv
         self.proj = nn.Conv2d(e3_ch, dv, 1)                      # e3 -> (B, dv, F, T)
@@ -435,7 +438,10 @@ class RayDPT(nn.Module):
         # (D11). `--coarse-norm True` inserts a GroupNorm so the head is insensitive to F16's scale.
         self.coarse_norm = (nn.GroupNorm(1, dim) if bool(getattr(cfg, "coarse_norm", False))
                             else nn.Identity())
-        self.depth_volume = (EchoDelayVolume(ngf * 4, dim, max_depth=float(getattr(cfg, "max_depth", 10.0)))
+        self.dv_src = str(getattr(cfg, "depth_volume_src", "e3"))   # e3 (time 64) | e2 (time 128)
+        _dv_ch, _dv_bins = (ngf * 2, 128) if self.dv_src == "e2" else (ngf * 4, 64)
+        self.depth_volume = (EchoDelayVolume(_dv_ch, dim, n_bins=_dv_bins,
+                                             max_depth=float(getattr(cfg, "max_depth", 10.0)))
                              if bool(getattr(cfg, "depth_volume", False)) else None)
         self.coarse_head = nn.Conv2d(dim, 1, 1)
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
@@ -486,7 +492,7 @@ class RayDPT(nn.Module):
             if self.depth_volume is not None:
                 # per-ray soft-argmax over echo delay; no sigmoid, no scalar regression
                 q16 = m16.flatten(2).transpose(1, 2)             # (B,512,dim)
-                dv, ctx = self.depth_volume(q16, e3)
+                dv, ctx = self.depth_volume(q16, e2 if self.dv_src == "e2" else e3)
                 m16 = m16 + ctx.transpose(1, 2).reshape(B, -1, 16, 32)
                 d_c = dv.reshape(B, 1, 16, 32)
             else:
@@ -905,6 +911,9 @@ def parse_args():
                    help='CrossBlocks per ray scale. 2 = original. Halving it halves the '
                         'audio<->ray cross-attention cost, the dominant term.')
     # --- architecture knobs the GPU profiler showed dominate (see README "fast baseline") ---
+    p.add_argument('--depth-volume-src', type=str, default='e3', choices=['e3', 'e2'],
+                   help='which encoder scale EchoDelayVolume reads. e3 = time 64, e2 = time 128 '
+                        '(2x finer echo-delay resolution; idea H8).')
     p.add_argument('--depth-volume', type=lambda s: s == 'True', default=False,
                    help='EchoDelayVolume: per-ray soft-argmax over echo delay, replacing the scalar '
                         'sigmoid coarse head. The encoder width axis IS time, so its 64 columns are '

@@ -4,7 +4,7 @@
   "reset_note": "Fresh from original baseline f677b0f + mask-weighted coarse/low loss targets + composite abs_rel weight 0.75->0.35 + PLANAR (cubemap) depth target.",
   "depth_convention": "planar (cubemap perpendicular-Z); stored erp_depth used as-is; radial_factor removed",
   "metric": "composite (selection) = rmse/1.6 + (1-d1)/0.46 + 0.35*abs_rel  (lower better; RMSE+d1 dominate; abs_rel de-weighted)",
-  "next_exp_id": "E29",
+  "next_exp_id": "E31",
   "global_champion": null,
   "concluded_studies": [
     {
@@ -338,24 +338,24 @@
       ]
     }
   ],
-  "mode": "synthesize",
-  "mode_reason": "I19 is confirmed as a scoped mechanism but is not a champion; three studies concluded (F1, G0, and the fast-baseline F0). A divergence checkpoint is due before committing GPU to the next direction.",
+  "mode": "exploit",
+  "mode_reason": "DC2 chose to extend the one confirmed mechanism (EchoDelayVolume) along its through-line -- finer time resolution -- and test its scope-predicted combine. Both on the fast parent where it works.",
   "studies_since_synthesize": 0,
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",
   "active_study": {
-    "study_id": "S8",
-    "lineage": "synthesize",
-    "parent": null,
-    "type": "new",
-    "status": "pending",
-    "general_hypothesis": "Pending divergence checkpoint.",
-    "detailed_hypothesis": "TBD",
-    "experiment_note": "TBD",
-    "hpo_stage": "none",
+    "study_id": "G1",
+    "lineage": "echo-delay-volume",
+    "parent": "E24 (raydpt_e24_echodelay, fast parent)",
+    "type": "refine",
+    "status": "running",
+    "general_hypothesis": "The echo-delay cost volume is the project's one confirmed mechanism (pre-registered far-decile prediction held on the fast parent). Its through-line is time resolution: every far-field result -- E9/E12 fine tokens, E24 itself, batvision's full-res skips -- says the lever is resolving echo arrival time finely. So push the volume's own time resolution, and pair it with a second far-field path.",
+    "detailed_hypothesis": "E29 (I20): read e2 (time 128) for 2x delay resolution. E30 (I21): combine with fine-token routing (cross_kv32=e3). Both extend E24 on the fast parent, control E24 (1.8987), each differing in one variable.",
+    "experiment_note": "E29 --depth-volume-src e2; E30 --cross-kv32 e3. Both on win32=3 ffn=2 lr 3e-4.",
+    "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
     "runs": [],
-    "decision_rule": "Highest information value; the champion still trails the reference by 0.0395 and the far field is where."
+    "decision_rule": "Pre-registered, per idea I19's line: the 7-10m deciles must improve over E24, or drop. Judge on far deciles and d1; ABS_REL is not evidence. E30 additionally must not diverge (D11)."
   },
   "backlog": [
     {
