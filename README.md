@@ -127,17 +127,20 @@ below:
 
 ```mermaid
 flowchart TD
-    subgraph MY["current — RayDPT (my model) · 24.44M params, of which 16.78M are DEAD"]
+    subgraph MY["current — RayDPT champion (E23/E25) · 5.89M params"]
         direction TB
-        A1["Binaural echo waveform (2ch)<br/>cut = 2·10m/c → 2823 samples · FIXED"] --> A2["STFT(nfft 512, hop 160, win 400)<br/>→ (F=257, T=18) → resize to 256×512<br/>height=FREQUENCY · width=TIME"]
+        A1["Binaural echo waveform (2ch)<br/>cut = 2·10m/c → 2823 samples · FIXED"] --> A2["STFT(nfft 512, hop 160, win 400)<br/>→ (F=257, T=18) → resize to 256×512<br/>height = FREQUENCY · width = TIME"]
         A2 --> A2b["named cue stack (in_ch)<br/>logL/L · logR/R · ILD · cosIPD · sinIPD"]
-        A2b --> A3["UNet8 encoder — only e1..e4 run<br/>256×512 → e2 64×128 · e3 32×64 · e4 16×32"]
-        A3 -.->|"e5..e8 built but never called<br/>16.78M params · no gradient (I9)"| A3d["(dead tail)"]
-        A3 --> A4["RayBank ray queries Q16/Q32/Q64<br/>× GLOBAL audio cross-attention<br/>(kv from e4=512 tok, e3=2048 tok)"]
-        A3 --> A4s["DPT skips se2/se3/se4<br/>added by PIXEL INDEX (I5: parked)"]
-        A4 --> A5["DPT fusion + local spherical<br/>window attention (32×64 win5, 64×128 win3)<br/>≈57% of forward cost (I8)"]
+        A2b --> A3["UNet8Encoder, truncated at e4 (I9)<br/>e2 64×128 · e3 32×64 (freq 32, time 64) · e4 16×32"]
+        A3 --> A4["RayBank ray queries Q16/Q32<br/>× audio cross-attention, 2 layers<br/>kv16 = e4 (512 tok) · kv32 = e4 (512 tok, I12)"]
+        A3 --> A4s["DPT skips se3/se4<br/>added by PIXEL INDEX (I5: parked)"]
+        A3 --> A7["EchoDelayVolume (I19) · optional<br/>e3's 64 TIME columns = depth hypotheses<br/>d = c·t/2 ∈ [0.08, 9.92] m"]
+        A7 --> A7b["per ray: attend over FREQUENCY<br/>inside ONE time column per hypothesis<br/>→ score → softmax over DEPTH"]
+        A7b --> A7c["depth = Σ p_j · d_j<br/>soft-argmax over ECHO DELAY"]
+        A4 --> A5["DPT fusion at 32×64<br/>+ local spherical window attention (win 5)"]
         A4s --> A5
-        A5 --> A6["Sigmoid head at 64×128<br/>→ bilinear ×4 → ERP planar depth 256×512"]
+        A7c -->|"replaces the sigmoid coarse head<br/>that saturated and diverged (D11)"| A5
+        A5 --> A6["head at 32×64 → bilinear ×8<br/>→ ERP planar depth 256×512"]
     end
     subgraph REF["batvision (reference) — plain pix2pix unet_256, 54.41M params"]
         direction TB
@@ -151,6 +154,14 @@ flowchart TD
 
 Both models consume the *same* input tensor and are trained by the same `composite_loss`
 (`1.0·dense_MAE + 1.0·coarse_layout(16×32) + 0.5·low_pass(σ=3)`; the two auxiliaries carry
-~58% of the gradient at convergence — see idea `I6`). The target is **planar** (cubemap
-perpendicular-Z) ERP depth. The invariant that defines RayDPT is that depth is decoded **per
-ray direction** from `RayBank` queries, never regressed from a global bottleneck.
+~58% of the gradient at convergence yet are measurably **inert** — see idea `I6`). The target is
+**planar** (cubemap perpendicular-Z) ERP depth. The invariant that defines RayDPT is that depth is
+decoded **per ray direction** from `RayBank` queries, never regressed from a global bottleneck.
+
+The key structural fact, and the one `EchoDelayVolume` exploits: **the encoder's width axis is
+time.** An echo from a surface at depth `d` arrives at `t = 2d/c`, so `e3`'s 64 time columns are
+depth hypotheses spanning 0.08–9.92 m. Rather than making the network *learn* that correspondence,
+`I19` lets each ray attend over **frequency** inside a single time column per hypothesis (azimuth
+lives in the per-frequency ILD/IPD) and takes a **soft-argmax over echo delay**. Measured against
+its matched control, every far decile improved (7–8 m +0.069, 8–9 m +0.076, 9–10 m +0.060) and the
+mean predicted depth of a true 8.5 m surface rose from 4.76 m to 5.24 m.
