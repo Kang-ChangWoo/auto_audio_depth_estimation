@@ -119,7 +119,7 @@
       "budget_risk": "none for now (tested via I6).",
       "evidence_required": "survives if and only if I6's ablation fails to restore high-frequency content.",
       "next_action": "Do not chase high-frequency power as a goal. Re-test the observability claim once RayDPT converges (E7), using I11's contrast.",
-      "support": "Survives by elimination, per the pre-registered rule. The low-pass character is ROBUST to (a) a 58% change in the objective (I6: high-freq 10.8% -> 12.3% of GT) and (b) a 6.2x change in temporal resolution (E6). Two very different interventions upstream and downstream both fail to restore fine azimuthal structure, which is what an observability limit looks like.",
+      "support": "Survives by elimination, per the pre-registered rule. The low-pass character is ROBUST to (a) a 58% change in the objective (I6: high-freq 10.8% -> 12.3% of GT) and (b) a 6.2x change in temporal resolution (E6). Two very different interventions upstream and downstream both fail to restore fine azimuthal structure, which is what an observability limit looks like. FURTHER: I11 refuted the bottleneck explanation. Low-pass behaviour now survives (a) a 58% change to the objective, (b) a 6.2x change in temporal resolution, and (c) removing the network's information waist entirely. Three independent interventions, upstream and downstream, none of which restores fine azimuthal structure.",
       "caveat_strong_form": "The STRONG form -- 'high azimuthal frequencies are unobservable, so recovering them is the goal' -- is itself now suspect, because E6 has 29.7% LESS high-frequency power than E2 yet a BETTER d1 (0.6005 vs 0.5938). Sharpness and d1 are not the same thing: d1 rewards each pixel landing within +-25% of truth, which a well-centred smooth field can do better than a wrongly-placed sharp one. So 'restore high frequencies' may be the wrong objective entirely."
     },
     {
@@ -185,7 +185,7 @@
     },
     {
       "id": "I11",
-      "status": "backlog",
+      "status": "dropped",
       "origin": "asking what is upstream of BOTH the objective and the representation, after I6 was refuted",
       "target_bottleneck": "batvision reconstructs the whole 256x512 ERP map through a 1x2 bottleneck",
       "mechanism_family": "encoder-decoder capacity / information bottleneck",
@@ -198,7 +198,10 @@
       "budget_risk": "none -- rides on an experiment already scheduled.",
       "evidence_required": "the spectrum contrast on a CONVERGED RayDPT.",
       "preliminary": "On the 5-epoch E4 RayDPT holds LESS high-frequency power than batvision (13.7% vs 19.0% of GT), which would argue against the waist -- but E4 never converged, so this is confounded by training and proves nothing. Deferred to E7.",
-      "next_action": "run the diagnostic the moment E7 lands."
+      "next_action": "none.",
+      "why_dropped": "REFUTED, zero GPU. The model WITHOUT the waist is SMOOTHER than the one with it. Compared in the band both can represent (k=7..32): batvision E3 (1x2 bottleneck, converged) holds 0.0290 of azimuthal power; RayDPT E9 (no bottleneck, converged) holds 0.0179; RayDPT E4 (no bottleneck, unconverged) 0.0196. A 1024-number waist is not what makes these predictions low-pass.",
+      "confound_controlled": "The naive whole-spectrum comparison would have been invalid: E9 decodes at 32x64, so its azimuthal grid has 64 columns and Nyquist bounds it at k<=32. Its near-zero power at k>32 (0.0007) is a mathematical consequence of the decode grid, not a finding. Only the k=7..32 band, representable by both models, tests the hypothesis.",
+      "scope_of_negative_evidence": "Refutes the information-bottleneck explanation for low-pass behaviour on this pair of architectures at this error level. It does not say bottlenecks never matter. It does say that removing the waist -- which RayDPT does by construction -- buys no high-frequency structure, so the limit lies elsewhere (I7: angular observability with two receivers)."
     }
   ],
   "discrepancies": [
