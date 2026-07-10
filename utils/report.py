@@ -79,9 +79,9 @@ def _model_registry():
         # checkpoint trained before that must be rebuilt with the flags it was trained WITH, or
         # load_state_dict finds missing keys and the tile silently renders "pending".
         ('current (my model)', train,
-         os.path.join(ROOT, 'checkpoints', 'raydpt_e11_d32L2_kve4', 'best_model.pth'),
+         os.path.join(ROOT, 'checkpoints', 'raydpt_e23_ctrl_lr3e4', 'best_model.pth'),
          dict(decode_scale=32, ray_cross_layers=2, cross_kv32='e4',
-              raydpt_win32=5, ffn_mult=4)),            # E11: 32x64 decode, 2 cross layers
+              raydpt_win32=5, ffn_mult=4)),            # E23: champion, lr 3e-4 (unscaled)
     ]
 
 

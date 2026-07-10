@@ -29,20 +29,20 @@
       "role": "my model; the architectural invariant of this project",
       "status": "converged at 2 cross layers (E11). Still 0.0526 behind the reference; 0.0239 of that is d1.",
       "champion": {
-        "exp_id": "E11",
-        "name": "raydpt_e11_d32L2_kve4",
-        "commit": "c147692",
-        "abs_rel": 0.4199,
-        "rmse": 1.3276,
-        "d1": 0.571,
-        "composite": 1.9093,
-        "best_epoch": 22,
-        "epochs_ran": 23,
-        "sec_per_epoch": 143.3,
+        "exp_id": "E23",
+        "name": "raydpt_e23_ctrl_lr3e4",
+        "commit": "1c34d7c",
+        "abs_rel": 0.4131,
+        "rmse": 1.3295,
+        "d1": 0.5765,
+        "composite": 1.8962,
+        "best_epoch": 16,
+        "epochs_ran": 22,
+        "sec_per_epoch": 144.6,
         "vram_gb": 16.0,
         "params_m": 5.89,
-        "provisional": true,
-        "note": "Best RayDPT so far and the first CONVERGED 2-layer model (best epoch 22 of 23, val loss flat over the last three). d1 recovered +0.0079 over E9, closing 25% of the gap to batvision -- so D9 is PARTLY a budget artefact and PARTLY not. Compound change (2 layers + coarse KV); E12 attributes it."
+        "provisional": false,
+        "note": "Best RayDPT of the project. decode 32, 2 cross layers, kv32=e4, win32=5, ffn=4, batch 64, lr 3e-4 (UNSCALED). Beats E11 by 0.0131 (above sigma) purely by not scaling the lr with the batch. Gap to the batvision reference (E3, 1.8567) is now 0.0395, down from 0.0526."
       },
       "dead_parameters": "e5..e8 = 16.78M of 24.44M (68.7%): built by UNet8Encoder, never used in forward, receive no gradient. See I9."
     },
@@ -64,6 +64,16 @@
         "exp_id": "E9",
         "composite": 1.9308
       }
+    },
+    "training-optimization": {
+      "mechanism": "the optimiser, not the architecture: the linear scaling rule was wrong for this residual attention stack",
+      "role": "enabling lineage",
+      "status": "validated (I18)",
+      "champion": {
+        "exp_id": "E23",
+        "composite": 1.8962
+      },
+      "finding": "lr = 3e-4 x (batch/16) both risked divergence (E15/E17/E18 all fell over) and cost 0.0131 of composite in every run that survived it. The unscaled 3e-4 is stable AND better."
     }
   },
   "specialists": [],

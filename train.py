@@ -914,9 +914,10 @@ def parse_args():
                         'magnitude, which is what saturated in E15/E17 (D11, idea I15).')
     p.add_argument('--dim', type=int, default=192, help='ray/token width')
     p.add_argument('--n-heads', type=int, default=4)
-    p.add_argument('--raydpt-win32', type=int, default=3,
-                   help='local spherical attention window at 32x64. 5 -> 25 offsets, 3 -> 9; '
-                        'measured 1.20x faster at win=3.')
+    p.add_argument('--raydpt-win32', type=int, default=5,
+                   help='local spherical attention window at 32x64. 5 -> 25 offsets, 3 -> 9. '
+                        'MEASURED (F1): win=3 with ffn=2 runs 1.21x faster but costs +0.0137 composite '
+                        'at lr 3e-4 (E23 1.8962 -> E21 1.9099), ABOVE sigma. Use for SCREENING, not scoring.')
     p.add_argument('--raydpt-win64', type=int, default=3,
                    help='local spherical attention window at 64x128 (unused when decode-scale=32)')
     p.add_argument('--time-budget', type=int, default=3600,
@@ -925,7 +926,7 @@ def parse_args():
     p.add_argument('--main-loss', type=str, default='mae', choices=['mae', 'rel_mae', 'log_mae'],
                    help="dense term. 'mae' drives to the conditional median and compresses far depth; "
                         "'rel_mae'/'log_mae' charge relative error, aligning the loss with d1 (idea I13).")
-    p.add_argument('--ffn-mult', type=int, default=2,
+    p.add_argument('--ffn-mult', type=int, default=4,
                    help='CrossBlock FFN expansion. Most per-token FLOPs live here (idea I12).')
     p.add_argument('--cross-kv32', type=str, default='e4', choices=['e3', 'e4'],
                    help="audio tokens the 32-scale rays attend to: e3 (2048, original) or e4 (512, 4x cheaper)")

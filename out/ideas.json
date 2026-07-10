@@ -281,7 +281,7 @@
     },
     {
       "id": "I16",
-      "status": "candidate",
+      "status": "dropped",
       "origin": "operator request for a fast experimentation baseline; GPU profile of the E11 champion",
       "target_bottleneck": "iteration speed IS a research variable under a wall-clock budget",
       "mechanism_family": "throughput / experiment economics",
@@ -293,10 +293,13 @@
       "minimal_falsifiable_test": "E17: the new defaults, scored at the full 3600s budget.",
       "budget_risk": "none -- it is the budget that is being bought.",
       "evidence_required": "a SCORED run, not a benchmark. Speed was measured; accuracy must be paid for.",
-      "next_action": "Answerable at last: E22 vs E20 isolates win32/ffn at matched lr. Until then the fast defaults remain unvalidated.",
+      "next_action": "Revert the fast knobs from the scored defaults; keep them documented as a screening option.",
       "e17_result": "E17 DIVERGED (best epoch 4 of 25; final val d1 0.0974). It is therefore NOT a test of whether win32=3 + ffn=2 cost accuracy -- it is a second instance of D11. Recorded as `discard`, not `keep`. The speedup (1.32x, measured) stands; its accuracy cost is unmeasured.",
       "result": "PROVISIONALLY SUPPORTED, once the optimiser was fixed. The fast config (win32=3, ffn=2) at lr 3e-4 matches the champion within a tenth of sigma while running 1.21x faster on 10% fewer parameters. But E21 differs from E11 in BOTH the knobs and the lr, so E23 (win5/ffn4 @ 3e-4) is required before the knobs can be called free.",
-      "attribution": "E22 (win5/ffn4 @ lr 6e-4) = 1.9125 fills the 2x2. At MATCHED lr the fast knobs cost +0.0051 (E22 -> E20), below sigma. At MATCHED architecture, dropping lr from 1.2e-3 to 6e-4 costs +0.0032 (E11 -> E22), also below sigma. Neither effect is individually measurable, and E21 (both changes, lr 3e-4) lands at 1.9099, +0.0007 from the champion. So the fast defaults are accuracy-neutral within noise while running 1.21x faster on 10% fewer parameters. E23 (win5/ffn4 @ 3e-4) completes the square."
+      "attribution": "E22 (win5/ffn4 @ lr 6e-4) = 1.9125 fills the 2x2. At MATCHED lr the fast knobs cost +0.0051 (E22 -> E20), below sigma. At MATCHED architecture, dropping lr from 1.2e-3 to 6e-4 costs +0.0032 (E11 -> E22), also below sigma. Neither effect is individually measurable, and E21 (both changes, lr 3e-4) lands at 1.9099, +0.0007 from the champion. So the fast defaults are accuracy-neutral within noise while running 1.21x faster on 10% fewer parameters. E23 (win5/ffn4 @ 3e-4) completes the square.",
+      "why_dropped": "REFUTED once the 2x2 was CLOSED. E23 (win5/ffn4 @ lr 3e-4) scores 1.8962 -- the best RayDPT of the project. At the lr we actually adopt, the fast knobs cost +0.0137 (E23 -> E21), ABOVE sigma. They are not free.",
+      "why_i_nearly_missed_it": "E21's parity with E11 (+0.0006) was a COINCIDENCE of two opposing real effects: lr 3e-4 GAINS 0.0131 over 1.2e-3 at fixed architecture, and the knobs LOSE 0.0137 at fixed lr. Both clear sigma; they nearly cancel. At lr 6e-4 the knob cost is only +0.0051 (sub-sigma), which is what made them look free. Had I stopped before E23 I would have adopted a config that quietly costs 0.0137 -- and I would have cited two sub-sigma cells as evidence.",
+      "what_survives": "The knobs remain a legitimate SCREENING configuration: 1.21x faster (118.8 vs 143.3 s/epoch) on 10% fewer parameters for a known, measured price of 0.0137 composite. That is a trade, now quantified, not a free lunch. Scored runs use win5/ffn4."
     },
     {
       "id": "I17",
@@ -339,7 +342,8 @@
       "caveat": "E20's composite of 1.9176 is +0.0083 against E11's 1.9093 -- just over the sigma of 0.008 -- but E20 differs from E11 in TWO ways (the knobs AND the lr), so the gap cannot be attributed. E22 (E11's architecture at lr 6e-4) fills the 2x2.",
       "ladder": "Monotone, and it kills the linear scaling rule for this model. fast config @ 1.2e-3 DIVERGED (E17); @ 6e-4 stable, 1.9176 (E20); @ 3e-4 stable, 1.9099 (E21). 3e-4 is the ORIGINAL batch-16 lr -- so scaling lr with batch was never needed, and doing it put every run on the edge of divergence.",
       "practical_result": "E21 matches the E11 champion (1.9093) to +0.0007 -- one tenth of sigma -- with 10% fewer parameters (5.29M vs 5.89M) and 118.8 vs 143.3 s/epoch, a 1.21x speedup. Its rmse is actually better (1.3231 vs 1.3276); d1 is identical (0.5706 vs 0.5710).",
-      "e22_confirms": "E22 is stable too (max mae jump 0.99). Across the whole 2x2 the ONLY diverging cell is lr 1.2e-3 with a changed architecture. The optimiser, not the architecture."
+      "e22_confirms": "E22 is stable too (max mae jump 0.99). Across the whole 2x2 the ONLY diverging cell is lr 1.2e-3 with a changed architecture. The optimiser, not the architecture.",
+      "final": "lr 3e-4 is not merely stable, it is BETTER: at win5/ffn4 it beats lr 1.2e-3 by 0.0131 (E23 1.8962 vs E11 1.9093), above sigma. The linear scaling rule did not just risk divergence -- it cost accuracy in every run that survived it. New RayDPT champion: E23."
     },
     {
       "id": "I19",
