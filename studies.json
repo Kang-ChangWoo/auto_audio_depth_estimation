@@ -4,7 +4,7 @@
   "reset_note": "Fresh from original baseline f677b0f + mask-weighted coarse/low loss targets + composite abs_rel weight 0.75->0.35 + PLANAR (cubemap) depth target.",
   "depth_convention": "planar (cubemap perpendicular-Z); stored erp_depth used as-is; radial_factor removed",
   "metric": "composite (selection) = rmse/1.6 + (1-d1)/0.46 + 0.35*abs_rel  (lower better; RMSE+d1 dominate; abs_rel de-weighted)",
-  "next_exp_id": "E22",
+  "next_exp_id": "E24",
   "global_champion": null,
   "concluded_studies": [
     {
@@ -313,9 +313,37 @@
     "detailed_hypothesis": "lr = 3e-4 x (64/16) = 1.2e-3. E9/E11/E12 survived it; E15 (larger KV) and E17 (win32=3, ffn=2) did not, and E18 shows the failure is in the trunk rather than the coarse-layout auxiliary (which contributed zero gradient and diverged anyway). Gradient clipping is already 1.0. Sweep lr on the fast config; the mechanism is untouched.",
     "experiment_note": "E20 --lr 6e-4, E21 --lr 3e-4, both on the fast defaults, --epochs 28, scored at the full budget.",
     "hpo_stage": "3-trial",
-    "hpo_runs_used": 1,
-    "runs": [],
-    "decision_rule": "Two criteria, in order. STABILITY: does mae ever jump more than 1.2x between epochs? A run that spikes answers nothing else. Then COMPOSITE against E11's 1.9093. Only once the fast config trains stably can the win32/ffn accuracy question that E17 could not answer be asked again."
+    "hpo_runs_used": 3,
+    "runs": [
+      {
+        "exp_id": "E20",
+        "name": "raydpt_e20_fast_lr6e4",
+        "lr": 0.0006,
+        "composite": 1.9176,
+        "d1": 0.5704,
+        "epochs_ran": 26,
+        "best_epoch": 23,
+        "max_mae_jump": 0.99,
+        "stable": true
+      },
+      {
+        "exp_id": "E21",
+        "name": "raydpt_e21_fast_lr3e4",
+        "lr": 0.0003,
+        "composite": 1.9099,
+        "d1": 0.5706,
+        "epochs_ran": 25,
+        "best_epoch": 19,
+        "max_mae_jump": 0.99,
+        "stable": true
+      }
+    ],
+    "decision_rule": "Two criteria, in order. STABILITY: does mae ever jump more than 1.2x between epochs? A run that spikes answers nothing else. Then COMPOSITE against E11's 1.9093. Only once the fast config trains stably can the win32/ffn accuracy question that E17 could not answer be asked again.",
+    "observations": [
+      "lr ladder is monotone: 1.2e-3 diverges, 6e-4 gives 1.9176, 3e-4 gives 1.9099. The linear scaling rule was wrong for this model.",
+      "3e-4 is the ORIGINAL batch-16 lr. Scaling it with batch put every run on the edge of divergence and cost three GPU hours before I suspected the optimiser.",
+      "E21 matches E11 to +0.0007 with 10% fewer params and a 1.21x speedup. Still confounded (knobs + lr); E23 attributes it."
+    ]
   },
   "backlog": [
     {

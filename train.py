@@ -806,7 +806,11 @@ def parse_args():
 
     p.add_argument('--batch-size', type=int, default=64)
     p.add_argument('--epochs', type=int, default=28)
-    p.add_argument('--lr', type=float, default=1.2e-3)
+    p.add_argument('--lr', type=float, default=3e-4,
+                   help='MEASURED (F1): the linear scaling rule is wrong here. At batch 64 the '
+                        'scaled 1.2e-3 diverges for any architecture change (E15/E17/E18); 6e-4 is '
+                        'stable but costs 0.008; 3e-4 -- the ORIGINAL batch-16 lr -- is stable and '
+                        'matches the champion (E21 1.9099 vs E11 1.9093).')
     p.add_argument('--optimizer', type=str, default='AdamW', choices=['AdamW', 'Adam', 'SGD'])
     p.add_argument('--num-workers', type=int, default=16)
 

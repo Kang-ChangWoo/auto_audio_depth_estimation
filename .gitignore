@@ -65,3 +65,5 @@ out/.lrsweep.lock
 out/lrsweep_driver.log
 out/.attrib.lock
 out/attrib_driver.log
+out/.attrib2.lock
+out/attrib2_driver.log

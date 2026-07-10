@@ -11,7 +11,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | **Active study** | `F1` [tune] training-optimization (*running*) |
 | **Research question** | The linear scaling rule is a heuristic for convnets under SGD, not a law for a residual attention stack. A model whose learning rate must be re-tuned for every architectural knob cannot be researched  |
 | **Current action** | E20 --lr 6e-4, E21 --lr 3e-4, both on the fast defaults, --epochs 28, scored at the full budget. |
-| **Latest result** | *(no scored run in this study yet)* |
+| **Latest result** | `E21` raydpt_e21_fast_lr3e4: composite **1.9099** (rmse None, d1 0.5706, abs_rel None), best epoch 19/25 |
 | **Next decision** | Two criteria, in order. STABILITY: does mae ever jump more than 1.2x between epochs? A run that spikes answers nothing else. Then COMPOSITE against E11's 1.9093. Only once the fast config trains stabl |
 | **Why this mode** | The efficiency phase is blocked on a tuning failure that I misdiagnosed once. Fix the optimiser before touching the architecture again. |
 
@@ -31,7 +31,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I7` | sensing physics / angular resolution | far | two microphones may fundamentally under-determine high azimuthal frequencies | candidate | Do not chase high-frequency power as a goal. Re-test the observability claim once RayDPT c |
 | `I10` | acoustic-representation / interpolation | mid | the nearest-neighbour resize in _features() turns the time axis into a coarse staircase | inconclusive | deferred confirm: run `--feat-interp bilinear --stft-hop 40` after the RayDPT throughput s |
 | `I14` | ray conditioning / audio token routing | mid | far-field rays cannot see the late, weak echo that carries distance | probing | E16 (control) then E15b (treatment), both at lr 6e-4. Pre-registered falsification unchang |
-| `I16` | throughput / experiment economics | near | iteration speed IS a research variable under a wall-clock budget | inconclusive | Answerable at last: E22 vs E20 isolates win32/ffn at matched lr. Until then the fast defau |
+| `I16` | throughput / experiment economics | near | iteration speed IS a research variable under a wall-clock budget | candidate | Answerable at last: E22 vs E20 isolates win32/ffn at matched lr. Until then the fast defau |
 
 ### Open discrepancies
 
@@ -48,6 +48,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-10T20:33 | `exploit` | experiment_completed | fast config at lr 3e-4: composite 1.9099, stable (max mae jump 0.99), converged (best ep19/25). Matches the E11 champion (1.9093)  |
 | 2026-07-10T19:33 | `exploit` | experiment_completed | I18 CONFIRMED: at lr 6e-4 the fast config is stable (mae never rose between epochs, max ratio 0.99 vs 1.46/1.51 at lr 1.2e-3) and  |
 | 2026-07-10T18:30 | `exploit` | experiment_completed | DIVERGED at ep7 despite w_coarse_layout=0, never recovered (val d1 0.5342 -> 0.1307; lc pinned at 0.1849, D_coarse saturated to a  |
 | 2026-07-10T18:16 | `exploit` | candidate_dropped | PREMISE REFUTED BY ITS OWN EXPERIMENT. E18 removed lc from the loss entirely and the run still destabilised (mae x1.51 at epoch 7, |
@@ -55,7 +56,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | 2026-07-10T16:44 | `explore` | discrepancy_recorded | D11: E15 DIVERGED at epoch 4 with the parent's lr. The blow-up is entirely in lc, the coarse-layout term (0.4402 vs 0.0618) -- and |
 | 2026-07-10T16:25 | `explore` | idea_added | From data already collected: E9 (cr32 on 2048 fine tokens) scores d1 0.2544 at GT 8-9m; E12 (512 coarse) only 0.1579. Far surfaces |
 | 2026-07-10T16:25 | `explore` | candidate_dropped | PRE-REGISTERED FALSIFICATION MET: both relative dense terms made the 7-10m deciles WORSE (rel_mae -0.19/-0.13/-0.22; log_mae -0.13 |
-| 2026-07-10T16:25 | `explore` | experiment_completed | log_mae also fails: d1 0.5538 (-0.0172), rmse +0.0330. Symmetric in the ratio, so relativity itself -- not rel_mae's asymmetry --  |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->
@@ -107,6 +107,7 @@ running best highlighted):
 | 16 | `789c0be` | 0.5159 | 1.3988 | 0.5137 | 2.1120 | discard | E17 DIVERGED (lc saturated ep5) FAST default: E11 arch + win32=3 + ffn=2 (F0: does the speedup cost accuracy?) |
 | 17 | `e4743b7` | 0.4491 | 1.3962 | 0.5342 | 2.0424 | discard | E18 DIVERGED ep7 despite w_coarse_layout=0 -> lc is a symptom, trunk is unstable (D11 corrected) |
 | 18 | `0909a2d` | 0.4201 | 1.3386 | 0.5704 | 1.9176 | keep | E20 FAST config (win32=3 ffn=2) at lr 6e-4 (F1/I18: is the instability the optimiser?) |
+| 19 | `0909a2d` | 0.4270 | 1.3231 | 0.5706 | 1.9099 | keep | E21 FAST config at lr 3e-4 (F1/I18 3-trial ladder) |
 <!-- RESULTS:END -->
 
 ## Progression (composite, lower = better)
