@@ -4,7 +4,7 @@
   "reset_note": "Fresh from original baseline f677b0f + mask-weighted coarse/low loss targets + composite abs_rel weight 0.75->0.35 + PLANAR (cubemap) depth target.",
   "depth_convention": "planar (cubemap perpendicular-Z); stored erp_depth used as-is; radial_factor removed",
   "metric": "composite (selection) = rmse/1.6 + (1-d1)/0.46 + 0.35*abs_rel  (lower better; RMSE+d1 dominate; abs_rel de-weighted)",
-  "next_exp_id": "E15",
+  "next_exp_id": "E16",
   "global_champion": null,
   "concluded_studies": [
     {
@@ -217,6 +217,44 @@
         "2x2 attribution: coarse KV gives d1 +0.0033, the second cross layer +0.0046; additive, no interaction, and neither alone clears sigma.",
         "The spatial decomposition overturned D9: the deficit is far-field range compression, not angles. H1/H4 mis-specified; H6/H7 refuted at zero GPU."
       ]
+    },
+    {
+      "study_id": "S6",
+      "lineage": "depth-objective",
+      "parent": "E11 (raydpt_e11_d32L2_kve4)",
+      "type": "new",
+      "status": "concluded",
+      "general_hypothesis": "A loss chooses what a model hedges toward. Masked MAE drives every pixel to the conditional median; where far depths are a minority of the mass, the median sits short and the model systematically under-predicts distance. d1 is a relative threshold, so that shortfall is fatal to it.",
+      "detailed_hypothesis": "Charge relative error instead: |D-gt|/gt, or the symmetric |log D - log gt|. Both price a 25% mistake identically at 1 m and 9 m, which is exactly what d1 measures. Expect d1 to rise, driven by the 7-10 m deciles, and RMSE to worsen slightly.",
+      "experiment_note": "E13 raydpt_e13_relmae, E14 raydpt_e14_logmae -- E11's architecture exactly, only the dense term changes.",
+      "hpo_stage": "structural-screen",
+      "hpo_runs_used": 0,
+      "runs": [
+        {
+          "exp_id": "E13",
+          "name": "raydpt_e13_relmae",
+          "d1": 0.5464,
+          "rmse": 1.5628,
+          "composite": 2.0707,
+          "epochs_ran": 23
+        },
+        {
+          "exp_id": "E14",
+          "name": "raydpt_e14_logmae",
+          "d1": 0.5538,
+          "rmse": 1.3606,
+          "composite": 1.9857,
+          "epochs_ran": 23
+        }
+      ],
+      "decision_rule": "Judge on d1 and RMSE. ABS_REL improves by construction and is NOT evidence (program.md). Falsification: the 7-10 m deciles do not improve -> drop I13 whatever the composite does. Re-run utils/diag_d1.py on the winner before crowning.",
+      "conclusion": "FAIL (pre-registered falsification met)",
+      "observations": [
+        "Both relative dense terms made the 7-10m deciles WORSE. The dense MAE is not the cause of far-field compression.",
+        "rel_mae's 1/gt weighting moved the error budget to NEAR pixels: its 0-1m d1 (0.4987) beats every model including batvision (0.2890), while its 9-10m prediction collapses to 3.814m. The sign error, reproduced in the data.",
+        "log_mae is symmetric in the ratio and still hurts, so relativity itself -- not rel_mae's asymmetry -- is wrong here.",
+        "The diagnosis survives the failed remedy: far-field compression is measured, and it is where d1 is lost."
+      ]
     }
   ],
   "mode": "explore",
@@ -225,18 +263,18 @@
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",
   "active_study": {
-    "study_id": "S6",
-    "lineage": "depth-objective",
+    "study_id": "S7",
+    "lineage": "ray-token-routing",
     "parent": "E11 (raydpt_e11_d32L2_kve4)",
     "type": "new",
     "status": "running",
-    "general_hypothesis": "A loss chooses what a model hedges toward. Masked MAE drives every pixel to the conditional median; where far depths are a minority of the mass, the median sits short and the model systematically under-predicts distance. d1 is a relative threshold, so that shortfall is fatal to it.",
-    "detailed_hypothesis": "Charge relative error instead: |D-gt|/gt, or the symmetric |log D - log gt|. Both price a 25% mistake identically at 1 m and 9 m, which is exactly what d1 measures. Expect d1 to rise, driven by the 7-10 m deciles, and RMSE to worsen slightly.",
-    "experiment_note": "E13 raydpt_e13_relmae, E14 raydpt_e14_logmae -- E11's architecture exactly, only the dense term changes.",
+    "general_hypothesis": "A ray can only estimate distance from evidence it can attend to. Far surfaces return late, weak echoes -- late frames on the spectrogram's time axis -- and every encoder pooling step dilutes them. What matters is not how much attention costs, but WHICH tokens it is spent on.",
+    "detailed_hypothesis": "E9 vs E12 (identical but for the KV set) show fine tokens buy +0.0965 of far-field d1. cr32-on-e3 is unaffordable (E10 never converged), but attention costs (queries x kv), so routing fine tokens to the 512-query coarse scale costs the same as cr32-on-e4. Parameter count unchanged.",
+    "experiment_note": "E15 raydpt_e15_kv16e3: --cross-kv16 e3 on E11's architecture. Measured 169.5 s/epoch = 21.2 epochs.",
     "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
     "runs": [],
-    "decision_rule": "Judge on d1 and RMSE. ABS_REL improves by construction and is NOT evidence (program.md). Falsification: the 7-10 m deciles do not improve -> drop I13 whatever the composite does. Re-run utils/diag_d1.py on the winner before crowning."
+    "decision_rule": "PRE-REGISTERED: the 7-10m deciles must improve over E11, or I14 is dropped whatever the composite does -- exactly as I13 was. Overall d1 must clear sigma to be crowned. ABS_REL is not evidence."
   },
   "backlog": [
     {

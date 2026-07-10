@@ -223,7 +223,7 @@
     },
     {
       "id": "I13",
-      "status": "probing",
+      "status": "dropped",
       "priority": "high",
       "origin": "utils/diag_d1.py -- spatial decomposition of D9's deficit on the full val set",
       "target_bottleneck": "far-field range compression: both models predict a GT 8.5 m surface at ~5 m",
@@ -236,10 +236,30 @@
       "minimal_falsifiable_test": "two arms on the RayDPT champion E11's exact architecture: --main-loss rel_mae and --main-loss log_mae. Re-run utils/diag_d1.py on the winner and read the far deciles.",
       "budget_risk": "none. Identical architecture and cost.",
       "evidence_required": "far-decile d1 improves AND overall d1 improves beyond sigma, with the RMSE cost accounted for.",
-      "next_action": "Read E14 (log_mae). Then run the far-decile check on both, which is the pre-registered falsification test and is still owed.",
+      "next_action": "none. Superseded by I14, which attacks the information available to far-field rays rather than the price charged for their errors.",
       "e13_result": "REL_MAE FAILED, and my mechanism reasoning had a sign error. d1 fell -0.0246 (0.5710 -> 0.5464), RMSE rose +0.2352, composite 1.9093 -> 2.0707. ABS_REL improved -0.1117 exactly as predicted and exactly as pre-registered to be NOT evidence.",
       "sign_error": "|D-gt|/gt divides by gt, so a far pixel's error is CHEAPER, not dearer. I wanted to charge far mistakes more and did the opposite. Worse, the term is ASYMMETRIC: under-prediction is bounded (D->0 gives loss 1.0) while over-prediction is unbounded. At gt=1, predicting half costs 0.500 and predicting double costs 1.000. Under uncertainty, calling it short is always cheaper -- the loss ACTIVELY REWARDS the compression it was meant to cure. E13 compressing harder is the mechanism working exactly as (mis)designed.",
-      "what_survives": "The DIAGNOSIS stands and is independent of the failed cure: far-field compression is measured, not inferred (GT 8.5 m -> batvision 5.74 m, RayDPT 4.97 m), and it is where d1 is lost. What is refuted is one particular remedy. log_mae is symmetric in the ratio (half and double both cost 0.693), so it carries none of rel_mae's under-prediction incentive; E14 now discriminates 'relative losses are wrong here' from 'rel_mae's asymmetry was wrong'."
+      "what_survives": "The DIAGNOSIS stands and is independent of the failed cure: far-field compression is measured, not inferred (GT 8.5 m -> batvision 5.74 m, RayDPT 4.97 m), and it is where d1 is lost. What is refuted is one particular remedy. log_mae is symmetric in the ratio (half and double both cost 0.693), so it carries none of rel_mae's under-prediction incentive; E14 now discriminates 'relative losses are wrong here' from 'rel_mae's asymmetry was wrong'.",
+      "why_dropped": "PRE-REGISTERED FALSIFICATION MET. Both relative dense terms made the 7-10 m deciles WORSE, not better. d1 @ (7-8, 8-9, 9-10 m) vs E11: rel_mae (-0.1856, -0.1263, -0.2238), log_mae (-0.1343, -0.0021, -0.1168). Overall d1: E11 0.5710 -> E13 0.5464 -> E14 0.5538. The dense MAE is NOT the cause of far-field compression.",
+      "mechanism_of_failure": "Made visible by the predicted-depth table. rel_mae weights each pixel by 1/gt, moving the error budget toward NEAR pixels: at GT 0-1 m it predicts 0.883 m (vs E11's 1.291, GT mid 0.5) and its near-field d1 of 0.4987 beats every model including batvision's 0.2890 -- while its 9-10 m prediction collapses to 3.814 m. My sign error, reproduced exactly in the data. log_mae is symmetric in the ratio and avoids rel_mae's under-prediction incentive, yet still hurts: so it is RELATIVITY itself, not the asymmetry, that is wrong here.",
+      "scope_of_negative_evidence": "Refutes the dense term as the cause of far-field compression, on this architecture and budget. The DIAGNOSIS (far-field compression is where d1 is lost) is measured and independent of this failed remedy. It does not refute reweighting in general -- a term that upweights FAR pixels (the opposite of 1/gt) was never tried, and is a live option if I14 fails."
+    },
+    {
+      "id": "I14",
+      "status": "probing",
+      "priority": "high",
+      "origin": "E9 vs E12, two runs already in the ledger, differing only in which audio tokens the rays attend to",
+      "target_bottleneck": "far-field rays cannot see the late, weak echo that carries distance",
+      "mechanism_family": "ray conditioning / audio token routing",
+      "causal_distance": "mid",
+      "general_hypothesis": "A ray can only estimate distance from evidence it can attend to. A far surface returns a LATE, WEAK echo, which lives in the late frames of the spectrogram's time axis. Every pooling step of the encoder halves that axis, so coarse audio tokens dilute exactly the evidence far rays need. What matters is not how much the model spends on attention, but WHICH tokens it spends it on.",
+      "detailed_hypothesis": "MEASURED from runs already collected: E9 (cr32 attends e3, 2048 fine tokens) scores d1 0.2544 at GT 8-9 m; E12 (cr32 attends e4, 512 coarse tokens) scores 0.1579 -- fine tokens buy +0.0965 of far-field d1. batvision, whose U-Net skips carry full time detail into the decoder, scores 0.4023 there. But cr32-on-e3 costs 2048x2048 pairs and never converged (E10). Attention cost is (queries x kv), so route the fine tokens to the CHEAP scale: cr16-on-e3 is 512x2048 = 1.05M pairs, the same price as cr32-on-e4 and 4x cheaper than E10. Parameter count is unchanged (5.89M); measured 169.5 s/epoch = 21.2 epochs.",
+      "expected_metric_effect": "the 7-10 m deciles improve over E11; overall d1 rises. RMSE may move either way. ABS_REL is not evidence.",
+      "main_falsification_condition": "the 7-10 m deciles do not improve -> drop I14 whatever the composite does, exactly as I13 was dropped.",
+      "minimal_falsifiable_test": "E15: --cross-kv16 e3 on E11's architecture, everything else identical. Re-run the far-decile diagnostic.",
+      "budget_risk": "low. 24.9 -> 21.2 epochs; still converges. Report epochs_ran and best_epoch.",
+      "evidence_required": "far-decile d1 improves AND overall d1 clears sigma.",
+      "next_action": "E15 running."
     }
   ],
   "discrepancies": [

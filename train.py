@@ -114,6 +114,7 @@ def make_config(args):
             decode_scale=args.decode_scale,
             ffn_mult=args.ffn_mult,
             cross_kv32=args.cross_kv32,
+            cross_kv16=args.cross_kv16,
             # ray-feature bank flags
             use_xyz=True,
             use_fourier_pe=True,
@@ -379,6 +380,13 @@ class RayDPT(nn.Module):
         # 'e4' = 512 coarse tokens, 4x cheaper. Every ray still cross-attends to audio, so the
         # ray-conditioning invariant holds; only the KV set shrinks (idea I12).
         self.cross_kv32 = str(getattr(cfg, "cross_kv32", "e3"))
+        # Which audio tokens the COARSE 16x32 rays attend to. Cost is (queries x kv), so
+        # cr16 with e3 costs 512 x 2048 = 1.05M pairs -- the same as cr32 with e4, and 4x
+        # cheaper than cr32 with e3. MEASURED motivation (idea I14): fine tokens buy far-field
+        # depth. E9 (cr32 on e3) scores d1 0.2544 at GT 8-9 m; E12 (cr32 on e4) only 0.1579.
+        # Far surfaces return LATE, WEAK echoes -- late frames on the spectrogram's time axis --
+        # and e4 pools them away.
+        self.cross_kv16 = str(getattr(cfg, "cross_kv16", "e4"))
         if self.decode_scale == 32:      # the 64-scale modules are never built
             self.rf64 = None; self.rp64 = None; self.cr64 = None
             self.se2 = None; self.refine64 = None; self.lsa64 = None
@@ -402,9 +410,12 @@ class RayDPT(nn.Module):
             x = self.lsa32(self.refine32(m))                    # 32x64
             x = self.lsa64(self.refine64(self.up(x) + self.se2(e2)))   # 64x128
         else:
-            kv32 = (self.kv_e3(e3.flatten(2).transpose(1, 2)) if self.cross_kv32 == 'e3'
-                    else kv4)                                    # (B,2048,dim) or (B,512,dim)
-            F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4, B, 16, 32)
+            kv3 = None
+            if self.cross_kv32 == 'e3' or self.cross_kv16 == 'e3':
+                kv3 = self.kv_e3(e3.flatten(2).transpose(1, 2))   # (B,2048,dim)
+            kv32 = kv3 if self.cross_kv32 == 'e3' else kv4
+            kv16 = kv3 if self.cross_kv16 == 'e3' else kv4
+            F16 = self._cross(self.rp16, self.rf16, self.cr16, kv16, B, 16, 32)
             F32 = self._cross(self.rp32, self.rf32, self.cr32, kv32, B, 32, 64)
             m16 = F16 + self.se4(e4)                             # 16x32
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
@@ -817,6 +828,9 @@ def parse_args():
                    help='CrossBlock FFN expansion. Most per-token FLOPs live here (idea I12).')
     p.add_argument('--cross-kv32', type=str, default='e3', choices=['e3', 'e4'],
                    help="audio tokens the 32-scale rays attend to: e3 (2048, original) or e4 (512, 4x cheaper)")
+    p.add_argument('--cross-kv16', type=str, default='e4', choices=['e3', 'e4'],
+                   help="audio tokens the COARSE 16-scale rays attend to. e3 costs 512x2048 pairs -- "
+                        "as cheap as cr32-on-e4 -- and carries the late-echo detail far depth needs (I14).")
     p.add_argument('--decode-scale', type=int, default=64, choices=[32, 64],
                    help='finest ray-decode resolution: 64 -> 64x128 (original), 32 -> 32x64 '
                         '(drops cr64+lsa64+refine64, 54%% of forward). Ray-conditioning is kept.')

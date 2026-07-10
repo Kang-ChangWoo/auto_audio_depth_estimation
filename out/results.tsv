@@ -13,3 +13,4 @@ bc415a2	0.4187	1.3284	0.5665	28.2	keep	E10 RayDPT decode32 xlayers2 batch64 (S4:
 c147692	0.4199	1.3276	0.5710	16.0	keep	E11 RayDPT decode32 xlayers2 kv=e4 batch64 (S5/H2: first CONVERGED 2-layer RayDPT)
 1b995ab	0.4125	1.3409	0.5664	12.8	keep	E12 RayDPT decode32 xlayers1 kv=e4 (S5 attribution: 2x2 missing cell)
 d38ecc7	0.3082	1.5628	0.5464	16.0	keep	E13 RayDPT E11 arch + rel_mae dense loss (S6/I13: far-field compression)
+d38ecc7	0.4724	1.3606	0.5538	16.0	keep	E14 RayDPT E11 arch + log_mae dense loss (S6/I13 discriminating arm)

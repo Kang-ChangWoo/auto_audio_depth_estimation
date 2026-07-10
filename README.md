@@ -8,18 +8,18 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | | |
 |---|---|
 | **Mode** | `EXPLORE` — 1 structural run + 0-2 focused probes -> CANDIDATE / DROP / INCONCLUSIVE |
-| **Active study** | `S6` [new] depth-objective (*running*) |
-| **Research question** | A loss chooses what a model hedges toward. Masked MAE drives every pixel to the conditional median; where far depths are a minority of the mass, the median sits short and the model systematically unde |
-| **Current action** | E13 raydpt_e13_relmae, E14 raydpt_e14_logmae -- E11's architecture exactly, only the dense term changes. |
+| **Active study** | `S7` [new] ray-token-routing (*running*) |
+| **Research question** | A ray can only estimate distance from evidence it can attend to. Far surfaces return late, weak echoes -- late frames on the spectrogram's time axis -- and every encoder pooling step dilutes them. Wha |
+| **Current action** | E15 raydpt_e15_kv16e3: --cross-kv16 e3 on E11's architecture. Measured 169.5 s/epoch = 21.2 epochs. |
 | **Latest result** | *(no scored run in this study yet)* |
-| **Next decision** | Judge on d1 and RMSE. ABS_REL improves by construction and is NOT evidence (program.md). Falsification: the 7-10 m deciles do not improve -> drop I13 whatever the composite does. Re-run utils/diag_d1. |
+| **Next decision** | PRE-REGISTERED: the 7-10m deciles must improve over E11, or I14 is dropped whatever the composite does -- exactly as I13 was. Overall d1 must clear sigma to be crowned. ABS_REL is not evidence. |
 | **Why this mode** | The spatial diagnostic redirected the research: the deficit is far-field compression, a property of the OBJECTIVE, not of ray-conditioning. A causally different mechanism (relative/log dense loss) is  |
 
 ### Current hypothesis
 
-- **General** — A loss chooses what a model hedges toward. Masked MAE drives every pixel to the conditional median; where far depths are a minority of the mass, the median sits short and the model systematically under-predicts distance. d1 is a relative threshold, so that shortfall is fatal to it.
-- **Detailed** — Charge relative error instead: |D-gt|/gt, or the symmetric |log D - log gt|. Both price a 25% mistake identically at 1 m and 9 m, which is exactly what d1 measures. Expect d1 to rise, driven by the 7-10 m deciles, and RMSE to worsen slightly.
-- **Implementation note** — E13 raydpt_e13_relmae, E14 raydpt_e14_logmae -- E11's architecture exactly, only the dense term changes.
+- **General** — A ray can only estimate distance from evidence it can attend to. Far surfaces return late, weak echoes -- late frames on the spectrogram's time axis -- and every encoder pooling step dilutes them. What matters is not how much attention costs, but WHICH tokens it is spent on.
+- **Detailed** — E9 vs E12 (identical but for the KV set) show fine tokens buy +0.0965 of far-field d1. cr32-on-e3 is unaffordable (E10 never converged), but attention costs (queries x kv), so routing fine tokens to the 512-query coarse scale costs the same as cr32-on-e4. Parameter count unchanged.
+- **Implementation note** — E15 raydpt_e15_kv16e3: --cross-kv16 e3 on E11's architecture. Measured 169.5 s/epoch = 21.2 epochs.
 
 ### Research portfolio
 
@@ -30,7 +30,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I5` | ray conditioning / encoder-decoder correspondence | mid | RayDPT's DPT skip connections impose a FALSE spatial correspondence between the spectrogram's axes and the ERP's axes | inconclusive | none. Do not spend GPU on the skip ablation on this rationale. Revive only with an indepen |
 | `I7` | sensing physics / angular resolution | far | two microphones may fundamentally under-determine high azimuthal frequencies | candidate | Do not chase high-frequency power as a goal. Re-test the observability claim once RayDPT c |
 | `I10` | acoustic-representation / interpolation | mid | the nearest-neighbour resize in _features() turns the time axis into a coarse staircase | inconclusive | deferred confirm: run `--feat-interp bilinear --stft-hop 40` after the RayDPT throughput s |
-| `I13` | depth objective design | mid | far-field range compression: both models predict a GT 8.5 m surface at ~5 m | probing | Read E14 (log_mae). Then run the far-decile check on both, which is the pre-registered fal |
+| `I14` | ray conditioning / audio token routing | mid | far-field rays cannot see the late, weak echo that carries distance | probing | E15 running. |
 
 ### Open discrepancies
 
@@ -47,14 +47,14 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-10T16:25 | `explore` | idea_added | From data already collected: E9 (cr32 on 2048 fine tokens) scores d1 0.2544 at GT 8-9m; E12 (512 coarse) only 0.1579. Far surfaces |
+| 2026-07-10T16:25 | `explore` | candidate_dropped | PRE-REGISTERED FALSIFICATION MET: both relative dense terms made the 7-10m deciles WORSE (rel_mae -0.19/-0.13/-0.22; log_mae -0.13 |
+| 2026-07-10T16:25 | `explore` | experiment_completed | log_mae also fails: d1 0.5538 (-0.0172), rmse +0.0330. Symmetric in the ratio, so relativity itself -- not rel_mae's asymmetry --  |
 | 2026-07-10T15:30 | `explore` | experiment_completed | rel_mae FAILED: d1 -0.0246, rmse +0.2352, composite 1.9093 -> 2.0707. My sign error: \|D-gt\|/gt makes far errors CHEAPER, and it  |
 | 2026-07-10T14:17 | `explore` | direction_changed | D9 REFRAMED by full-val spatial decomposition. The deficit is NOT angular: flat across azimuth (std 0.0056), ZERO on the floor, ex |
 | 2026-07-10T14:17 | `explore` | experiment_completed | 2x2 complete. Attribution: coarse KV +0.0033 d1, second cross layer +0.0046; additive, neither alone clears sigma. |
 | 2026-07-10T13:13 | `verify` | candidate_dropped | H6 REFUTED at zero GPU by reading RayBank: use_xyz=True already puts y -- the ear-axis component -- into every ray query, and use_ |
 | 2026-07-10T13:11 | `verify` | experiment_completed | First CONVERGED 2-layer RayDPT: composite 1.9093 (best RayDPT), d1 0.5710, 23 epochs, best at ep22. d1 recovers +0.0079 over E9, c |
-| 2026-07-10T12:09 | `verify` | discrepancy_recorded | D10 (methodological): small-sample diagnostics REVERSE their sign. 60 samples said RayDPT's d1 beat batvision's; the full 3543 say |
-| 2026-07-10T12:03 | `synthesize` | divergence_checkpoint | DC1 after S0-S4. Seven competing hypotheses across six causal families (mechanism, budget, capacity, sensing physics, encoder-deco |
-| 2026-07-10T12:01 | `synthesize` | experiment_completed | cross-layers restored to 2 at decode 32: composite 1.9192 (beats converged E9's 1.9308), but 15 epochs and best = LAST epoch -- di |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->
@@ -102,6 +102,7 @@ running best highlighted):
 | 12 | `c147692` | 0.4199 | 1.3276 | 0.5710 | 1.9093 | keep | E11 RayDPT decode32 xlayers2 kv=e4 batch64 (S5/H2: first CONVERGED 2-layer RayDPT) |
 | 13 | `1b995ab` | 0.4125 | 1.3409 | 0.5664 | 1.9250 | keep | E12 RayDPT decode32 xlayers1 kv=e4 (S5 attribution: 2x2 missing cell) |
 | 14 | `d38ecc7` | 0.3082 | 1.5628 | 0.5464 | 2.0707 | keep | E13 RayDPT E11 arch + rel_mae dense loss (S6/I13: far-field compression) |
+| 15 | `d38ecc7` | 0.4724 | 1.3606 | 0.5538 | 1.9857 | keep | E14 RayDPT E11 arch + log_mae dense loss (S6/I13 discriminating arm) |
 <!-- RESULTS:END -->
 
 ## Progression (composite, lower = better)
