@@ -383,7 +383,9 @@
       "expected_metric_effect": "the 7-10m deciles improve FURTHER than E24's; far-field d1 rises.",
       "main_falsification_condition": "the far deciles do not improve over E24 -> delay resolution was not the limit, drop.",
       "budget_risk": "low; ~free params. e2 has 2x the columns so the volume's attention is 2x -- benchmark.",
-      "next_action": "E29 running."
+      "next_action": "E29 running.",
+      "composite": "E29 composite 1.9006 vs E24 1.8987, delta +0.0019 (below sigma). Converged (best 14/22). The far-decile verdict -- the actual pre-registered test -- is pending: the diagnostic correctly blocked on the eval_lock while E30 trains, rather than stealing the GPU.",
+      "note": "e2 doubles the volume's time columns (128 vs 64) but costs ~0 params; s/epoch 153 vs E24's 130 (the fast parent), still converges. Whether the finer delay resolution actually moves the far field is the open question."
     },
     {
       "id": "I21",
@@ -397,7 +399,8 @@
       "expected_metric_effect": "far deciles improve beyond E24; the two effects at least partly add.",
       "main_falsification_condition": "no improvement over E24, OR divergence (kv=e3 fell over at lr 1.2e-3, D11; must be stable at 3e-4).",
       "budget_risk": "medium; kv=e3 is 4x cr32 attention. E10 showed it fits at ~15 epochs at 2 layers, but the fast config is cheaper.",
-      "next_action": "E30 running; watch for the D11 divergence signature (lc/mae spike)."
+      "next_action": "E30 running; watch for the D11 divergence signature (lc/mae spike).",
+      "e30_stability": "STABLE at lr 3e-4: E30 (EDE + cross_kv32=e3) trained normally through epoch 2 (mae 0.1010 -> 0.0679), no D11 spike. First confirmation that I18's lr fix makes kv=e3 -- which diverged at lr 1.2e-3 -- trainable. 217 s/epoch."
     }
   ],
   "discrepancies": [

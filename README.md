@@ -50,6 +50,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-11T04:41 | `exploit` | experiment_completed | EchoDelayVolume on e2 (time 128, 2x delay resolution): composite 1.9006 vs E24's 1.8987, delta +0.0019 below sigma, converged. The |
 | 2026-07-11T03:26 | `synthesize` | divergence_checkpoint | DC2 after F0/F1/G0. Six competing hypotheses across five families (time resolution, combine, decoder/skip, data sampling, sensing  |
 | 2026-07-11T03:24 | `synthesize` | experiment_completed | Champion + EchoDelayVolume, converged (cosine annealed to lr 0): composite 1.9271, WORSE than E23 by 0.0309, and the far deciles i |
 | 2026-07-11T00:42 | `verify` | discrepancy_recorded | D12: the same mechanism beats its control on the fast parent (+0.0112) and loses on the champion parent (-0.0121), both above sigm |
@@ -57,7 +58,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | 2026-07-10T23:38 | `verify` | experiment_completed | I19 PASSED its pre-registered falsification: every far decile improved (7-8m +0.0692, 8-9m +0.0759, 9-10m +0.0595) and the mean pr |
 | 2026-07-10T22:37 | `exploit` | experiment_completed | NEW RayDPT CHAMPION 1.8962 (win5/ffn4 @ lr 3e-4, 22 epochs, stable). Closing the 2x2 OVERTURNED the previous reading: lr 3e-4 gain |
 | 2026-07-10T21:33 | `exploit` | experiment_completed | Control win5/ffn4 @ lr 6e-4: composite 1.9125, stable. 2x2 complete except E23. At matched lr the fast knobs cost +0.0051 (below s |
-| 2026-07-10T20:48 | `exploit` | idea_added | STRUCTURAL, not a loss change. The encoder's width axis IS time, so e3's 64 columns are depth hypotheses (d = c*t/2, 0.08-9.92m).  |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->
@@ -115,6 +115,7 @@ running best highlighted):
 | 22 | `a7b0613` | 0.4203 | 1.3183 | 0.5733 | 1.8987 | keep | E24 EchoDelayVolume: per-ray soft-argmax over echo delay (G0/I19 structural) |
 | 23 | `0a858e4` | 0.4238 | 1.3307 | 0.5730 | 1.9083 | keep | E25 CHAMPION arch + EchoDelayVolume (G0/I19 on the correct parent) |
 | 24 | `9a26c0c` | 0.4301 | 1.3382 | 0.5675 | 1.9271 | keep | E27 CHAMPION + EchoDelayVolume, epochs matched to budget (G1b/I19) |
+| 25 | `00bdb13` | 0.4128 | 1.3228 | 0.5725 | 1.9006 | keep | E29 EchoDelayVolume on e2 (time 128, 2x delay resolution) fast parent (G1/I20) |
 <!-- RESULTS:END -->
 
 ## Progression (composite, lower = better)

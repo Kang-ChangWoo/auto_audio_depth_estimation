@@ -23,3 +23,4 @@ e4743b7	0.4491	1.3962	0.5342	0.0	discard	E18 DIVERGED ep7 despite w_coarse_layou
 a7b0613	0.4203	1.3183	0.5733	15.2	keep	E24 EchoDelayVolume: per-ray soft-argmax over echo delay (G0/I19 structural)
 0a858e4	0.4238	1.3307	0.5730	17.3	keep	E25 CHAMPION arch + EchoDelayVolume (G0/I19 on the correct parent)
 9a26c0c	0.4301	1.3382	0.5675	17.3	keep	E27 CHAMPION + EchoDelayVolume, epochs matched to budget (G1b/I19)
+00bdb13	0.4128	1.3228	0.5725	17.4	keep	E29 EchoDelayVolume on e2 (time 128, 2x delay resolution) fast parent (G1/I20)
