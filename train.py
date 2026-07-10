@@ -268,6 +268,17 @@ class UNet8Encoder(nn.Module):
 
 
 # ---- local spherical window attention (ray <-> ray) -------------------------
+def _window_kv(t, win):
+    """(B,C,H,W) -> (B,C,win*win,H,W): neighbours via circular-W / replicate-H pad."""
+    pad = win // 2
+    t = torch.cat([t[..., -pad:], t, t[..., :pad]], dim=-1)        # circular azimuth wrap
+    t = F.pad(t, (0, 0, pad, pad), mode="replicate")               # replicate elevation (poles)
+    B, C, Hp, Wp = t.shape
+    H, W = Hp - 2 * pad, Wp - 2 * pad
+    cols = F.unfold(t, kernel_size=win)                            # (B, C*win*win, H*W)
+    return cols.view(B, C, win * win, H, W)
+
+
 def _geom_bias_feats(H, W, win):
     """(H, win*win, 3): [wrapped dtheta, dphi, cos angular distance] per row/offset."""
     pad = win // 2
@@ -286,21 +297,16 @@ def _geom_bias_feats(H, W, win):
     return out
 
 
-def _pad_sphere(t, pad):
-    """(B,C,H,W) -> (B,C,H+2p,W+2p): circular azimuth wrap, replicate elevation (poles)."""
-    t = torch.cat([t[..., -pad:], t, t[..., :pad]], dim=-1)        # circular azimuth wrap
-    return F.pad(t, (0, 0, pad, pad), mode="replicate")            # replicate elevation
-
-
 class LocalSphericalAttention(nn.Module):
     """Windowed ray<->ray attention with a geometric bias.
 
-    The neighbourhood is a STRIDED VIEW of a once-padded tensor: no copy, no unfold, no
-    per-offset loop. F.unfold materialised (B, C*win*win, H*W); a per-offset accumulate loop
-    (my first attempt) was worse still -- it retained win*win intermediates for autograd and
-    measured 30.9 GB at batch 16, versus 16.2 GB for unfold. A view costs neither memory nor
-    kernel launches, and the two einsums are single fused ops.
-    Mathematically identical to the unfold version (verified forward + backward, see I8).
+    Neighbourhoods come from F.unfold. Two rewrites were tried and BOTH were slower on the
+    real device (measured, utils/profile_raydpt.py, fwd+bwd, batch 16, bf16, 64x128 win3):
+        unfold      47.3 ms   2.65 GB   <- this
+        accumulate  49.2 ms   1.12 GB
+        as_strided 133.1 ms   3.96 GB
+    unfold's memory problem was an artefact of fp32 (15.6 GB); under bf16 it is 2.65 GB and
+    it is the fastest of the three. A CPU forward-time proxy suggested otherwise; it was wrong.
     """
     def __init__(self, dim, heads, H, W, win=5):
         super().__init__()
@@ -311,31 +317,18 @@ class LocalSphericalAttention(nn.Module):
         self.register_buffer("geom", _geom_bias_feats(H, W, win))          # (H,K,3)
         self.bias_mlp = nn.Sequential(nn.Linear(3, 64), nn.GELU(), nn.Linear(64, heads))
 
-    @staticmethod
-    def _neigh(t, B, h, dh, H, W, win):
-        """(B,C,H+2p,W+2p) -> (B,h,dh,win,win,H,W) strided VIEW: the window axes reuse the
-        spatial strides, which is exactly what a sliding window is. No copy."""
-        Hp, Wp = t.shape[-2:]
-        t = t.view(B, h, dh, Hp, Wp)
-        sB, sh, sd, sH, sW = t.stride()
-        return t.as_strided((B, h, dh, win, win, H, W), (sB, sh, sd, sH, sW, sH, sW))
-
     def forward(self, x):
         B, C, H, W = x.shape
-        p, win = self.win // 2, self.win
         q, k, v = self.to_qkv(x).chunk(3, 1)
+        kw = _window_kv(k, self.win).view(B, self.h, self.dh, self.win * self.win, H, W)
+        vw = _window_kv(v, self.win).view(B, self.h, self.dh, self.win * self.win, H, W)
         q = q.view(B, self.h, self.dh, H, W)
-        kw = self._neigh(_pad_sphere(k, p), B, self.h, self.dh, H, W, win)
-        vw = self._neigh(_pad_sphere(v, p), B, self.h, self.dh, H, W, win)
-
-        attn = torch.einsum('bndhw,bndrshw->bnrshw', q, kw) * self.scale     # (B,nh,win,win,H,W)
-        attn = attn.reshape(B, self.h, win * win, H, W)
-        bias = self.bias_mlp(self.geom).permute(2, 1, 0)                     # (nh,K,H)
-        attn = (attn + bias[None, :, :, :, None]).softmax(dim=2)
-        attn = attn.view(B, self.h, win, win, H, W)
-
-        out = torch.einsum('bnrshw,bndrshw->bndhw', attn, vw)
-        return x + self.proj(out.reshape(B, C, H, W))
+        attn = torch.einsum("bndhw,bndkhw->bnkhw", q, kw) * self.scale     # (B,nh,K,H,W)
+        bias = self.bias_mlp(self.geom).permute(2, 1, 0)                   # (nh,K,H)
+        attn = attn + bias[None, :, :, :, None]
+        attn = attn.softmax(dim=2)
+        out = torch.einsum("bnkhw,bndkhw->bndhw", attn, vw).reshape(B, C, H, W)
+        return x + self.proj(out)
 
 
 # ---- RayDPT ------------------------------------------------------------------
