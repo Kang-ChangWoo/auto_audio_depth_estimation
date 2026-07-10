@@ -264,7 +264,7 @@
     },
     {
       "id": "I15",
-      "status": "backlog",
+      "status": "dropped",
       "origin": "E15's divergence (D11)",
       "target_bottleneck": "RayDPT's coarse head is a sigmoid one 1x1 conv away from the deepest ray-attention output, with no normalisation between",
       "mechanism_family": "architecture / stability",
@@ -276,7 +276,8 @@
       "minimal_falsifiable_test": "add the norm, verify the parent's composite is unchanged within sigma, then retry kv16=e3 at 1.2e-3.",
       "budget_risk": "none.",
       "evidence_required": "parent unchanged AND treatment stable.",
-      "next_action": "deferred until I14 is decided at the safe lr; a stability fix must not be bundled with the mechanism it would rescue."
+      "next_action": "deferred until I14 is decided at the safe lr; a stability fix must not be bundled with the mechanism it would rescue.",
+      "why_dropped": "Predicated on the same refuted premise: normalising before coarse_head cannot fix an instability that persists when coarse_head has no gradient. The --coarse-norm knob stays in the code, off by default, as a documented dead end."
     },
     {
       "id": "I16",
@@ -297,7 +298,7 @@
     },
     {
       "id": "I17",
-      "status": "probing",
+      "status": "dropped",
       "priority": "high",
       "origin": "E15 and E17 diverging identically at the parent's lr (D11)",
       "target_bottleneck": "RayDPT's coarse-layout auxiliary is its only failure point, and it was already measured inert",
@@ -310,7 +311,26 @@
       "minimal_falsifiable_test": "E18: fast defaults + --w-coarse-layout 0, scored at the full budget.",
       "budget_risk": "none.",
       "evidence_required": "stable training AND composite within sigma of E11's 1.9093.",
-      "next_action": "E18 running; E19 (weight 0.1) follows as a second stability data point."
+      "next_action": "none. Superseded by I18 (the optimiser).",
+      "why_dropped": "PREMISE REFUTED BY ITS OWN EXPERIMENT. I17 held that lc was RayDPT's failure point. E18 removed lc from the loss entirely (w_coarse_layout=0) and the run still destabilised: mae x1.51 at epoch 7 with lc contributing zero gradient. lc is a symptom, not a cause.",
+      "what_survives": "The measurement that coarse_head is a pure side-branch stands (verified: --coarse-norm changes D_coarse and leaves D bit-identical), and I6's finding that the auxiliaries are inert stands. Deleting lc is still a legitimate simplification -- it just does not buy stability, which is what I claimed it would."
+    },
+    {
+      "id": "I18",
+      "status": "backlog",
+      "priority": "high",
+      "origin": "E18 destabilising with the auxiliary removed -- an intervention, not a correlation",
+      "target_bottleneck": "lr 1.2e-3 (linear-scaled for batch 64) is at the edge of stability for RayDPT, and any capacity change tips it",
+      "mechanism_family": "training-optimization",
+      "causal_distance": "near",
+      "general_hypothesis": "The linear scaling rule is a heuristic for convnets trained with SGD; it is not a law, and for a residual attention stack it can land exactly on the edge of divergence. A model whose lr must be re-tuned for every architectural knob cannot be researched quickly, whatever its FLOPs.",
+      "detailed_hypothesis": "lr = 3e-4 x (64/16) = 1.2e-3. E9, E11 and E12 survived it; E15 (larger KV) and E17 (win32=3, ffn=2) did not, and E18 shows the failure is in the trunk, not the auxiliary. Gradient clipping is already 1.0. Sweep lr at the fast config -- the mechanism is untouched, so this is a `tune`, not a `new`.",
+      "expected_metric_effect": "a stable run whose composite is within sigma of E11's, at a lr low enough that the architecture knobs no longer matter for stability.",
+      "main_falsification_condition": "the fast config destabilises at every lr that still converges inside the budget -> the instability is architectural after all, and the win32/ffn knobs must be reverted.",
+      "minimal_falsifiable_test": "three scored runs at lr 1.2e-3 (known), 6e-4, 3e-4 on the fast config. Report best_epoch, epochs_ran, and whether mae ever jumps by more than 1.2x between epochs.",
+      "budget_risk": "none per run; it costs GPU hours, which is precisely what the fast config is meant to buy back.",
+      "evidence_required": "a stable, converged fast config; then re-test the win32/ffn accuracy question that E17 could not answer.",
+      "next_action": "queue the lr sweep once E18/E19 finish."
     }
   ],
   "discrepancies": [
@@ -414,10 +434,12 @@
       "why_it_matters": "lc = masked_mae(D_coarse, gt_c, m_c) with D_coarse a sigmoid, so it is bounded by 1.0. A value of 0.44 means D_coarse has SATURATED, not merely drifted. Routing e3's 2048 tokens into cr16 makes F16 a sum over 4x more attention values; CrossBlock is a residual (q + attn) so magnitudes accumulate, and coarse_head + sigmoid sits directly on m16 = F16 + se4(e4). E11's linear-scaled lr of 1.2e-3 is too large for that path.",
       "classification": "OPTIMISATION failure, not 'mechanism unsupported' (program.md's negative-evidence taxonomy). NOTHING is concluded about I14 from it.",
       "diagnostic_value": "Warns that the coarse head is the fragile point of RayDPT: it is a sigmoid sitting one 1x1 conv away from the deepest ray-attention output, with no normalisation between them. Any change that enlarges F16 risks it. A LayerNorm before coarse_head is a cheap structural fix worth its own study.",
-      "next_action": "E18 deletes the fragile term (lc was measured INERT on batvision, I6); E19 keeps it at 0.1 weight. One hypothesis each.",
+      "next_action": "A proper `tune` study over lr at the fast config, not another architectural guess. The lesson: I named a cause from a correlation (which term spiked most) instead of from an intervention.",
       "e17_confirms": "E17 (the fast defaults: win32=3, ffn=2) diverged the SAME way at the SAME lr: lc jumps 0.0633 -> 0.3209 at epoch 5 and never recovers (stuck at 0.5-0.64 for twenty epochs), dragging mae and low with it. Two architecture changes, two identical divergences.",
       "generalisation": "At lr 1.2e-3 the three runs that left the architecture alone (E9, E11, E12) were stable; BOTH runs that changed it diverged. E11 survived not because it had margin but because it sat on the edge. So the obstacle to fast experimentation is NOT FLOPs -- it is that every knob turn becomes an lr search. Efficiency work is blocked on stability.",
-      "root_cause": "coarse_head is Conv2d(dim,1,1) + sigmoid sitting directly on m16 = F16 + se4(e4), with no normalisation. F16 is a residual accumulation over CrossBlocks whose magnitude grows with the KV set and the FFN width. Once the sigmoid saturates its gradient is ~0 and lc cannot recover."
+      "root_cause": "coarse_head is Conv2d(dim,1,1) + sigmoid sitting directly on m16 = F16 + se4(e4), with no normalisation. F16 is a residual accumulation over CrossBlocks whose magnitude grows with the KV set and the FFN width. Once the sigmoid saturates its gradient is ~0 and lc cannot recover.",
+      "root_cause_CORRECTED": "MY ORIGINAL ATTRIBUTION WAS WRONG. I blamed coarse_head because lc spiked hardest. But E18 sets w_coarse_layout=0, so lc contributes NO gradient at all -- and the run still destabilised, at epoch 7, with mae jumping x1.51 (0.0632 -> 0.0953) and `low` x1.52 alongside it. lc is a MEASURING INSTRUMENT reading m16 through a sigmoid, not the cause: when the trunk moves, the sigmoid amplifies it. Deleting the auxiliary delayed the spike from epoch 5 to epoch 7 and did not prevent it.",
+      "revised_root_cause": "The instability is in the TRUNK, and the only remaining candidate is the optimiser: lr 1.2e-3, obtained by the linear scaling rule from 3e-4 at batch 16. E9/E11/E12 survived it; the two configurations with LESS capacity per layer (win32=3, ffn=2) and the one with a larger KV set (kv16=e3) did not. Gradient clipping is already at 1.0 and does not prevent it."
     }
   ],
   "divergence_checkpoints": [

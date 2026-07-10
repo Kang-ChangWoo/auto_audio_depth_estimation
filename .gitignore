@@ -61,3 +61,5 @@ out/.fastbase.lock
 out/fastbase_driver.log
 out/.stable.lock
 out/stable_driver.log
+out/.lrsweep.lock
+out/lrsweep_driver.log
