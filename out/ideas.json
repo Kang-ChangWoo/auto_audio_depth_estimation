@@ -280,7 +280,7 @@
     },
     {
       "id": "I16",
-      "status": "probing",
+      "status": "inconclusive",
       "origin": "operator request for a fast experimentation baseline; GPU profile of the E11 champion",
       "target_bottleneck": "iteration speed IS a research variable under a wall-clock budget",
       "mechanism_family": "throughput / experiment economics",
@@ -292,7 +292,25 @@
       "minimal_falsifiable_test": "E17: the new defaults, scored at the full 3600s budget.",
       "budget_risk": "none -- it is the budget that is being bought.",
       "evidence_required": "a SCORED run, not a benchmark. Speed was measured; accuracy must be paid for.",
-      "next_action": "E17 running."
+      "next_action": "Re-test the fast knobs only after training is stable (E18/E19). Until then the fast defaults are unvalidated.",
+      "e17_result": "E17 DIVERGED (best epoch 4 of 25; final val d1 0.0974). It is therefore NOT a test of whether win32=3 + ffn=2 cost accuracy -- it is a second instance of D11. Recorded as `discard`, not `keep`. The speedup (1.32x, measured) stands; its accuracy cost is unmeasured."
+    },
+    {
+      "id": "I17",
+      "status": "probing",
+      "priority": "high",
+      "origin": "E15 and E17 diverging identically at the parent's lr (D11)",
+      "target_bottleneck": "RayDPT's coarse-layout auxiliary is its only failure point, and it was already measured inert",
+      "mechanism_family": "simplification / stability",
+      "causal_distance": "near",
+      "general_hypothesis": "A component that contributes nothing and can destroy training is worse than no component. Deleting it is not a tuning convenience; it removes the coupling that turns every architecture change into an lr search.",
+      "detailed_hypothesis": "lc = masked_mae(sigmoid(coarse_head(m16)), gt_c, m_c). I6 measured BOTH auxiliaries inert on batvision: zeroing them moved the composite by +0.0046 (below sigma) after removing 58.2% of the gradient. On RayDPT the same term is the sole locus of divergence in E15 and E17. Setting w_coarse_layout=0 removes the sigmoid that saturates and the dead gradient path behind it.",
+      "expected_metric_effect": "composite unchanged within sigma, and the fast architecture trains without diverging at lr 1.2e-3.",
+      "main_falsification_condition": "the composite degrades by more than sigma -> lc is load-bearing for RayDPT even though it was inert for batvision. That is a finding about ray-conditioned decoders, not a defect; E19 (small weight) or I15 (normalise before the head) would then be the answer.",
+      "minimal_falsifiable_test": "E18: fast defaults + --w-coarse-layout 0, scored at the full budget.",
+      "budget_risk": "none.",
+      "evidence_required": "stable training AND composite within sigma of E11's 1.9093.",
+      "next_action": "E18 running; E19 (weight 0.1) follows as a second stability data point."
     }
   ],
   "discrepancies": [
@@ -390,13 +408,16 @@
     },
     {
       "id": "D11",
-      "status": "open",
+      "status": "generalised",
       "kind": "optimisation",
       "observation": "E15 (--cross-kv16 e3, otherwise E11's config and lr) DIVERGED at epoch 4: train loss 0.1673 -> 0.3625 -> 0.5764, val d1 0.5087 -> 0.3580 -> 0.3312. The blow-up is entirely in `lc`, the 16x32 coarse-layout term: 0.4402 versus E11's 0.0618.",
       "why_it_matters": "lc = masked_mae(D_coarse, gt_c, m_c) with D_coarse a sigmoid, so it is bounded by 1.0. A value of 0.44 means D_coarse has SATURATED, not merely drifted. Routing e3's 2048 tokens into cr16 makes F16 a sum over 4x more attention values; CrossBlock is a residual (q + attn) so magnitudes accumulate, and coarse_head + sigmoid sits directly on m16 = F16 + se4(e4). E11's linear-scaled lr of 1.2e-3 is too large for that path.",
       "classification": "OPTIMISATION failure, not 'mechanism unsupported' (program.md's negative-evidence taxonomy). NOTHING is concluded about I14 from it.",
       "diagnostic_value": "Warns that the coarse head is the fragile point of RayDPT: it is a sigmoid sitting one 1x1 conv away from the deepest ray-attention output, with no normalisation between them. Any change that enlarges F16 risks it. A LayerNorm before coarse_head is a cheap structural fix worth its own study.",
-      "next_action": "Re-run at lr 6e-4 WITH a matched control (E16 = E11's architecture at the same lr), so I14 is read against a parent that shares its optimiser, not one that differs in two ways."
+      "next_action": "E18 deletes the fragile term (lc was measured INERT on batvision, I6); E19 keeps it at 0.1 weight. One hypothesis each.",
+      "e17_confirms": "E17 (the fast defaults: win32=3, ffn=2) diverged the SAME way at the SAME lr: lc jumps 0.0633 -> 0.3209 at epoch 5 and never recovers (stuck at 0.5-0.64 for twenty epochs), dragging mae and low with it. Two architecture changes, two identical divergences.",
+      "generalisation": "At lr 1.2e-3 the three runs that left the architecture alone (E9, E11, E12) were stable; BOTH runs that changed it diverged. E11 survived not because it had margin but because it sat on the edge. So the obstacle to fast experimentation is NOT FLOPs -- it is that every knob turn becomes an lr search. Efficiency work is blocked on stability.",
+      "root_cause": "coarse_head is Conv2d(dim,1,1) + sigmoid sitting directly on m16 = F16 + se4(e4), with no normalisation. F16 is a residual accumulation over CrossBlocks whose magnitude grows with the KV set and the FFN width. Once the sigmoid saturates its gradient is ~0 and lc cannot recover."
     }
   ],
   "divergence_checkpoints": [

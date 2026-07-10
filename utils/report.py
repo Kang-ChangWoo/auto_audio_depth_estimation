@@ -74,9 +74,14 @@ def _model_registry():
          dict(use_log=False)),                               # [L, R, ILD, cosIPD, sinIPD]
         # "my model" = the RayDPT lineage champion. Its ARCHITECTURE flags must match the
         # checkpoint, or load_state_dict finds missing keys and the tile renders "pending".
+        # "my model" = the RayDPT lineage champion. Its ARCHITECTURE flags must be spelled out.
+        # train.py's DEFAULTS moved to the fast config (win32=3, ffn=2) on this branch, so a
+        # checkpoint trained before that must be rebuilt with the flags it was trained WITH, or
+        # load_state_dict finds missing keys and the tile silently renders "pending".
         ('current (my model)', train,
-         os.path.join(ROOT, 'checkpoints', 'raydpt_e9_d32L1_b64', 'best_model.pth'),
-         dict(decode_scale=32, ray_cross_layers=1)),   # E9: 5ch log, 32x64 decode, 1 cross layer
+         os.path.join(ROOT, 'checkpoints', 'raydpt_e11_d32L2_kve4', 'best_model.pth'),
+         dict(decode_scale=32, ray_cross_layers=2, cross_kv32='e4',
+              raydpt_win32=5, ffn_mult=4)),            # E11: 32x64 decode, 2 cross layers
     ]
 
 

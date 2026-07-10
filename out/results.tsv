@@ -14,3 +14,4 @@ c147692	0.4199	1.3276	0.5710	16.0	keep	E11 RayDPT decode32 xlayers2 kv=e4 batch6
 1b995ab	0.4125	1.3409	0.5664	12.8	keep	E12 RayDPT decode32 xlayers1 kv=e4 (S5 attribution: 2x2 missing cell)
 d38ecc7	0.3082	1.5628	0.5464	16.0	keep	E13 RayDPT E11 arch + rel_mae dense loss (S6/I13: far-field compression)
 d38ecc7	0.4724	1.3606	0.5538	16.0	keep	E14 RayDPT E11 arch + log_mae dense loss (S6/I13 discriminating arm)
+789c0be	0.5159	1.3988	0.5137	13.8	discard	E17 DIVERGED (lc saturated ep5) FAST default: E11 arch + win32=3 + ffn=2 (F0: does the speedup cost accuracy?)
