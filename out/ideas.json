@@ -259,7 +259,24 @@
       "minimal_falsifiable_test": "E15: --cross-kv16 e3 on E11's architecture, everything else identical. Re-run the far-decile diagnostic.",
       "budget_risk": "low. 24.9 -> 21.2 epochs; still converges. Report epochs_ran and best_epoch.",
       "evidence_required": "far-decile d1 improves AND overall d1 clears sigma.",
-      "next_action": "E15 running."
+      "next_action": "E16 (control) then E15b (treatment), both at lr 6e-4. Pre-registered falsification unchanged: the 7-10m deciles must improve over the CONTROL.",
+      "setback": "First attempt (E15) diverged at the parent's lr -- an optimisation failure, not evidence. The coarse head saturated because routing 2048 tokens into cr16 enlarges F16, on which coarse_head+sigmoid sits directly. Re-running at lr 6e-4 with a matched control (E16 = same architecture, same lr, no kv16 change), because lowering the lr alone would confound the treatment against its parent."
+    },
+    {
+      "id": "I15",
+      "status": "backlog",
+      "origin": "E15's divergence (D11)",
+      "target_bottleneck": "RayDPT's coarse head is a sigmoid one 1x1 conv away from the deepest ray-attention output, with no normalisation between",
+      "mechanism_family": "architecture / stability",
+      "causal_distance": "near",
+      "general_hypothesis": "A model whose auxiliary head saturates whenever an upstream path is enlarged is not robust to its own research programme: every capacity change becomes an lr search. Normalising before the head decouples the two.",
+      "detailed_hypothesis": "m16 = F16 + se4(e4) feeds coarse_head (Conv2d(dim,1,1)) then sigmoid. F16 is a residual accumulation over CrossBlocks; its magnitude grows with the KV set size. Inserting a LayerNorm (or GroupNorm) on m16 before coarse_head should make lc insensitive to F16's scale.",
+      "expected_metric_effect": "no metric change at the parent's configuration (it is a reparameterisation), but the kv16=e3 arm should then train at lr 1.2e-3 without diverging.",
+      "main_falsification_condition": "the normalised model still diverges with kv16=e3 at 1.2e-3 -> the instability is elsewhere.",
+      "minimal_falsifiable_test": "add the norm, verify the parent's composite is unchanged within sigma, then retry kv16=e3 at 1.2e-3.",
+      "budget_risk": "none.",
+      "evidence_required": "parent unchanged AND treatment stable.",
+      "next_action": "deferred until I14 is decided at the safe lr; a stability fix must not be bundled with the mechanism it would rescue."
     }
   ],
   "discrepancies": [
@@ -354,6 +371,16 @@
       "resolution": "Re-checked on the FULL val set under the eval_lock. Integrity first: raw metrics reproduce the training logs exactly (batvision 1.3088/0.5949, RayDPT 1.3195/0.5632). Then: I11's direction HOLDS (batvision 0.0214 vs RayDPT 0.0152 in k=7..32, so the model without the waist really is smoother). D8's direction HOLDS (E2 0.0262 vs E6 0.0219, -16.4% rather than the -29.7% claimed). I6's refutation never depended on the spectrum -- its decisive evidence was a composite delta of +0.0046 from full-val training runs. So no conclusion is overturned, but three were stated with unearned precision.",
       "policy_change": "All diagnostics now run on the FULL val set, on GPU, under the eval_lock. Never conclude from a subset without first checking that the subset reproduces a known full-set number.",
       "next_action": "none; policy recorded in program.md."
+    },
+    {
+      "id": "D11",
+      "status": "open",
+      "kind": "optimisation",
+      "observation": "E15 (--cross-kv16 e3, otherwise E11's config and lr) DIVERGED at epoch 4: train loss 0.1673 -> 0.3625 -> 0.5764, val d1 0.5087 -> 0.3580 -> 0.3312. The blow-up is entirely in `lc`, the 16x32 coarse-layout term: 0.4402 versus E11's 0.0618.",
+      "why_it_matters": "lc = masked_mae(D_coarse, gt_c, m_c) with D_coarse a sigmoid, so it is bounded by 1.0. A value of 0.44 means D_coarse has SATURATED, not merely drifted. Routing e3's 2048 tokens into cr16 makes F16 a sum over 4x more attention values; CrossBlock is a residual (q + attn) so magnitudes accumulate, and coarse_head + sigmoid sits directly on m16 = F16 + se4(e4). E11's linear-scaled lr of 1.2e-3 is too large for that path.",
+      "classification": "OPTIMISATION failure, not 'mechanism unsupported' (program.md's negative-evidence taxonomy). NOTHING is concluded about I14 from it.",
+      "diagnostic_value": "Warns that the coarse head is the fragile point of RayDPT: it is a sigmoid sitting one 1x1 conv away from the deepest ray-attention output, with no normalisation between them. Any change that enlarges F16 risks it. A LayerNorm before coarse_head is a cheap structural fix worth its own study.",
+      "next_action": "Re-run at lr 6e-4 WITH a matched control (E16 = E11's architecture at the same lr), so I14 is read against a parent that shares its optimiser, not one that differs in two ways."
     }
   ],
   "divergence_checkpoints": [

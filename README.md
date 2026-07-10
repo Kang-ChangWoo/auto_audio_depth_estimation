@@ -30,7 +30,8 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I5` | ray conditioning / encoder-decoder correspondence | mid | RayDPT's DPT skip connections impose a FALSE spatial correspondence between the spectrogram's axes and the ERP's axes | inconclusive | none. Do not spend GPU on the skip ablation on this rationale. Revive only with an indepen |
 | `I7` | sensing physics / angular resolution | far | two microphones may fundamentally under-determine high azimuthal frequencies | candidate | Do not chase high-frequency power as a goal. Re-test the observability claim once RayDPT c |
 | `I10` | acoustic-representation / interpolation | mid | the nearest-neighbour resize in _features() turns the time axis into a coarse staircase | inconclusive | deferred confirm: run `--feat-interp bilinear --stft-hop 40` after the RayDPT throughput s |
-| `I14` | ray conditioning / audio token routing | mid | far-field rays cannot see the late, weak echo that carries distance | probing | E15 running. |
+| `I14` | ray conditioning / audio token routing | mid | far-field rays cannot see the late, weak echo that carries distance | probing | E16 (control) then E15b (treatment), both at lr 6e-4. Pre-registered falsification unchang |
+| `I15` | architecture / stability | near | RayDPT's coarse head is a sigmoid one 1x1 conv away from the deepest ray-attention output, with no normalisation between | backlog | deferred until I14 is decided at the safe lr; a stability fix must not be bundled with the |
 
 ### Open discrepancies
 
@@ -42,11 +43,14 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
   <br/>*Why it matters:* If temporal resolution set range accuracy, B should own RMSE. It does not; A does, and A did not change resolution at all. Meanwhile B, which also sacrifices frequency resolution (win 400 -> 64), buys ANGLE. That inverts the physical story: sharper transients seem to help azimuth cues (ILD/IPD are read across frequency and time), while range accuracy responds to something in the sampling/interpolation of the time axis.
 - **`D8`** — E6 holds 29.7% LESS high-frequency azimuthal power than E2 (0.0232 vs 0.0331) yet has a BETTER d1 (0.6005 vs 0.5938). Separately, removing 58% of the gradient (E7 vs E3) barely changed the spectrum or the composite.
   <br/>*Why it matters:* It breaks the assumption -- mine, unstated until now -- that d1 improves because predictions get sharper. d1 counts pixels within +-25% of truth, and a well-centred smooth field beats a mis-placed sharp one. So the low-pass character of these models may be largely IRRELEVANT to the metric, and 'restore high frequencies' is probably the wrong research goal.
+- **`D11`** — E15 (--cross-kv16 e3, otherwise E11's config and lr) DIVERGED at epoch 4: train loss 0.1673 -> 0.3625 -> 0.5764, val d1 0.5087 -> 0.3580 -> 0.3312. The blow-up is entirely in `lc`, the 16x32 coarse-layout term: 0.4402 versus E11's 0.0618.
+  <br/>*Why it matters:* lc = masked_mae(D_coarse, gt_c, m_c) with D_coarse a sigmoid, so it is bounded by 1.0. A value of 0.44 means D_coarse has SATURATED, not merely drifted. Routing e3's 2048 tokens into cr16 makes F16 a sum over 4x more attention values; CrossBlock is a residual (q + attn) so magnitudes accumulate, and coarse_head + sigmoid sits directly on m16 = F16 + se4(e4). E11's linear-scaled lr of 1.2e-3 is too large for that path.
 
 ### Recent decisions
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-10T16:44 | `explore` | discrepancy_recorded | D11: E15 DIVERGED at epoch 4 with the parent's lr. The blow-up is entirely in lc, the coarse-layout term (0.4402 vs 0.0618) -- and |
 | 2026-07-10T16:25 | `explore` | idea_added | From data already collected: E9 (cr32 on 2048 fine tokens) scores d1 0.2544 at GT 8-9m; E12 (512 coarse) only 0.1579. Far surfaces |
 | 2026-07-10T16:25 | `explore` | candidate_dropped | PRE-REGISTERED FALSIFICATION MET: both relative dense terms made the 7-10m deciles WORSE (rel_mae -0.19/-0.13/-0.22; log_mae -0.13 |
 | 2026-07-10T16:25 | `explore` | experiment_completed | log_mae also fails: d1 0.5538 (-0.0172), rmse +0.0330. Symmetric in the ratio, so relativity itself -- not rel_mae's asymmetry --  |
@@ -54,7 +58,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | 2026-07-10T14:17 | `explore` | direction_changed | D9 REFRAMED by full-val spatial decomposition. The deficit is NOT angular: flat across azimuth (std 0.0056), ZERO on the floor, ex |
 | 2026-07-10T14:17 | `explore` | experiment_completed | 2x2 complete. Attribution: coarse KV +0.0033 d1, second cross layer +0.0046; additive, neither alone clears sigma. |
 | 2026-07-10T13:13 | `verify` | candidate_dropped | H6 REFUTED at zero GPU by reading RayBank: use_xyz=True already puts y -- the ear-axis component -- into every ray query, and use_ |
-| 2026-07-10T13:11 | `verify` | experiment_completed | First CONVERGED 2-layer RayDPT: composite 1.9093 (best RayDPT), d1 0.5710, 23 epochs, best at ep22. d1 recovers +0.0079 over E9, c |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->
