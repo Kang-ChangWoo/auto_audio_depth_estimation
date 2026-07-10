@@ -347,7 +347,7 @@
     },
     {
       "id": "I19",
-      "status": "verifying",
+      "status": "inconclusive",
       "priority": "high",
       "origin": "the measured far-field failure (D9 reframed) + the physical meaning of the encoder's width axis",
       "target_bottleneck": "the model must LEARN that echo delay encodes depth, and it fails to, collapsing far surfaces toward the median",
@@ -361,12 +361,14 @@
       "minimal_falsifiable_test": "E24: the current defaults + --depth-volume True. E21 (1.9099) is the control -- the defaults ARE its config, so the run differs in one thing.",
       "budget_risk": "low; +34k params, benchmarked before the run.",
       "evidence_required": "far-decile d1 improves AND overall d1 clears sigma.",
-      "next_action": "E27 / E28 (champion + EDE, --epochs 21). Until they land, I19's effect on the champion parent is UNKNOWN, not negative.",
+      "next_action": "Do NOT crown. Test the ONE compatible combination the scope predicts: EchoDelayVolume + fine-time-token routing (I14, kv=e3), which supplies the same far-field signal through a different path -- and which needs its own lr, since kv=e3 diverged before (D11).",
       "result": "PASSED its pre-registered falsification -- the same test that killed I13. Against the matched control E21, EVERY far decile improved: 7-8 m +0.0692, 8-9 m +0.0759, 9-10 m +0.0595 (and 6-7 m +0.0434). The mean predicted depth at GT 8-9 m rose 4.758 m -> 5.238 m (batvision 5.738 m), so the range compression the mechanism was designed to attack actually loosened. Overall d1 +0.0027, rmse -0.0048, composite 1.9099 -> 1.8987 (-0.0112, above sigma). Stable (max mae jump 0.99), converged (best epoch 23 of 24). Costs 12 s/epoch and LESS VRAM (11.8 vs 13.8 GB).",
       "significance": "This is the first mechanism in the project whose PRE-REGISTERED prediction was confirmed. I1's metric prediction inverted, I2/I4/I6/I11 were refuted, I13 was killed by this same far-decile test, I17 was refuted by its own experiment. Confirmation here means the physical story -- an echo from depth d arrives at t=2d/c, and the encoder's width axis IS that delay -- is doing the work, not a lucky hyperparameter.",
       "caveat": "E24 carried the fast knobs (win32=3, ffn=2), which E23 measured at +0.0137. The mechanism has never been run on the champion architecture, and it has ONE draw. program.md: never crown a candidate on a single draw.",
       "e25_inconclusive": "E25 (champion architecture + EchoDelayVolume) scored 1.9083 against E23's 1.8962 -- the OPPOSITE sign from E24, which beat its control by 0.0112. But E25 did NOT converge: best checkpoint = LAST epoch (21/21). And it was triply disadvantaged, all in the same direction and none of it the mechanism: EchoDelayVolume costs 12 s/epoch, so on the champion architecture (157.1 vs 144.6) it fits one epoch fewer; --epochs 26 meant its cosine was cut off at 81% of schedule (E23 reached 92%); and its best checkpoint is the last. This is the E10 trap again -- reading a metric off a model that was still learning.",
-      "correction": "Re-run with --epochs matched to what fits (21), so cosine anneals to zero inside the budget (idea I3). Two draws: E27 and E28."
+      "correction": "Re-run with --epochs matched to what fits (21), so cosine anneals to zero inside the budget (idea I3). Two draws: E27 and E28.",
+      "verdict": "A REAL mechanism with a SCOPED effect, not a champion. On a capacity-starved parent (fast: win3, ffn2) it improves every far decile and beats its control by 0.0112 (E24 vs E21). On the champion parent (win5, ffn4) the far deciles REGRESS and it loses by 0.0309 (E27 vs E23). The champion's wider LSA and larger FFN already buy the far-field accuracy EchoDelayVolume targets, so the two compete for capacity instead of composing.",
+      "scope": "EchoDelayVolume helps when the decoder is starved of far-field capacity; it hinders when that capacity is already present. It is a specialist, not a global champion -- program.md: a method can FAIL to become champion yet PASS as a hypothesis if it has a clear, reproducible, scoped effect. This qualifies."
     }
   ],
   "discrepancies": [
@@ -479,11 +481,13 @@
     },
     {
       "id": "D12",
-      "status": "open",
+      "status": "resolved",
       "observation": "EchoDelayVolume beat its control by 0.0112 on the fast parent (E24 vs E21) and LOST by 0.0121 on the champion parent (E25 vs E23). Same mechanism, opposite signs, both above sigma.",
       "why_it_matters": "program.md flags exactly this -- a mechanism whose outcome depends on its parent. But before crediting the parent, look at the budget: EchoDelayVolume costs 12 s/epoch, and on the slower champion architecture that pushed E25 from 22 epochs to 21, cut its cosine schedule to 81%, and left its best checkpoint at the LAST epoch. E24 survived only because the fast knobs had bought it epochs (best 23 of 24). The apparent parent-dependence may be pure budget.",
       "diagnostic_value": "If E27 (same config, --epochs 21 so cosine anneals) converges and beats E23, the parent-dependence dissolves and the mechanism is real. If it converges and still loses, the mechanism genuinely needs the capacity the fast knobs removed -- which would itself be a finding about what the ray pathway spends its capacity on.",
-      "next_action": "E27 and E28, champion + EDE at --epochs 21."
+      "next_action": "This is evidence about WHERE the far-field capacity lives, not a defect to patch. The productive combine is EchoDelayVolume with the ONE change that gave the fine time tokens directly (kv=e3 routing, I14) -- not with the champion's extra dense capacity.",
+      "resolution": "PARENT-DEPENDENCE IS REAL, not a budget artefact. E27 (champion + EDE, --epochs 21, cosine fully annealed to lr 0, converged) scored 1.9271 vs E23's 1.8962 -- WORSE than the unconverged E25, and the far deciles it was designed to fix REGRESSED: 8-9 m -0.0362, 9-10 m -0.0230 (against E24's +0.076 and +0.060 on the fast parent). The mean predicted depth at GT 8-9 m FELL from 5.044 m to 4.824 m. So the schedule fix removed the confound and the mechanism still loses on the champion.",
+      "mechanism": "The two parents differ only in win32 (3 vs 5) and ffn_mult (2 vs 4) -- both are cross_kv32=e4. The champion already does far-field better than the fast model WITHOUT EchoDelayVolume (E23 8-9 m d1 0.2306 vs E21 0.1845). So the wider local attention and larger FFN are ALREADY buying the far-field accuracy EchoDelayVolume targets, and stacking the two makes them compete for the same capacity rather than compose. EchoDelayVolume helps a WEAK model and hinders a strong one."
     }
   ],
   "divergence_checkpoints": [

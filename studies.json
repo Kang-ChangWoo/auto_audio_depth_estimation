@@ -4,7 +4,7 @@
   "reset_note": "Fresh from original baseline f677b0f + mask-weighted coarse/low loss targets + composite abs_rel weight 0.75->0.35 + PLANAR (cubemap) depth target.",
   "depth_convention": "planar (cubemap perpendicular-Z); stored erp_depth used as-is; radial_factor removed",
   "metric": "composite (selection) = rmse/1.6 + (1-d1)/0.46 + 0.35*abs_rel  (lower better; RMSE+d1 dominate; abs_rel de-weighted)",
-  "next_exp_id": "E27",
+  "next_exp_id": "E29",
   "global_champion": null,
   "concluded_studies": [
     {
@@ -296,42 +296,66 @@
         "E17 and E15 diverged identically. E18 removed the auxiliary entirely and diverged anyway -- so lc is a symptom, not the cause. The instability is in the trunk.",
         "The real obstacle to fast experimentation is that lr 1.2e-3 sits on the edge: every architecture change tips it over. Efficiency is blocked on optimisation, not FLOPs."
       ]
+    },
+    {
+      "study_id": "G0",
+      "lineage": "echo-delay-volume",
+      "parent": "E21 (raydpt_e21_fast_lr3e4)",
+      "type": "new",
+      "status": "concluded",
+      "general_hypothesis": "Depth from echoes is a time-of-flight measurement: a surface at depth d returns its echo at t = 2d/c. A network that regresses a scalar depth must discover that correspondence from data; a network whose architecture encodes it does not. Put the physics in the structure, not in the loss.",
+      "detailed_hypothesis": "The encoder's width axis IS time -- spec is (freq 256, time 512), so e3 is (freq 32, time 64) and its columns are depth hypotheses spanning 0.08-9.92 m. Each ray attends over FREQUENCY within one time column per hypothesis, a small MLP scores the hypotheses, and a softmax over the DEPTH axis gives p(d|ray); depth = soft-argmax over echo delay. It also replaces the sigmoid coarse head that saturated in D11.",
+      "experiment_note": "E24 = defaults + --depth-volume True (control E21). E25 = champion architecture + depth volume (control E23). E26 = confirm draw.",
+      "hpo_stage": "structural-screen",
+      "hpo_runs_used": 1,
+      "runs": [
+        {
+          "exp_id": "E24",
+          "composite": 1.8987,
+          "parent": "fast (E21)",
+          "far_delta": "+0.06 to +0.08",
+          "verdict": "beats control"
+        },
+        {
+          "exp_id": "E25",
+          "composite": 1.9083,
+          "note": "unconverged, budget-truncated"
+        },
+        {
+          "exp_id": "E27",
+          "composite": 1.9271,
+          "parent": "champion (E23)",
+          "far_delta": "-0.02 to -0.04",
+          "verdict": "loses; far deciles regress"
+        }
+      ],
+      "decision_rule": "The pre-registered falsification (far deciles must improve) PASSED. Crowning still requires (a) the mechanism measured on the champion architecture, since E24 carried knobs that cost 0.0137, and (b) a confirming draw -- program.md forbids crowning on one. Judge on the far deciles and d1; ABS_REL is not evidence.",
+      "conclusion": "PASS as a scoped hypothesis, FAIL as a champion",
+      "observations": [
+        "EchoDelayVolume's pre-registered far-decile prediction held on the FAST parent (E24) and FAILED on the CHAMPION parent (E27), on a converged, fully-annealed run.",
+        "Cause: the champion's wider LSA (win5) and larger FFN (ffn4) already provide far-field accuracy (E23 8-9m d1 0.2306 vs fast 0.1845), so the mechanism competes with existing capacity rather than adding to it.",
+        "A specialist that helps a starved decoder and hinders a strong one. Real, reproducible, scoped -- but not a champion."
+      ]
     }
   ],
-  "mode": "verify",
-  "mode_reason": "I19's pre-registered prediction was confirmed -- the first in the project. Verify it on the correct parent and with a second draw before crowning.",
+  "mode": "synthesize",
+  "mode_reason": "I19 is confirmed as a scoped mechanism but is not a champion; three studies concluded (F1, G0, and the fast-baseline F0). A divergence checkpoint is due before committing GPU to the next direction.",
   "studies_since_synthesize": 0,
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",
   "active_study": {
-    "study_id": "G0",
-    "lineage": "echo-delay-volume",
-    "parent": "E21 (raydpt_e21_fast_lr3e4)",
+    "study_id": "S8",
+    "lineage": "synthesize",
+    "parent": null,
     "type": "new",
-    "status": "running",
-    "general_hypothesis": "Depth from echoes is a time-of-flight measurement: a surface at depth d returns its echo at t = 2d/c. A network that regresses a scalar depth must discover that correspondence from data; a network whose architecture encodes it does not. Put the physics in the structure, not in the loss.",
-    "detailed_hypothesis": "The encoder's width axis IS time -- spec is (freq 256, time 512), so e3 is (freq 32, time 64) and its columns are depth hypotheses spanning 0.08-9.92 m. Each ray attends over FREQUENCY within one time column per hypothesis, a small MLP scores the hypotheses, and a softmax over the DEPTH axis gives p(d|ray); depth = soft-argmax over echo delay. It also replaces the sigmoid coarse head that saturated in D11.",
-    "experiment_note": "E24 = defaults + --depth-volume True (control E21). E25 = champion architecture + depth volume (control E23). E26 = confirm draw.",
-    "hpo_stage": "structural-screen",
-    "hpo_runs_used": 1,
-    "runs": [
-      {
-        "exp_id": "E24",
-        "name": "raydpt_e24_echodelay",
-        "composite": 1.8987,
-        "d1": 0.5733,
-        "rmse": 1.3183,
-        "epochs_ran": 24,
-        "best_epoch": 23,
-        "far_deciles_vs_control": {
-          "7-8m": 0.0692,
-          "8-9m": 0.0759,
-          "9-10m": 0.0595
-        },
-        "status": "keep"
-      }
-    ],
-    "decision_rule": "The pre-registered falsification (far deciles must improve) PASSED. Crowning still requires (a) the mechanism measured on the champion architecture, since E24 carried knobs that cost 0.0137, and (b) a confirming draw -- program.md forbids crowning on one. Judge on the far deciles and d1; ABS_REL is not evidence."
+    "status": "pending",
+    "general_hypothesis": "Pending divergence checkpoint.",
+    "detailed_hypothesis": "TBD",
+    "experiment_note": "TBD",
+    "hpo_stage": "none",
+    "hpo_runs_used": 0,
+    "runs": [],
+    "decision_rule": "Highest information value; the champion still trails the reference by 0.0395 and the far field is where."
   },
   "backlog": [
     {

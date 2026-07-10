@@ -7,19 +7,19 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | | |
 |---|---|
-| **Mode** | `VERIFY` — clean reimplementation on the correct parent -> standalone run -> bounded HPO -> PASS / FAIL |
-| **Active study** | `G0` [new] echo-delay-volume (*running*) |
-| **Research question** | Depth from echoes is a time-of-flight measurement: a surface at depth d returns its echo at t = 2d/c. A network that regresses a scalar depth must discover that correspondence from data; a network who |
-| **Current action** | E24 = defaults + --depth-volume True (control E21). E25 = champion architecture + depth volume (control E23). E26 = confirm draw. |
-| **Latest result** | `E24` raydpt_e24_echodelay: composite **1.8987** (rmse 1.3183, d1 0.5733, abs_rel None), best epoch 23/24 |
-| **Next decision** | The pre-registered falsification (far deciles must improve) PASSED. Crowning still requires (a) the mechanism measured on the champion architecture, since E24 carried knobs that cost 0.0137, and (b) a |
-| **Why this mode** | I19's pre-registered prediction was confirmed -- the first in the project. Verify it on the correct parent and with a second draw before crowning. |
+| **Mode** | `SYNTHESIZE` — no runs; review evidence, find contradictions, pick the highest-information next question |
+| **Active study** | `S8` [new] synthesize (*pending*) |
+| **Research question** | Pending divergence checkpoint. |
+| **Current action** | TBD |
+| **Latest result** | *(no scored run in this study yet)* |
+| **Next decision** | Highest information value; the champion still trails the reference by 0.0395 and the far field is where. |
+| **Why this mode** | I19 is confirmed as a scoped mechanism but is not a champion; three studies concluded (F1, G0, and the fast-baseline F0). A divergence checkpoint is due before committing GPU to the next direction. |
 
 ### Current hypothesis
 
-- **General** — Depth from echoes is a time-of-flight measurement: a surface at depth d returns its echo at t = 2d/c. A network that regresses a scalar depth must discover that correspondence from data; a network whose architecture encodes it does not. Put the physics in the structure, not in the loss.
-- **Detailed** — The encoder's width axis IS time -- spec is (freq 256, time 512), so e3 is (freq 32, time 64) and its columns are depth hypotheses spanning 0.08-9.92 m. Each ray attends over FREQUENCY within one time column per hypothesis, a small MLP scores the hypotheses, and a softmax over the DEPTH axis gives p(d|ray); depth = soft-argmax over echo delay. It also replaces the sigmoid coarse head that saturated in D11.
-- **Implementation note** — E24 = defaults + --depth-volume True (control E21). E25 = champion architecture + depth volume (control E23). E26 = confirm draw.
+- **General** — Pending divergence checkpoint.
+- **Detailed** — TBD
+- **Implementation note** — TBD
 
 ### Research portfolio
 
@@ -31,7 +31,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I7` | sensing physics / angular resolution | far | two microphones may fundamentally under-determine high azimuthal frequencies | candidate | Do not chase high-frequency power as a goal. Re-test the observability claim once RayDPT c |
 | `I10` | acoustic-representation / interpolation | mid | the nearest-neighbour resize in _features() turns the time axis into a coarse staircase | inconclusive | deferred confirm: run `--feat-interp bilinear --stft-hop 40` after the RayDPT throughput s |
 | `I14` | ray conditioning / audio token routing | mid | far-field rays cannot see the late, weak echo that carries distance | probing | E16 (control) then E15b (treatment), both at lr 6e-4. Pre-registered falsification unchang |
-| `I19` | ray conditioning / physically-structured decoding | far | the model must LEARN that echo delay encodes depth, and it fails to, collapsing far surfaces toward the median | verifying | E27 / E28 (champion + EDE, --epochs 21). Until they land, I19's effect on the champion par |
+| `I19` | ray conditioning / physically-structured decoding | far | the model must LEARN that echo delay encodes depth, and it fails to, collapsing far surfaces toward the median | inconclusive | Do NOT crown. Test the ONE compatible combination the scope predicts: EchoDelayVolume + fi |
 
 ### Open discrepancies
 
@@ -43,13 +43,12 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
   <br/>*Why it matters:* If temporal resolution set range accuracy, B should own RMSE. It does not; A does, and A did not change resolution at all. Meanwhile B, which also sacrifices frequency resolution (win 400 -> 64), buys ANGLE. That inverts the physical story: sharper transients seem to help azimuth cues (ILD/IPD are read across frequency and time), while range accuracy responds to something in the sampling/interpolation of the time axis.
 - **`D8`** — E6 holds 29.7% LESS high-frequency azimuthal power than E2 (0.0232 vs 0.0331) yet has a BETTER d1 (0.6005 vs 0.5938). Separately, removing 58% of the gradient (E7 vs E3) barely changed the spectrum or the composite.
   <br/>*Why it matters:* It breaks the assumption -- mine, unstated until now -- that d1 improves because predictions get sharper. d1 counts pixels within +-25% of truth, and a well-centred smooth field beats a mis-placed sharp one. So the low-pass character of these models may be largely IRRELEVANT to the metric, and 'restore high frequencies' is probably the wrong research goal.
-- **`D12`** — EchoDelayVolume beat its control by 0.0112 on the fast parent (E24 vs E21) and LOST by 0.0121 on the champion parent (E25 vs E23). Same mechanism, opposite signs, both above sigma.
-  <br/>*Why it matters:* program.md flags exactly this -- a mechanism whose outcome depends on its parent. But before crediting the parent, look at the budget: EchoDelayVolume costs 12 s/epoch, and on the slower champion architecture that pushed E25 from 22 epochs to 21, cut its cosine schedule to 81%, and left its best checkpoint at the LAST epoch. E24 survived only because the fast knobs had bought it epochs (best 23 of 24). The apparent parent-dependence may be pure budget.
 
 ### Recent decisions
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-11T03:24 | `synthesize` | experiment_completed | Champion + EchoDelayVolume, converged (cosine annealed to lr 0): composite 1.9271, WORSE than E23 by 0.0309, and the far deciles i |
 | 2026-07-11T00:42 | `verify` | discrepancy_recorded | D12: the same mechanism beats its control on the fast parent (+0.0112) and loses on the champion parent (-0.0121), both above sigm |
 | 2026-07-11T00:42 | `verify` | experiment_completed | INCONCLUSIVE, not negative. Champion + EchoDelayVolume scored 1.9083 vs E23's 1.8962 -- opposite sign from E24 -- but it did NOT c |
 | 2026-07-10T23:38 | `verify` | experiment_completed | I19 PASSED its pre-registered falsification: every far decile improved (7-8m +0.0692, 8-9m +0.0759, 9-10m +0.0595) and the mean pr |
@@ -57,7 +56,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | 2026-07-10T21:33 | `exploit` | experiment_completed | Control win5/ffn4 @ lr 6e-4: composite 1.9125, stable. 2x2 complete except E23. At matched lr the fast knobs cost +0.0051 (below s |
 | 2026-07-10T20:48 | `exploit` | idea_added | STRUCTURAL, not a loss change. The encoder's width axis IS time, so e3's 64 columns are depth hypotheses (d = c*t/2, 0.08-9.92m).  |
 | 2026-07-10T20:33 | `exploit` | experiment_completed | fast config at lr 3e-4: composite 1.9099, stable (max mae jump 0.99), converged (best ep19/25). Matches the E11 champion (1.9093)  |
-| 2026-07-10T19:33 | `exploit` | experiment_completed | I18 CONFIRMED: at lr 6e-4 the fast config is stable (mae never rose between epochs, max ratio 0.99 vs 1.46/1.51 at lr 1.2e-3) and  |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->
@@ -114,6 +112,7 @@ running best highlighted):
 | 21 | `1c34d7c` | 0.4131 | 1.3295 | 0.5765 | 1.8962 | keep | E23 CONTROL win5 ffn4 @ lr 3e-4 (F1 attribution: closes the 2x2) |
 | 22 | `a7b0613` | 0.4203 | 1.3183 | 0.5733 | 1.8987 | keep | E24 EchoDelayVolume: per-ray soft-argmax over echo delay (G0/I19 structural) |
 | 23 | `0a858e4` | 0.4238 | 1.3307 | 0.5730 | 1.9083 | keep | E25 CHAMPION arch + EchoDelayVolume (G0/I19 on the correct parent) |
+| 24 | `9a26c0c` | 0.4301 | 1.3382 | 0.5675 | 1.9271 | keep | E27 CHAMPION + EchoDelayVolume, epochs matched to budget (G1b/I19) |
 <!-- RESULTS:END -->
 
 ## Progression (composite, lower = better)
