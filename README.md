@@ -8,18 +8,18 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | | |
 |---|---|
 | **Mode** | `EXPLOIT` — adaptive HPO ladder 3 -> 5 -> 7 -> 10, each step justified by evidence -> PASS / FAIL |
-| **Active study** | `F0` [refine] raydpt-fast-baseline (*running*) |
-| **Research question** | Research throughput is a first-class research variable. Under a fixed wall-clock budget, a cheaper model that converges further is not merely faster to study -- it scores better, and it lets more hypo |
-| **Current action** | E17 raydpt_e17_fastbase: the new defaults, scored at the full 3600s budget, --epochs 28. |
+| **Active study** | `F1` [tune] training-optimization (*running*) |
+| **Research question** | The linear scaling rule is a heuristic for convnets under SGD, not a law for a residual attention stack. A model whose learning rate must be re-tuned for every architectural knob cannot be researched  |
+| **Current action** | E20 --lr 6e-4, E21 --lr 3e-4, both on the fast defaults, --epochs 28, scored at the full budget. |
 | **Latest result** | *(no scored run in this study yet)* |
-| **Next decision** | Adopt iff E17's composite is within sigma (0.008) of E11's 1.9093, or better. Both knobs are CAPACITY cuts, so speed alone proves nothing. A win does not prove the knobs are free -- it proves the trad |
-| **Why this mode** | Operator asked for a good starting RayDPT that is fast to experiment with. The bottleneck on iteration speed is measured, not guessed: cr32 37.1% and lsa32 33.5% of forward. |
+| **Next decision** | Two criteria, in order. STABILITY: does mae ever jump more than 1.2x between epochs? A run that spikes answers nothing else. Then COMPOSITE against E11's 1.9093. Only once the fast config trains stabl |
+| **Why this mode** | The efficiency phase is blocked on a tuning failure that I misdiagnosed once. Fix the optimiser before touching the architecture again. |
 
 ### Current hypothesis
 
-- **General** — Research throughput is a first-class research variable. Under a fixed wall-clock budget, a cheaper model that converges further is not merely faster to study -- it scores better, and it lets more hypotheses be tested per day. But a speed change that quietly costs accuracy buys nothing, so every knob must be paid for in a scored run.
-- **Detailed** — GPU profiling of the E11 champion (batch 64, bf16): cr32 37.1%, lsa32 33.5%, enc 13.9%, cr16 10.0% of forward. Two knobs follow. raydpt_win32 5->3 shrinks the local spherical attention from 25 offsets to 9 (measured 1.20x). ffn_mult 4->2 halves the CrossBlock FFN (1.10x on top). Together 169.1 -> 127.7 s/epoch, 21.3 -> 28.2 epochs/h, 5.89M -> 5.29M params.
-- **Implementation note** — E17 raydpt_e17_fastbase: the new defaults, scored at the full 3600s budget, --epochs 28.
+- **General** — The linear scaling rule is a heuristic for convnets under SGD, not a law for a residual attention stack. A model whose learning rate must be re-tuned for every architectural knob cannot be researched quickly, whatever its FLOPs. Stability is a precondition for efficiency, not a detail of it.
+- **Detailed** — lr = 3e-4 x (64/16) = 1.2e-3. E9/E11/E12 survived it; E15 (larger KV) and E17 (win32=3, ffn=2) did not, and E18 shows the failure is in the trunk rather than the coarse-layout auxiliary (which contributed zero gradient and diverged anyway). Gradient clipping is already 1.0. Sweep lr on the fast config; the mechanism is untouched.
+- **Implementation note** — E20 --lr 6e-4, E21 --lr 3e-4, both on the fast defaults, --epochs 28, scored at the full budget.
 
 ### Research portfolio
 
@@ -32,7 +32,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I10` | acoustic-representation / interpolation | mid | the nearest-neighbour resize in _features() turns the time axis into a coarse staircase | inconclusive | deferred confirm: run `--feat-interp bilinear --stft-hop 40` after the RayDPT throughput s |
 | `I14` | ray conditioning / audio token routing | mid | far-field rays cannot see the late, weak echo that carries distance | probing | E16 (control) then E15b (treatment), both at lr 6e-4. Pre-registered falsification unchang |
 | `I16` | throughput / experiment economics | near | iteration speed IS a research variable under a wall-clock budget | inconclusive | Re-test the fast knobs only after training is stable (E18/E19). Until then the fast defaul |
-| `I18` | training-optimization | near | lr 1.2e-3 (linear-scaled for batch 64) is at the edge of stability for RayDPT, and any capacity change tips it | backlog | queue the lr sweep once E18/E19 finish. |
+| `I18` | training-optimization | near | lr 1.2e-3 (linear-scaled for batch 64) is at the edge of stability for RayDPT, and any capacity change tips it | probing | queue the lr sweep once E18/E19 finish. |
 
 ### Open discrepancies
 
@@ -49,6 +49,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-10T18:30 | `exploit` | experiment_completed | DIVERGED at ep7 despite w_coarse_layout=0, never recovered (val d1 0.5342 -> 0.1307; lc pinned at 0.1849, D_coarse saturated to a  |
 | 2026-07-10T18:16 | `exploit` | candidate_dropped | PREMISE REFUTED BY ITS OWN EXPERIMENT. E18 removed lc from the loss entirely and the run still destabilised (mae x1.51 at epoch 7, |
 | 2026-07-10T17:58 | `exploit` | experiment_completed | DIVERGED at epoch 5 (lc 0.0633 -> 0.3209, never recovers). Recorded as discard. Not a test of the fast knobs' accuracy -- a second |
 | 2026-07-10T16:44 | `explore` | discrepancy_recorded | D11: E15 DIVERGED at epoch 4 with the parent's lr. The blow-up is entirely in lc, the coarse-layout term (0.4402 vs 0.0618) -- and |
@@ -56,7 +57,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | 2026-07-10T16:25 | `explore` | candidate_dropped | PRE-REGISTERED FALSIFICATION MET: both relative dense terms made the 7-10m deciles WORSE (rel_mae -0.19/-0.13/-0.22; log_mae -0.13 |
 | 2026-07-10T16:25 | `explore` | experiment_completed | log_mae also fails: d1 0.5538 (-0.0172), rmse +0.0330. Symmetric in the ratio, so relativity itself -- not rel_mae's asymmetry --  |
 | 2026-07-10T15:30 | `explore` | experiment_completed | rel_mae FAILED: d1 -0.0246, rmse +0.2352, composite 1.9093 -> 2.0707. My sign error: \|D-gt\|/gt makes far errors CHEAPER, and it  |
-| 2026-07-10T14:17 | `explore` | direction_changed | D9 REFRAMED by full-val spatial decomposition. The deficit is NOT angular: flat across azimuth (std 0.0056), ZERO on the floor, ex |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->
@@ -105,7 +105,8 @@ running best highlighted):
 | 13 | `1b995ab` | 0.4125 | 1.3409 | 0.5664 | 1.9250 | keep | E12 RayDPT decode32 xlayers1 kv=e4 (S5 attribution: 2x2 missing cell) |
 | 14 | `d38ecc7` | 0.3082 | 1.5628 | 0.5464 | 2.0707 | keep | E13 RayDPT E11 arch + rel_mae dense loss (S6/I13: far-field compression) |
 | 15 | `d38ecc7` | 0.4724 | 1.3606 | 0.5538 | 1.9857 | keep | E14 RayDPT E11 arch + log_mae dense loss (S6/I13 discriminating arm) |
-| 16 | `789c0be` | 0.5159 | 1.3988 | 0.5137 | 2.1120 | keep | E17 FAST default: E11 arch + win32=3 + ffn=2 (F0: does the speedup cost accuracy?) |
+| 16 | `789c0be` | 0.5159 | 1.3988 | 0.5137 | 2.1120 | discard | E17 DIVERGED (lc saturated ep5) FAST default: E11 arch + win32=3 + ffn=2 (F0: does the speedup cost accuracy?) |
+| 17 | `e4743b7` | 0.4491 | 1.3962 | 0.5342 | 2.0424 | discard | E18 DIVERGED ep7 despite w_coarse_layout=0 -> lc is a symptom, trunk is unstable (D11 corrected) |
 <!-- RESULTS:END -->
 
 ## Progression (composite, lower = better)

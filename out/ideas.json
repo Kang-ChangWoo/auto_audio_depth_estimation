@@ -313,11 +313,12 @@
       "evidence_required": "stable training AND composite within sigma of E11's 1.9093.",
       "next_action": "none. Superseded by I18 (the optimiser).",
       "why_dropped": "PREMISE REFUTED BY ITS OWN EXPERIMENT. I17 held that lc was RayDPT's failure point. E18 removed lc from the loss entirely (w_coarse_layout=0) and the run still destabilised: mae x1.51 at epoch 7 with lc contributing zero gradient. lc is a symptom, not a cause.",
-      "what_survives": "The measurement that coarse_head is a pure side-branch stands (verified: --coarse-norm changes D_coarse and leaves D bit-identical), and I6's finding that the auxiliaries are inert stands. Deleting lc is still a legitimate simplification -- it just does not buy stability, which is what I claimed it would."
+      "what_survives": "The measurement that coarse_head is a pure side-branch stands (verified: --coarse-norm changes D_coarse and leaves D bit-identical), and I6's finding that the auxiliaries are inert stands. Deleting lc is still a legitimate simplification -- it just does not buy stability, which is what I claimed it would.",
+      "e18_full_trajectory": "E18 never recovered. mae 0.0632 -> 0.0953 (ep7) -> 0.1270 (ep12); val d1 0.5342 -> 0.1307. lc plateaued at exactly 0.1849 for four epochs -- D_coarse fully saturated, emitting a constant. Best checkpoint at epoch 6, composite 2.0424. Recorded `discard`."
     },
     {
       "id": "I18",
-      "status": "backlog",
+      "status": "probing",
       "priority": "high",
       "origin": "E18 destabilising with the auxiliary removed -- an intervention, not a correlation",
       "target_bottleneck": "lr 1.2e-3 (linear-scaled for batch 64) is at the edge of stability for RayDPT, and any capacity change tips it",
@@ -330,7 +331,8 @@
       "minimal_falsifiable_test": "three scored runs at lr 1.2e-3 (known), 6e-4, 3e-4 on the fast config. Report best_epoch, epochs_ran, and whether mae ever jumps by more than 1.2x between epochs.",
       "budget_risk": "none per run; it costs GPU hours, which is precisely what the fast config is meant to buy back.",
       "evidence_required": "a stable, converged fast config; then re-test the win32/ffn accuracy question that E17 could not answer.",
-      "next_action": "queue the lr sweep once E18/E19 finish."
+      "next_action": "queue the lr sweep once E18/E19 finish.",
+      "e19_skipped": "E19 (w_coarse_layout=0.1) was queued as a second stability point for I17. Skipped: E18 refuted I17's premise, so E19 would have spent a GPU hour testing a dropped idea."
     }
   ],
   "discrepancies": [
