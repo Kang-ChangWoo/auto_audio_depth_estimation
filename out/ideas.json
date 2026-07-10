@@ -293,7 +293,7 @@
       "minimal_falsifiable_test": "E17: the new defaults, scored at the full 3600s budget.",
       "budget_risk": "none -- it is the budget that is being bought.",
       "evidence_required": "a SCORED run, not a benchmark. Speed was measured; accuracy must be paid for.",
-      "next_action": "Re-test the fast knobs only after training is stable (E18/E19). Until then the fast defaults are unvalidated.",
+      "next_action": "Answerable at last: E22 vs E20 isolates win32/ffn at matched lr. Until then the fast defaults remain unvalidated.",
       "e17_result": "E17 DIVERGED (best epoch 4 of 25; final val d1 0.0974). It is therefore NOT a test of whether win32=3 + ffn=2 cost accuracy -- it is a second instance of D11. Recorded as `discard`, not `keep`. The speedup (1.32x, measured) stands; its accuracy cost is unmeasured."
     },
     {
@@ -318,7 +318,7 @@
     },
     {
       "id": "I18",
-      "status": "probing",
+      "status": "validated",
       "priority": "high",
       "origin": "E18 destabilising with the auxiliary removed -- an intervention, not a correlation",
       "target_bottleneck": "lr 1.2e-3 (linear-scaled for batch 64) is at the edge of stability for RayDPT, and any capacity change tips it",
@@ -331,8 +331,10 @@
       "minimal_falsifiable_test": "three scored runs at lr 1.2e-3 (known), 6e-4, 3e-4 on the fast config. Report best_epoch, epochs_ran, and whether mae ever jumps by more than 1.2x between epochs.",
       "budget_risk": "none per run; it costs GPU hours, which is precisely what the fast config is meant to buy back.",
       "evidence_required": "a stable, converged fast config; then re-test the win32/ffn accuracy question that E17 could not answer.",
-      "next_action": "queue the lr sweep once E18/E19 finish.",
-      "e19_skipped": "E19 (w_coarse_layout=0.1) was queued as a second stability point for I17. Skipped: E18 refuted I17's premise, so E19 would have spent a GPU hour testing a dropped idea."
+      "next_action": "E22 for attribution; E21 (lr 3e-4) completes the 3-trial ladder.",
+      "e19_skipped": "E19 (w_coarse_layout=0.1) was queued as a second stability point for I17. Skipped: E18 refuted I17's premise, so E19 would have spent a GPU hour testing a dropped idea.",
+      "result": "CONFIRMED. At lr 6e-4 the fast config is perfectly stable: E20's mae never ROSE between epochs (max ratio 0.99, against E17's 1.46 and E18's 1.51 at lr 1.2e-3), and it converged -- best checkpoint epoch 23 of 26. The instability was the OPTIMISER. Neither the architecture nor the coarse-layout auxiliary caused it, and E18 proved the latter by removing it and diverging anyway.",
+      "caveat": "E20's composite of 1.9176 is +0.0083 against E11's 1.9093 -- just over the sigma of 0.008 -- but E20 differs from E11 in TWO ways (the knobs AND the lr), so the gap cannot be attributed. E22 (E11's architecture at lr 6e-4) fills the 2x2."
     }
   ],
   "discrepancies": [

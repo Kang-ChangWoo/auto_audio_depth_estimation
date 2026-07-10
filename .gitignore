@@ -63,3 +63,5 @@ out/.stable.lock
 out/stable_driver.log
 out/.lrsweep.lock
 out/lrsweep_driver.log
+out/.attrib.lock
+out/attrib_driver.log
