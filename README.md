@@ -7,19 +7,19 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | | |
 |---|---|
-| **Mode** | `EXPLOIT` — adaptive HPO ladder 3 -> 5 -> 7 -> 10, each step justified by evidence -> PASS / FAIL |
-| **Active study** | `F1` [tune] training-optimization (*running*) |
-| **Research question** | The linear scaling rule is a heuristic for convnets under SGD, not a law for a residual attention stack. A model whose learning rate must be re-tuned for every architectural knob cannot be researched  |
-| **Current action** | E20 --lr 6e-4, E21 --lr 3e-4, both on the fast defaults, --epochs 28, scored at the full budget. |
-| **Latest result** | `E21` raydpt_e21_fast_lr3e4: composite **1.9099** (rmse None, d1 0.5706, abs_rel None), best epoch 19/25 |
-| **Next decision** | Two criteria, in order. STABILITY: does mae ever jump more than 1.2x between epochs? A run that spikes answers nothing else. Then COMPOSITE against E11's 1.9093. Only once the fast config trains stabl |
-| **Why this mode** | The efficiency phase is blocked on a tuning failure that I misdiagnosed once. Fix the optimiser before touching the architecture again. |
+| **Mode** | `VERIFY` — clean reimplementation on the correct parent -> standalone run -> bounded HPO -> PASS / FAIL |
+| **Active study** | `G0` [new] echo-delay-volume (*running*) |
+| **Research question** | Depth from echoes is a time-of-flight measurement: a surface at depth d returns its echo at t = 2d/c. A network that regresses a scalar depth must discover that correspondence from data; a network who |
+| **Current action** | E24 = defaults + --depth-volume True (control E21). E25 = champion architecture + depth volume (control E23). E26 = confirm draw. |
+| **Latest result** | `E24` raydpt_e24_echodelay: composite **1.8987** (rmse 1.3183, d1 0.5733, abs_rel None), best epoch 23/24 |
+| **Next decision** | The pre-registered falsification (far deciles must improve) PASSED. Crowning still requires (a) the mechanism measured on the champion architecture, since E24 carried knobs that cost 0.0137, and (b) a |
+| **Why this mode** | I19's pre-registered prediction was confirmed -- the first in the project. Verify it on the correct parent and with a second draw before crowning. |
 
 ### Current hypothesis
 
-- **General** — The linear scaling rule is a heuristic for convnets under SGD, not a law for a residual attention stack. A model whose learning rate must be re-tuned for every architectural knob cannot be researched quickly, whatever its FLOPs. Stability is a precondition for efficiency, not a detail of it.
-- **Detailed** — lr = 3e-4 x (64/16) = 1.2e-3. E9/E11/E12 survived it; E15 (larger KV) and E17 (win32=3, ffn=2) did not, and E18 shows the failure is in the trunk rather than the coarse-layout auxiliary (which contributed zero gradient and diverged anyway). Gradient clipping is already 1.0. Sweep lr on the fast config; the mechanism is untouched.
-- **Implementation note** — E20 --lr 6e-4, E21 --lr 3e-4, both on the fast defaults, --epochs 28, scored at the full budget.
+- **General** — Depth from echoes is a time-of-flight measurement: a surface at depth d returns its echo at t = 2d/c. A network that regresses a scalar depth must discover that correspondence from data; a network whose architecture encodes it does not. Put the physics in the structure, not in the loss.
+- **Detailed** — The encoder's width axis IS time -- spec is (freq 256, time 512), so e3 is (freq 32, time 64) and its columns are depth hypotheses spanning 0.08-9.92 m. Each ray attends over FREQUENCY within one time column per hypothesis, a small MLP scores the hypotheses, and a softmax over the DEPTH axis gives p(d|ray); depth = soft-argmax over echo delay. It also replaces the sigmoid coarse head that saturated in D11.
+- **Implementation note** — E24 = defaults + --depth-volume True (control E21). E25 = champion architecture + depth volume (control E23). E26 = confirm draw.
 
 ### Research portfolio
 
@@ -31,7 +31,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I7` | sensing physics / angular resolution | far | two microphones may fundamentally under-determine high azimuthal frequencies | candidate | Do not chase high-frequency power as a goal. Re-test the observability claim once RayDPT c |
 | `I10` | acoustic-representation / interpolation | mid | the nearest-neighbour resize in _features() turns the time axis into a coarse staircase | inconclusive | deferred confirm: run `--feat-interp bilinear --stft-hop 40` after the RayDPT throughput s |
 | `I14` | ray conditioning / audio token routing | mid | far-field rays cannot see the late, weak echo that carries distance | probing | E16 (control) then E15b (treatment), both at lr 6e-4. Pre-registered falsification unchang |
-| `I19` | ray conditioning / physically-structured decoding | far | the model must LEARN that echo delay encodes depth, and it fails to, collapsing far surfaces toward the median | probing | E24 queued behind the attribution runs; the queue benchmarks cost first. |
+| `I19` | ray conditioning / physically-structured decoding | far | the model must LEARN that echo delay encodes depth, and it fails to, collapsing far surfaces toward the median | candidate | E25 (champion config + depth volume, control E23 = 1.8962) and E26 (confirm draw). |
 
 ### Open discrepancies
 
@@ -48,6 +48,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-10T23:38 | `verify` | experiment_completed | I19 PASSED its pre-registered falsification: every far decile improved (7-8m +0.0692, 8-9m +0.0759, 9-10m +0.0595) and the mean pr |
 | 2026-07-10T22:37 | `exploit` | experiment_completed | NEW RayDPT CHAMPION 1.8962 (win5/ffn4 @ lr 3e-4, 22 epochs, stable). Closing the 2x2 OVERTURNED the previous reading: lr 3e-4 gain |
 | 2026-07-10T21:33 | `exploit` | experiment_completed | Control win5/ffn4 @ lr 6e-4: composite 1.9125, stable. 2x2 complete except E23. At matched lr the fast knobs cost +0.0051 (below s |
 | 2026-07-10T20:48 | `exploit` | idea_added | STRUCTURAL, not a loss change. The encoder's width axis IS time, so e3's 64 columns are depth hypotheses (d = c*t/2, 0.08-9.92m).  |
@@ -55,7 +56,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | 2026-07-10T19:33 | `exploit` | experiment_completed | I18 CONFIRMED: at lr 6e-4 the fast config is stable (mae never rose between epochs, max ratio 0.99 vs 1.46/1.51 at lr 1.2e-3) and  |
 | 2026-07-10T18:30 | `exploit` | experiment_completed | DIVERGED at ep7 despite w_coarse_layout=0, never recovered (val d1 0.5342 -> 0.1307; lc pinned at 0.1849, D_coarse saturated to a  |
 | 2026-07-10T18:16 | `exploit` | candidate_dropped | PREMISE REFUTED BY ITS OWN EXPERIMENT. E18 removed lc from the loss entirely and the run still destabilised (mae x1.51 at epoch 7, |
-| 2026-07-10T17:58 | `exploit` | experiment_completed | DIVERGED at epoch 5 (lc 0.0633 -> 0.3209, never recovers). Recorded as discard. Not a test of the fast knobs' accuracy -- a second |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->
@@ -110,6 +110,7 @@ running best highlighted):
 | 19 | `0909a2d` | 0.4270 | 1.3231 | 0.5706 | 1.9099 | keep | E21 FAST config at lr 3e-4 (F1/I18 3-trial ladder) |
 | 20 | `7bf10af` | 0.4132 | 1.3357 | 0.5708 | 1.9125 | keep | E22 CONTROL win5 ffn4 @ lr 6e-4 (F1 attribution: knobs vs lr) |
 | 21 | `1c34d7c` | 0.4131 | 1.3295 | 0.5765 | 1.8962 | keep | E23 CONTROL win5 ffn4 @ lr 3e-4 (F1 attribution: closes the 2x2) |
+| 22 | `a7b0613` | 0.4203 | 1.3183 | 0.5733 | 1.8987 | keep | E24 EchoDelayVolume: per-ray soft-argmax over echo delay (G0/I19 structural) |
 <!-- RESULTS:END -->
 
 ## Progression (composite, lower = better)

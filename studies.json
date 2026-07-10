@@ -4,7 +4,7 @@
   "reset_note": "Fresh from original baseline f677b0f + mask-weighted coarse/low loss targets + composite abs_rel weight 0.75->0.35 + PLANAR (cubemap) depth target.",
   "depth_convention": "planar (cubemap perpendicular-Z); stored erp_depth used as-is; radial_factor removed",
   "metric": "composite (selection) = rmse/1.6 + (1-d1)/0.46 + 0.35*abs_rel  (lower better; RMSE+d1 dominate; abs_rel de-weighted)",
-  "next_exp_id": "E24",
+  "next_exp_id": "E27",
   "global_champion": null,
   "concluded_studies": [
     {
@@ -298,52 +298,40 @@
       ]
     }
   ],
-  "mode": "exploit",
-  "mode_reason": "The efficiency phase is blocked on a tuning failure that I misdiagnosed once. Fix the optimiser before touching the architecture again.",
+  "mode": "verify",
+  "mode_reason": "I19's pre-registered prediction was confirmed -- the first in the project. Verify it on the correct parent and with a second draw before crowning.",
   "studies_since_synthesize": 0,
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",
   "active_study": {
-    "study_id": "F1",
-    "lineage": "training-optimization",
-    "parent": "E11 (raydpt_e11_d32L2_kve4)",
-    "type": "tune",
+    "study_id": "G0",
+    "lineage": "echo-delay-volume",
+    "parent": "E21 (raydpt_e21_fast_lr3e4)",
+    "type": "new",
     "status": "running",
-    "general_hypothesis": "The linear scaling rule is a heuristic for convnets under SGD, not a law for a residual attention stack. A model whose learning rate must be re-tuned for every architectural knob cannot be researched quickly, whatever its FLOPs. Stability is a precondition for efficiency, not a detail of it.",
-    "detailed_hypothesis": "lr = 3e-4 x (64/16) = 1.2e-3. E9/E11/E12 survived it; E15 (larger KV) and E17 (win32=3, ffn=2) did not, and E18 shows the failure is in the trunk rather than the coarse-layout auxiliary (which contributed zero gradient and diverged anyway). Gradient clipping is already 1.0. Sweep lr on the fast config; the mechanism is untouched.",
-    "experiment_note": "E20 --lr 6e-4, E21 --lr 3e-4, both on the fast defaults, --epochs 28, scored at the full budget.",
-    "hpo_stage": "3-trial",
-    "hpo_runs_used": 3,
+    "general_hypothesis": "Depth from echoes is a time-of-flight measurement: a surface at depth d returns its echo at t = 2d/c. A network that regresses a scalar depth must discover that correspondence from data; a network whose architecture encodes it does not. Put the physics in the structure, not in the loss.",
+    "detailed_hypothesis": "The encoder's width axis IS time -- spec is (freq 256, time 512), so e3 is (freq 32, time 64) and its columns are depth hypotheses spanning 0.08-9.92 m. Each ray attends over FREQUENCY within one time column per hypothesis, a small MLP scores the hypotheses, and a softmax over the DEPTH axis gives p(d|ray); depth = soft-argmax over echo delay. It also replaces the sigmoid coarse head that saturated in D11.",
+    "experiment_note": "E24 = defaults + --depth-volume True (control E21). E25 = champion architecture + depth volume (control E23). E26 = confirm draw.",
+    "hpo_stage": "structural-screen",
+    "hpo_runs_used": 1,
     "runs": [
       {
-        "exp_id": "E20",
-        "name": "raydpt_e20_fast_lr6e4",
-        "lr": 0.0006,
-        "composite": 1.9176,
-        "d1": 0.5704,
-        "epochs_ran": 26,
+        "exp_id": "E24",
+        "name": "raydpt_e24_echodelay",
+        "composite": 1.8987,
+        "d1": 0.5733,
+        "rmse": 1.3183,
+        "epochs_ran": 24,
         "best_epoch": 23,
-        "max_mae_jump": 0.99,
-        "stable": true
-      },
-      {
-        "exp_id": "E21",
-        "name": "raydpt_e21_fast_lr3e4",
-        "lr": 0.0003,
-        "composite": 1.9099,
-        "d1": 0.5706,
-        "epochs_ran": 25,
-        "best_epoch": 19,
-        "max_mae_jump": 0.99,
-        "stable": true
+        "far_deciles_vs_control": {
+          "7-8m": 0.0692,
+          "8-9m": 0.0759,
+          "9-10m": 0.0595
+        },
+        "status": "keep"
       }
     ],
-    "decision_rule": "Two criteria, in order. STABILITY: does mae ever jump more than 1.2x between epochs? A run that spikes answers nothing else. Then COMPOSITE against E11's 1.9093. Only once the fast config trains stably can the win32/ffn accuracy question that E17 could not answer be asked again.",
-    "observations": [
-      "lr ladder is monotone: 1.2e-3 diverges, 6e-4 gives 1.9176, 3e-4 gives 1.9099. The linear scaling rule was wrong for this model.",
-      "3e-4 is the ORIGINAL batch-16 lr. Scaling it with batch put every run on the edge of divergence and cost three GPU hours before I suspected the optimiser.",
-      "E21 matches E11 to +0.0007 with 10% fewer params and a 1.21x speedup. Still confounded (knobs + lr); E23 attributes it."
-    ]
+    "decision_rule": "The pre-registered falsification (far deciles must improve) PASSED. Crowning still requires (a) the mechanism measured on the champion architecture, since E24 carried knobs that cost 0.0137, and (b) a confirming draw -- program.md forbids crowning on one. Judge on the far deciles and d1; ABS_REL is not evidence."
   },
   "backlog": [
     {

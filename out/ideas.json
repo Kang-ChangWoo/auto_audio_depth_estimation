@@ -347,7 +347,7 @@
     },
     {
       "id": "I19",
-      "status": "probing",
+      "status": "candidate",
       "priority": "high",
       "origin": "the measured far-field failure (D9 reframed) + the physical meaning of the encoder's width axis",
       "target_bottleneck": "the model must LEARN that echo delay encodes depth, and it fails to, collapsing far surfaces toward the median",
@@ -361,7 +361,10 @@
       "minimal_falsifiable_test": "E24: the current defaults + --depth-volume True. E21 (1.9099) is the control -- the defaults ARE its config, so the run differs in one thing.",
       "budget_risk": "low; +34k params, benchmarked before the run.",
       "evidence_required": "far-decile d1 improves AND overall d1 clears sigma.",
-      "next_action": "E24 queued behind the attribution runs; the queue benchmarks cost first."
+      "next_action": "E25 (champion config + depth volume, control E23 = 1.8962) and E26 (confirm draw).",
+      "result": "PASSED its pre-registered falsification -- the same test that killed I13. Against the matched control E21, EVERY far decile improved: 7-8 m +0.0692, 8-9 m +0.0759, 9-10 m +0.0595 (and 6-7 m +0.0434). The mean predicted depth at GT 8-9 m rose 4.758 m -> 5.238 m (batvision 5.738 m), so the range compression the mechanism was designed to attack actually loosened. Overall d1 +0.0027, rmse -0.0048, composite 1.9099 -> 1.8987 (-0.0112, above sigma). Stable (max mae jump 0.99), converged (best epoch 23 of 24). Costs 12 s/epoch and LESS VRAM (11.8 vs 13.8 GB).",
+      "significance": "This is the first mechanism in the project whose PRE-REGISTERED prediction was confirmed. I1's metric prediction inverted, I2/I4/I6/I11 were refuted, I13 was killed by this same far-decile test, I17 was refuted by its own experiment. Confirmation here means the physical story -- an echo from depth d arrives at t=2d/c, and the encoder's width axis IS that delay -- is doing the work, not a lucky hyperparameter.",
+      "caveat": "E24 carried the fast knobs (win32=3, ffn=2), which E23 measured at +0.0137. The mechanism has never been run on the champion architecture, and it has ONE draw. program.md: never crown a candidate on a single draw."
     }
   ],
   "discrepancies": [

@@ -20,3 +20,4 @@ e4743b7	0.4491	1.3962	0.5342	0.0	discard	E18 DIVERGED ep7 despite w_coarse_layou
 0909a2d	0.4270	1.3231	0.5706	13.8	keep	E21 FAST config at lr 3e-4 (F1/I18 3-trial ladder)
 7bf10af	0.4132	1.3357	0.5708	16.0	keep	E22 CONTROL win5 ffn4 @ lr 6e-4 (F1 attribution: knobs vs lr)
 1c34d7c	0.4131	1.3295	0.5765	16.0	keep	E23 CONTROL win5 ffn4 @ lr 3e-4 (F1 attribution: closes the 2x2)
+a7b0613	0.4203	1.3183	0.5733	15.2	keep	E24 EchoDelayVolume: per-ray soft-argmax over echo delay (G0/I19 structural)
