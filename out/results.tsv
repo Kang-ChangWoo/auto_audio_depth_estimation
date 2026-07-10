@@ -9,3 +9,4 @@ b9c2f71	0.4279	1.3114	0.6005	2.4	keep	E6 batvision 5ch nolog win64 hop16 (I1 arm
 b9c2f71	0.4540	1.3155	0.5951	2.4	keep	E7 batvision 5ch log, aux losses ZEROED (I6 vs I7 discriminator)
 7fae910	0.4470	1.3088	0.5900	2.4	keep	E8 batvision 5ch nolog win400 hop160 BILINEAR resize (I10: staircase discriminator)
 bb9692d	0.4468	1.3195	0.5631	20.1	keep	E9 RayDPT decode32 xlayers1 batch64 lr1.2e-3 bf16 ep25 (S3: does a CONVERGED RayDPT beat a starved one?)
+bc415a2	0.4187	1.3284	0.5665	28.2	keep	E10 RayDPT decode32 xlayers2 batch64 (S4: was the cross-layer cut load-bearing?)

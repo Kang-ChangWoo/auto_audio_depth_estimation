@@ -8,18 +8,18 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | | |
 |---|---|
 | **Mode** | `VERIFY` — clean reimplementation on the correct parent -> standalone run -> bounded HPO -> PASS / FAIL |
-| **Active study** | `S4` [refine] raydpt-capacity (*running*) |
-| **Research question** | E9 is a COMPOUND change, so its deficit against the reference cannot be attributed. Before asking whether ray-conditioning helps, we must know which part of the capacity we removed was load-bearing -- |
-| **Current action** | E10 raydpt_e10_d32L2_b64: --decode-scale 32 --ray-cross-layers 2 --batch-size 64 --lr 1.2e-3 --amp bf16 --epochs 16. |
+| **Active study** | `S5` [verify] raydpt-capacity (*running*) |
+| **Research question** | D9 claims RayDPT's entire deficit against the reference is ANGULAR (d1), which would indict ray-conditioning at exactly the point it claims to win. But that claim rests on models that never finished l |
+| **Current action** | E11 raydpt_e11_d32L2_kve4: --decode-scale 32 --ray-cross-layers 2 --cross-kv32 e4 --batch-size 64 --lr 1.2e-3 --amp bf16 --epochs 24. |
 | **Latest result** | *(no scored run in this study yet)* |
-| **Next decision** | Judge on d1 first, not the composite: D9 says the gap is angular. If d1 recovers materially toward 0.5949, the cross-layer cut was load-bearing. If d1 does not move, the cut was free and the deficit l |
-| **Why this mode** | E9 established convergence but is a compound change. Before any claim about ray-conditioning, ablate the amputation: restore the cross-attention depth and see whether the d1 deficit (D9) is ours or th |
+| **Next decision** | Convergence first: best_epoch must not be the last, or the run answers nothing (as E10 did). Then read d1, NOT the composite -- D9 is an angular claim. Caveat to honour: kv=e4 is a mechanism change, s |
+| **Why this mode** | DC1 chose H7 (zero GPU) then H2. H7 is refuted -- the deficit is angular, not a scale error. H2 now needs the first converged 2-layer RayDPT. |
 
 ### Current hypothesis
 
-- **General** — E9 is a COMPOUND change, so its deficit against the reference cannot be attributed. Before asking whether ray-conditioning helps, we must know which part of the capacity we removed was load-bearing -- otherwise we would be judging a mechanism by an amputation we chose ourselves.
-- **Detailed** — E9 cut both the decode scale (64->32) and the cross-attention depth (2->1 layers per ray scale). The audio<->ray cross-attention is where per-ray direction information enters the model, so halving it is the change most likely to have cost the d1 (angular) deficit seen in D9. Restoring ray_cross_layers=2 at decode 32 still fits the budget (measured 216.5 s/epoch = 16.6 epochs/h).
-- **Implementation note** — E10 raydpt_e10_d32L2_b64: --decode-scale 32 --ray-cross-layers 2 --batch-size 64 --lr 1.2e-3 --amp bf16 --epochs 16.
+- **General** — D9 claims RayDPT's entire deficit against the reference is ANGULAR (d1), which would indict ray-conditioning at exactly the point it claims to win. But that claim rests on models that never finished learning: no 2-layer RayDPT has ever converged inside the budget. Before indicting the mechanism, read d1 on a converged 2-layer model.
+- **Detailed** — Benchmarking showed the cost of a cross layer is not its FFN (ffn 4->2 saves 2 s/epoch) but its KV set: cr32 attends 2048 e3 tokens. Shrinking that KV to e4's 512 coarse tokens is 4x cheaper at IDENTICAL parameter count (5.89M), giving a measured 145.8 s/epoch = 24.7 epochs. If d1 then recovers toward batvision's 0.5949, D9 was a budget artefact (H2). If d1 stays near 0.566 on a CONVERGED 2-layer model, the angular deficit belongs to ray-conditioning itself (H1).
+- **Implementation note** — E11 raydpt_e11_d32L2_kve4: --decode-scale 32 --ray-cross-layers 2 --cross-kv32 e4 --batch-size 64 --lr 1.2e-3 --amp bf16 --epochs 24.
 
 ### Research portfolio
 
@@ -30,6 +30,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I5` | ray conditioning / encoder-decoder correspondence | mid | RayDPT's DPT skip connections impose a FALSE spatial correspondence between the spectrogram's axes and the ERP's axes | inconclusive | none. Do not spend GPU on the skip ablation on this rationale. Revive only with an indepen |
 | `I7` | sensing physics / angular resolution | far | two microphones may fundamentally under-determine high azimuthal frequencies | candidate | Do not chase high-frequency power as a goal. Re-test the observability claim once RayDPT c |
 | `I10` | acoustic-representation / interpolation | mid | the nearest-neighbour resize in _features() turns the time axis into a coarse staircase | inconclusive | deferred confirm: run `--feat-interp bilinear --stft-hop 40` after the RayDPT throughput s |
+| `I12` | ray conditioning / attention cost | near | ray cross-attention costs 67% of forward because it runs over 8192 (and 2048) ray queries | backlog | bench the two cost levers, then run the one that converges. This is the experiment that fi |
 
 ### Open discrepancies
 
@@ -48,14 +49,14 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-10T12:09 | `verify` | discrepancy_recorded | D10 (methodological): small-sample diagnostics REVERSE their sign. 60 samples said RayDPT's d1 beat batvision's; the full 3543 say |
+| 2026-07-10T12:03 | `synthesize` | divergence_checkpoint | DC1 after S0-S4. Seven competing hypotheses across six causal families (mechanism, budget, capacity, sensing physics, encoder-deco |
+| 2026-07-10T12:01 | `synthesize` | experiment_completed | cross-layers restored to 2 at decode 32: composite 1.9192 (beats converged E9's 1.9308), but 15 epochs and best = LAST epoch -- di |
 | 2026-07-10T10:58 | `verify` | candidate_dropped | REFUTED, zero GPU: the model WITHOUT the 1x2 waist (RayDPT E9) is SMOOTHER than the one with it (batvision E3) -- 0.0179 vs 0.0290 |
 | 2026-07-10T10:55 | `verify` | discrepancy_recorded | D9: the ray-conditioned model loses to a plain U-Net almost entirely on d1 (angle), while tying on rmse (range). It is losing exac |
 | 2026-07-10T10:55 | `verify` | experiment_completed | CONVERGED RayDPT: composite 1.9308, 21 epochs, best at ep18/21. Beats starved E4 (2.0471) by 0.1162 = 14 sigma. D5 confirmed: RayD |
 | 2026-07-10T09:51 | `exploit` | direction_changed | Pure speed exhausted at 1.4x (500 s/epoch, 7.2 epochs). Reaching 25 epochs needs a CAPACITY cut, recorded as such: decode_scale 32 |
 | 2026-07-10T09:42 | `exploit` | experiment_completed | I10 discriminator (bilinear at hop160, information identical to E2): rmse -0.0119 (52% of E5's gain, predicted direction) but d1 - |
-| 2026-07-10T08:43 | `exploit` | discrepancy_recorded | Throughput reality check: bench measures 519 s/epoch at best (batch 48, bf16) = 6.9 epochs in the budget, versus 144 s/epoch neede |
-| 2026-07-10T08:43 | `exploit` | experiment_completed | batvision 5ch log, aux losses ZEROED: composite 1.8613 vs E3's 1.8567 (delta +0.0046, below sigma). Azimuthal high-frequency power |
-| 2026-07-10T08:40 | `exploit` | discrepancy_recorded | D8: E6 has 29.7% LESS high-frequency power than E2 yet BETTER d1. Sharpness and d1 are not the same thing -- a well-centred smooth |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->
@@ -99,6 +100,7 @@ running best highlighted):
 | 8 | `b9c2f71` | 0.4540 | 1.3155 | 0.5951 | 1.8613 | keep | E7 batvision 5ch log, aux losses ZEROED (I6 vs I7 discriminator) |
 | 9 | `7fae910` | 0.4470 | 1.3088 | 0.5900 | 1.8658 | keep | E8 batvision 5ch nolog win400 hop160 BILINEAR resize (I10: staircase discriminator) |
 | 10 | `bb9692d` | 0.4468 | 1.3195 | 0.5631 | 1.9309 | keep | E9 RayDPT decode32 xlayers1 batch64 lr1.2e-3 bf16 ep25 (S3: does a CONVERGED RayDPT beat a starved one?) |
+| 11 | `bc415a2` | 0.4187 | 1.3284 | 0.5665 | 1.9192 | keep | E10 RayDPT decode32 xlayers2 batch64 (S4: was the cross-layer cut load-bearing?) |
 <!-- RESULTS:END -->
 
 ## Progression (composite, lower = better)

@@ -47,3 +47,5 @@ out/.queue5.lock
 out/queue5_driver.log
 out/.queue6.lock
 out/queue6_driver.log
+out/.queue7.lock
+out/queue7_driver.log

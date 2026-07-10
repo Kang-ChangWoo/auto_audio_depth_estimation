@@ -112,6 +112,8 @@ def make_config(args):
             # 0.3527, while RayDPT sits at 2.0471 -- the 64-scale buys resolution the model
             # cannot use, and under a wall-clock budget that compute must be repaid in epochs.
             decode_scale=args.decode_scale,
+            ffn_mult=args.ffn_mult,
+            cross_kv32=args.cross_kv32,
             # ray-feature bank flags
             use_xyz=True,
             use_fourier_pe=True,
@@ -219,7 +221,7 @@ class Refine(nn.Module):
 
 
 class FFN(nn.Module):
-    def __init__(self, dim, mult=4):
+    def __init__(self, dim, mult=4):   # mult is where most per-token FLOPs live (idea I12)
         super().__init__()
         self.net = nn.Sequential(nn.Linear(dim, dim * mult), nn.GELU(),
                                  nn.Linear(dim * mult, dim))
@@ -229,11 +231,11 @@ class FFN(nn.Module):
 
 
 class CrossBlock(nn.Module):
-    def __init__(self, dim, heads):
+    def __init__(self, dim, heads, ffn_mult=4):
         super().__init__()
         self.n1, self.n2 = nn.LayerNorm(dim), nn.LayerNorm(dim)
         self.attn = nn.MultiheadAttention(dim, heads, batch_first=True)
-        self.ffn = FFN(dim)
+        self.ffn = FFN(dim, ffn_mult)
 
     def forward(self, q, kv):
         a, _ = self.attn(self.n1(q), kv, kv)
@@ -357,7 +359,8 @@ class RayDPT(nn.Module):
         # audio kv: e4 (512 tok), e3 (2048 tok). 64-scale reuses e4 (cheap global cue).
         self.kv_e4 = nn.Linear(ngf * 8, dim)
         self.kv_e3 = nn.Linear(ngf * 4, dim)
-        mk_cr = lambda: nn.ModuleList([CrossBlock(dim, heads) for _ in range(nL)])
+        fm = int(getattr(cfg, "ffn_mult", 4))
+        mk_cr = lambda: nn.ModuleList([CrossBlock(dim, heads, fm) for _ in range(nL)])
         self.cr16, self.cr32, self.cr64 = mk_cr(), mk_cr(), mk_cr()
         # DPT encoder skips (U-Net detail injection)
         self.se4 = nn.Conv2d(ngf * 8, dim, 1)
@@ -371,6 +374,10 @@ class RayDPT(nn.Module):
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
         self.lite = getattr(cfg, "raydpt_lite", False)        # 2-scale (32,64) lite variant
         self.decode_scale = int(getattr(cfg, "decode_scale", 64))
+        # Which audio tokens the 32-scale rays attend to. 'e3' = 2048 fine tokens (original);
+        # 'e4' = 512 coarse tokens, 4x cheaper. Every ray still cross-attends to audio, so the
+        # ray-conditioning invariant holds; only the KV set shrinks (idea I12).
+        self.cross_kv32 = str(getattr(cfg, "cross_kv32", "e3"))
         if self.decode_scale == 32:      # the 64-scale modules are never built
             self.rf64 = None; self.rp64 = None; self.cr64 = None
             self.se2 = None; self.refine64 = None; self.lsa64 = None
@@ -394,9 +401,10 @@ class RayDPT(nn.Module):
             x = self.lsa32(self.refine32(m))                    # 32x64
             x = self.lsa64(self.refine64(self.up(x) + self.se2(e2)))   # 64x128
         else:
-            kv3 = self.kv_e3(e3.flatten(2).transpose(1, 2))     # (B,2048,dim)
+            kv32 = (self.kv_e3(e3.flatten(2).transpose(1, 2)) if self.cross_kv32 == 'e3'
+                    else kv4)                                    # (B,2048,dim) or (B,512,dim)
             F16 = self._cross(self.rp16, self.rf16, self.cr16, kv4, B, 16, 32)
-            F32 = self._cross(self.rp32, self.rf32, self.cr32, kv3, B, 32, 64)
+            F32 = self._cross(self.rp32, self.rf32, self.cr32, kv32, B, 32, 64)
             m16 = F16 + self.se4(e4)                             # 16x32
             d_c = torch.sigmoid(self.coarse_head(m16))          # (B,1,16,32) coarse layout
             x = self.lsa32(self.refine32(self.up(m16) + F32 + self.se3(e3)))   # 32x64
@@ -775,6 +783,10 @@ def parse_args():
     p.add_argument('--ray-cross-layers', type=int, default=2,
                    help='CrossBlocks per ray scale. 2 = original. Halving it halves the '
                         'audio<->ray cross-attention cost, the dominant term.')
+    p.add_argument('--ffn-mult', type=int, default=4,
+                   help='CrossBlock FFN expansion. Most per-token FLOPs live here (idea I12).')
+    p.add_argument('--cross-kv32', type=str, default='e3', choices=['e3', 'e4'],
+                   help="audio tokens the 32-scale rays attend to: e3 (2048, original) or e4 (512, 4x cheaper)")
     p.add_argument('--decode-scale', type=int, default=64, choices=[32, 64],
                    help='finest ray-decode resolution: 64 -> 64x128 (original), 32 -> 32x64 '
                         '(drops cr64+lsa64+refine64, 54%% of forward). Ray-conditioning is kept.')

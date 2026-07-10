@@ -199,9 +199,26 @@
       "evidence_required": "the spectrum contrast on a CONVERGED RayDPT.",
       "preliminary": "On the 5-epoch E4 RayDPT holds LESS high-frequency power than batvision (13.7% vs 19.0% of GT), which would argue against the waist -- but E4 never converged, so this is confounded by training and proves nothing. Deferred to E7.",
       "next_action": "none.",
-      "why_dropped": "REFUTED, zero GPU. The model WITHOUT the waist is SMOOTHER than the one with it. Compared in the band both can represent (k=7..32): batvision E3 (1x2 bottleneck, converged) holds 0.0290 of azimuthal power; RayDPT E9 (no bottleneck, converged) holds 0.0179; RayDPT E4 (no bottleneck, unconverged) 0.0196. A 1024-number waist is not what makes these predictions low-pass.",
+      "why_dropped": "REFUTED, zero GPU. The model WITHOUT the waist is SMOOTHER than the one with it. Compared in the band both can represent (k=7..32): batvision E3 (1x2 bottleneck, converged) holds 0.0290 of azimuthal power; RayDPT E9 (no bottleneck, converged) holds 0.0179; RayDPT E4 (no bottleneck, unconverged) 0.0196. A 1024-number waist is not what makes these predictions low-pass. [FULL-VAL RECHECK: batvision 0.0214 vs RayDPT E9 0.0152 in k=7..32 (3543 samples). Direction confirmed; the original 20-sample figures were unreliable -- see D10.]",
       "confound_controlled": "The naive whole-spectrum comparison would have been invalid: E9 decodes at 32x64, so its azimuthal grid has 64 columns and Nyquist bounds it at k<=32. Its near-zero power at k>32 (0.0007) is a mathematical consequence of the decode grid, not a finding. Only the k=7..32 band, representable by both models, tests the hypothesis.",
       "scope_of_negative_evidence": "Refutes the information-bottleneck explanation for low-pass behaviour on this pair of architectures at this error level. It does not say bottlenecks never matter. It does say that removing the waist -- which RayDPT does by construction -- buys no high-frequency structure, so the limit lies elsewhere (I7: angular observability with two receivers)."
+    },
+    {
+      "id": "I12",
+      "status": "backlog",
+      "priority": "high",
+      "origin": "the E9/E10 pair: adding capacity costs convergence, removing it costs ceiling",
+      "target_bottleneck": "ray cross-attention costs 67% of forward because it runs over 8192 (and 2048) ray queries",
+      "mechanism_family": "ray conditioning / attention cost",
+      "causal_distance": "near",
+      "general_hypothesis": "RayDPT is caught in a capacity-versus-convergence trade-off that a plain U-Net is not: at 2 cross layers it cannot converge in the budget, at 1 it converges but is weaker, and both lose to a 54.4M U-Net that converges comfortably. The binding constraint is not how much capacity the ray pathway has, but what each unit of it COSTS. The productive move is to make a cross-attention layer cheaper, not to have fewer of them.",
+      "detailed_hypothesis": "cr32 attends 2048 ray queries to 2048 e3 tokens; cr64 attends 8192 queries to 512 e4 tokens; together 67% of forward. Two cost levers that preserve per-ray conditioning: (a) shrink the KV set for cr32 from e3 (2048 tokens) to e4 (512), since the coarse audio tokens already carry the global cue and cr16 uses them; (b) shrink the FFN expansion inside CrossBlock from 4x to 2x, which is where most of the per-token FLOPs live. Either keeps every ray query and its cross-attention -- the architectural invariant -- while cutting the price.",
+      "expected_metric_effect": "epochs_ran rises toward 25 at 2 layers. If d1 then recovers toward batvision's 0.5949, the angular deficit was a budget artefact all along, and D9 dissolves. If d1 stays flat with a converged 2-layer model, D9 is real and belongs to ray-conditioning itself.",
+      "main_falsification_condition": "A cheaper cross layer that converges at 2 layers still leaves d1 near 0.565 -> the deficit is the mechanism's, not the budget's.",
+      "minimal_falsifiable_test": "bench (a) and (b) for s/epoch first, zero GPU cost beyond a two-minute benchmark; run only the variant that reaches ~25 epochs at 2 layers.",
+      "budget_risk": "none for the bench.",
+      "evidence_required": "a CONVERGED 2-layer RayDPT (best epoch not last), then read d1.",
+      "next_action": "bench the two cost levers, then run the one that converges. This is the experiment that finally makes D9 answerable."
     }
   ],
   "discrepancies": [
@@ -280,7 +297,83 @@
       "observation": "With BOTH models converged, RayDPT (E9, 1.9308) trails batvision (E3, 1.8567) by 0.0741 -- and 0.0691 of that gap is d1 alone (0.5631 vs 0.5949). RMSE is essentially tied (1.3195 vs 1.3088, contributing 0.0067).",
       "why_it_matters": "d1 is the ANGULAR metric: S0 established that the interaural cues (ILD, IPD), which encode azimuth, buy d1 while log1p compression buys rmse. So the ray-conditioned model -- whose entire premise is that depth should be decoded per ray DIRECTION -- is worse at direction than a plain encoder-decoder with a 1x2 bottleneck, while matching it on range. The mechanism is losing exactly where it claims to win.",
       "diagnostic_value": "This is the central question of the project, and it is now sharp and measurable. Competing explanations, none yet tested: (a) capacity -- E9 has 5.00M params against batvision's 54.41M; (b) the decode cut -- E9 decodes at 32x64 and upsamples 8x, though I2's oracle says the 32x64 ceiling (d1 0.9578) is nowhere near the achieved 0.5631, so the ceiling is not binding; (c) the cross-attention cut to one layer; (d) ray-conditioning genuinely does not help angular assignment on this task.",
-      "next_action": "E10 restores ray_cross_layers=2 at decode 32 (fits the budget at 16.6 epochs/h). If d1 recovers materially, the cut was load-bearing and (c) explains it. If not, (a)/(b)/(d) remain, and a capacity-matched comparison is the next honest step."
+      "next_action": "E10 restores ray_cross_layers=2 at decode 32 (fits the budget at 16.6 epochs/h). If d1 recovers materially, the cut was load-bearing and (c) explains it. If not, (a)/(b)/(d) remain, and a capacity-matched comparison is the next honest step.",
+      "e10_result": "E10 (ray_cross_layers restored to 2 at decode 32) moved d1 by only +0.0034 -- 12% of the 0.0284 remaining gap to batvision, below the noise floor. BUT E10 did NOT converge: 15 epochs at 232.3 s/epoch, best checkpoint = LAST epoch. Its d1 is a lower bound on a still-learning model, so S4's question is NOT answered: we cannot say the cross-layer cut was free.",
+      "what_e10_did_show": "With 2 layers, 15 unconverged epochs already beat 21 converged epochs at 1 layer (composite 1.9192 vs 1.9308, above sigma). Capacity helps per epoch; the budget takes it back."
+    },
+    {
+      "id": "D10",
+      "status": "resolved",
+      "kind": "methodological",
+      "observation": "Small-sample diagnostics REVERSE their sign. On 60 val samples RayDPT E9's d1 (0.5689) beat batvision's (0.5661); on the full 3543 it is 0.5632 vs 0.5949. The azimuthal spectrum does the same: at N=32 RayDPT holds MORE k=7..32 power than batvision (0.0159 vs 0.0152); at N=3543 it holds LESS (0.0152 vs 0.0214).",
+      "why_it_matters": "Every spectral diagnostic in this phase (I5's staircase test, I6's refutation, I11's bottleneck test, D4, D8) was computed on 16-24 samples. The conclusions were reported with more confidence than the instrument could support.",
+      "resolution": "Re-checked on the FULL val set under the eval_lock. Integrity first: raw metrics reproduce the training logs exactly (batvision 1.3088/0.5949, RayDPT 1.3195/0.5632). Then: I11's direction HOLDS (batvision 0.0214 vs RayDPT 0.0152 in k=7..32, so the model without the waist really is smoother). D8's direction HOLDS (E2 0.0262 vs E6 0.0219, -16.4% rather than the -29.7% claimed). I6's refutation never depended on the spectrum -- its decisive evidence was a composite delta of +0.0046 from full-val training runs. So no conclusion is overturned, but three were stated with unearned precision.",
+      "policy_change": "All diagnostics now run on the FULL val set, on GPU, under the eval_lock. Never conclude from a subset without first checking that the subset reproduces a known full-set number.",
+      "next_action": "none; policy recorded in program.md."
+    }
+  ],
+  "divergence_checkpoints": [
+    {
+      "id": "DC1",
+      "date": "2026-07-10",
+      "after_studies": [
+        "S0",
+        "S1",
+        "S2",
+        "S3",
+        "S4"
+      ],
+      "evidence_summary": "The reference is anchored (E3, 1.8567; cues buy angle, log buys range, additive). RayDPT converged only after a capacity cut (E9, 1.9308) and still trails by 0.0741, of which 0.0691 is d1 -- the ANGULAR metric, where ray-conditioning claims to win (D9). The low-pass character of every model survives a 58% change to the objective (I6 refuted), a 6.2x change in temporal resolution (I1's mechanism refuted), and removal of the network's information waist (I11 refuted). Decoder output resolution is not binding (I2 refuted). The staircase in _features explains half of one RMSE gain and no composite gain (I10 partial).",
+      "unexplained": [
+        "D6: 4x oversampling a band-limited envelope improves the composite by 0.0132 for reasons neither information nor interpolation explains.",
+        "D7: the two temporal-resolution arms improved through OPPOSITE metrics, inverting the physical story.",
+        "D8: E6 has 29.7% LESS high-frequency power than E2 yet a BETTER d1 -- sharpness is not what d1 rewards.",
+        "D9: the ray-conditioned model loses to a plain U-Net almost entirely on ANGLE while tying on RANGE."
+      ],
+      "competing_hypotheses": [
+        {
+          "h": "H1 ray-conditioning genuinely does not aid angular assignment on this task; per-ray queries add cost, not directional information.",
+          "family": "mechanism / ray conditioning",
+          "test": "a CONVERGED 2-layer RayDPT. If d1 stays ~0.566, H1 stands."
+        },
+        {
+          "h": "H2 the angular deficit is a budget artefact: no 2-layer RayDPT has ever converged, so d1 has never been read on a finished model.",
+          "family": "training budget",
+          "test": "E11 (kv=e4, 24.7 epochs, same 5.89M params as E10)."
+        },
+        {
+          "h": "H3 raw capacity: 5.00-5.89M against batvision's 54.41M. RayDPT may simply be too small.",
+          "family": "capacity",
+          "test": "widen dim/ngf to match parameter count at a cost that still converges."
+        },
+        {
+          "h": "H4 angular observability: two receivers under-determine fine azimuth, and BOTH models are already at that limit; batvision's d1 edge comes from something else (e.g. full-resolution decoding).",
+          "family": "sensing physics",
+          "test": "give batvision RayDPT's 32x64-decode handicap and see whether its d1 falls to ~0.566."
+        },
+        {
+          "h": "H5 the DPT skips: RayDPT adds encoder features to the ray grid by pixel index, equating (frequency,time) with (elevation,azimuth). A false correspondence would corrupt exactly the angular assignment. (I5 was parked because its predicted staircase signature was absent, but the axis mismatch was never tested.)",
+          "family": "encoder-decoder correspondence",
+          "test": "ablate se2/se3/se4 on a converged RayDPT; d1 should move if the false correspondence hurts."
+        },
+        {
+          "h": "H6 the ray queries are direction-only: RayBank encodes (x,y,z) + Fourier PE of the DIRECTION, but nothing about the two ears' geometry, so a query cannot ask 'what does a surface at THIS azimuth do to my ILD?'. use_mic_pe exists and is False.",
+          "family": "ray conditioning / query content",
+          "test": "enable use_mic_pe (adds +-y, the ear axis) on a converged model; cheap, one flag."
+        },
+        {
+          "h": "H7 evaluation: d1 is a +-25% threshold. batvision's advantage may be a better-calibrated GLOBAL depth scale rather than better angles. Check whether a single per-image affine rescale of RayDPT's prediction closes the d1 gap.",
+          "family": "metric / calibration",
+          "test": "zero GPU: fit one scale+shift per image on the val set and recompute d1."
+        }
+      ],
+      "chosen": [
+        "H7 first (zero GPU, decides whether the deficit is angular at all)",
+        "then H2/E11 (the only way to read d1 on a converged 2-layer model)",
+        "H6 kept as the cheapest mechanism-side follow-up"
+      ],
+      "rationale": "H7 costs nothing and could dissolve D9 entirely: if a per-image affine rescale closes the d1 gap, RayDPT's problem is a global depth SCALE, not angles, and every angular hypothesis (H1, H5, H6) is misdirected. Run it before spending an hour. H2 is the necessary control -- no 2-layer RayDPT has ever converged, so D9's central claim rests on models that were still learning.",
+      "H7_result": "REFUTED on the full val set. An ORACLE per-image scale (median GT/pred ratio) closes only 0.0037 of the 0.0318 d1 gap (0.0318 -> 0.0281). A per-image affine closes 0.0127 but degrades d1 for BOTH models (batvision 0.5949 -> 0.5382), so it is not a fair correction. A global depth-scale miscalibration does not explain D9: the deficit is genuinely angular. D9 survives its cheapest possible dissolution."
     }
   ]
 }

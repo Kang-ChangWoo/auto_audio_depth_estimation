@@ -49,6 +49,10 @@ dominate because they are not directly optimised and so are trustworthy; ABS_REL
 → gameable → discounted. Noise σ ≈ 0.008 (up to ~0.019 on small samples). **Never crown a sub-0.015
 candidate on fewer than 3 confirming draws.**
 
+**Diagnostics run on the FULL val set**, on GPU, under the eval_lock. Small-sample diagnostics reverse
+their sign: on 60 samples RayDPT's d1 beat batvision's; on all 3543 it trails by 0.032 (see D10). Before
+trusting any diagnostic, check that it reproduces a number you already know from a training log.
+
 Never conclude from the composite alone. After every run, ask which component moved and whether it is the
 one the hypothesis predicted: did RMSE improve, or only `d1`? Did a gain in one metric hide a regression in
 another? **Distinguish `score improvement` from `mechanism support` from `scientific contribution`** — they

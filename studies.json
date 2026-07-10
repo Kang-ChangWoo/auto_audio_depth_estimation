@@ -4,7 +4,7 @@
   "reset_note": "Fresh from original baseline f677b0f + mask-weighted coarse/low loss targets + composite abs_rel weight 0.75->0.35 + PLANAR (cubemap) depth target.",
   "depth_convention": "planar (cubemap perpendicular-Z); stored erp_depth used as-is; radial_factor removed",
   "metric": "composite (selection) = rmse/1.6 + (1-d1)/0.46 + 0.35*abs_rel  (lower better; RMSE+d1 dominate; abs_rel de-weighted)",
-  "next_exp_id": "E11",
+  "next_exp_id": "E12",
   "global_champion": null,
   "concluded_studies": [
     {
@@ -143,26 +143,66 @@
         "21 epochs, not the 24.4 the throughput bench predicted: the bench timed train steps only, and validation costs ~14 s/epoch. Benchmarks that omit validation overstate epochs-fit.",
         "Still 0.0741 behind batvision, and 0.0691 of the gap is d1. RMSE is tied. See D9."
       ]
+    },
+    {
+      "study_id": "S4",
+      "lineage": "raydpt-capacity",
+      "parent": "E9 (raydpt_e9_d32L1_b64)",
+      "type": "refine",
+      "status": "concluded",
+      "general_hypothesis": "E9 is a COMPOUND change, so its deficit against the reference cannot be attributed. Before asking whether ray-conditioning helps, we must know which part of the capacity we removed was load-bearing -- otherwise we would be judging a mechanism by an amputation we chose ourselves.",
+      "detailed_hypothesis": "E9 cut both the decode scale (64->32) and the cross-attention depth (2->1 layers per ray scale). The audio<->ray cross-attention is where per-ray direction information enters the model, so halving it is the change most likely to have cost the d1 (angular) deficit seen in D9. Restoring ray_cross_layers=2 at decode 32 still fits the budget (measured 216.5 s/epoch = 16.6 epochs/h).",
+      "experiment_note": "E10 raydpt_e10_d32L2_b64: --decode-scale 32 --ray-cross-layers 2 --batch-size 64 --lr 1.2e-3 --amp bf16 --epochs 16.",
+      "hpo_stage": "structural-screen",
+      "hpo_runs_used": 0,
+      "runs": [
+        {
+          "exp_id": "E10",
+          "name": "raydpt_e10_d32L2_b64",
+          "abs_rel": 0.4187,
+          "rmse": 1.3284,
+          "d1": 0.5665,
+          "composite": 1.9192,
+          "best_epoch": 15,
+          "epochs_ran": 15,
+          "sec_per_epoch": 232.3,
+          "vram_gb": 28.2,
+          "params_m": 5.89,
+          "status": "keep"
+        }
+      ],
+      "decision_rule": "Judge on d1 first, not the composite: D9 says the gap is angular. If d1 recovers materially toward 0.5949, the cross-layer cut was load-bearing. If d1 does not move, the cut was free and the deficit lies in the decode scale, in raw capacity, or in ray-conditioning itself. Report epochs_ran; fewer epochs fit at 2 layers, which is itself a confound (D2/D5).",
+      "conclusion": "INCONCLUSIVE (E10 did not converge; the question stands)",
+      "observations": [
+        "d1 moved only +0.0034 (12% of the gap to batvision, below sigma), but E10's best checkpoint is the LAST epoch -- it never converged, so its d1 is a lower bound and S4's question is unanswered.",
+        "E10's 15 UNCONVERGED epochs at 2 layers beat E9's 21 CONVERGED epochs at 1 layer (1.9192 vs 1.9308, above sigma). Capacity helps per epoch; the wall-clock budget takes it back.",
+        "The real finding is the trade-off: decode64 L2 -> 5 ep (no converge); decode32 L2 -> 15 ep (no converge); decode32 L1 -> 21 ep (converged, weaker). All lose to a 54.4M U-Net that converges in 25. RayDPT's binding constraint is the COST of a ray cross-attention layer, not the number of them."
+      ]
     }
   ],
   "mode": "verify",
-  "mode_reason": "E9 established convergence but is a compound change. Before any claim about ray-conditioning, ablate the amputation: restore the cross-attention depth and see whether the d1 deficit (D9) is ours or the mechanism's.",
-  "studies_since_synthesize": 3,
+  "mode_reason": "DC1 chose H7 (zero GPU) then H2. H7 is refuted -- the deficit is angular, not a scale error. H2 now needs the first converged 2-layer RayDPT.",
+  "studies_since_synthesize": 4,
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",
   "active_study": {
-    "study_id": "S4",
+    "study_id": "S5",
     "lineage": "raydpt-capacity",
-    "parent": "E9 (raydpt_e9_d32L1_b64)",
-    "type": "refine",
+    "parent": "E9",
+    "type": "verify",
     "status": "running",
-    "general_hypothesis": "E9 is a COMPOUND change, so its deficit against the reference cannot be attributed. Before asking whether ray-conditioning helps, we must know which part of the capacity we removed was load-bearing -- otherwise we would be judging a mechanism by an amputation we chose ourselves.",
-    "detailed_hypothesis": "E9 cut both the decode scale (64->32) and the cross-attention depth (2->1 layers per ray scale). The audio<->ray cross-attention is where per-ray direction information enters the model, so halving it is the change most likely to have cost the d1 (angular) deficit seen in D9. Restoring ray_cross_layers=2 at decode 32 still fits the budget (measured 216.5 s/epoch = 16.6 epochs/h).",
-    "experiment_note": "E10 raydpt_e10_d32L2_b64: --decode-scale 32 --ray-cross-layers 2 --batch-size 64 --lr 1.2e-3 --amp bf16 --epochs 16.",
+    "general_hypothesis": "D9 claims RayDPT's entire deficit against the reference is ANGULAR (d1), which would indict ray-conditioning at exactly the point it claims to win. But that claim rests on models that never finished learning: no 2-layer RayDPT has ever converged inside the budget. Before indicting the mechanism, read d1 on a converged 2-layer model.",
+    "detailed_hypothesis": "Benchmarking showed the cost of a cross layer is not its FFN (ffn 4->2 saves 2 s/epoch) but its KV set: cr32 attends 2048 e3 tokens. Shrinking that KV to e4's 512 coarse tokens is 4x cheaper at IDENTICAL parameter count (5.89M), giving a measured 145.8 s/epoch = 24.7 epochs. If d1 then recovers toward batvision's 0.5949, D9 was a budget artefact (H2). If d1 stays near 0.566 on a CONVERGED 2-layer model, the angular deficit belongs to ray-conditioning itself (H1).",
+    "experiment_note": "E11 raydpt_e11_d32L2_kve4: --decode-scale 32 --ray-cross-layers 2 --cross-kv32 e4 --batch-size 64 --lr 1.2e-3 --amp bf16 --epochs 24.",
     "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
     "runs": [],
-    "decision_rule": "Judge on d1 first, not the composite: D9 says the gap is angular. If d1 recovers materially toward 0.5949, the cross-layer cut was load-bearing. If d1 does not move, the cut was free and the deficit lies in the decode scale, in raw capacity, or in ray-conditioning itself. Report epochs_ran; fewer epochs fit at 2 layers, which is itself a confound (D2/D5)."
+    "decision_rule": "Convergence first: best_epoch must not be the last, or the run answers nothing (as E10 did). Then read d1, NOT the composite -- D9 is an angular claim. Caveat to honour: kv=e4 is a mechanism change, so if d1 recovers, credit is shared between '2 layers' and 'coarse KV' and must be ablated before any claim.",
+    "confounds": [
+      "kv=e4 changes which audio tokens the 32-scale rays attend to (2048 fine -> 512 coarse). Not a free speedup.",
+      "H7 was refuted on the full val set: an oracle per-image scale closes only 12% of the d1 gap, so the deficit is genuinely angular.",
+      "D10: all diagnostics must now use the full val set; small samples reversed the sign of both d1 and the spectrum."
+    ]
   },
   "backlog": [
     {
