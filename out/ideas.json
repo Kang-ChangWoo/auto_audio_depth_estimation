@@ -501,7 +501,7 @@
     },
     {
       "id": "I27",
-      "status": "backlog",
+      "status": "inconclusive",
       "priority": "high",
       "origin": "I25's correct implementation -- put the loss, not the output, in log space",
       "target_bottleneck": "near-field median-pull: the loss must optimise the geometric median, which requires the LOSS in log space, not the output",
@@ -514,7 +514,10 @@
       "distinct_from_I13": "I13 ran log_mae on the FAST parent judged on FAR deciles (range mis-diagnosis, converged, failed there). I27 runs it on the CHAMPION judged on the NEAR-field interior (correct median-pull diagnosis). Different parent, different locus, different hypothesis.",
       "budget_risk": "none.",
       "evidence_required": "near-field ratio histogram shift.",
-      "next_action": "run --main-loss log_mae on the champion; control E23."
+      "next_action": "Either a Huber-log loss (centre without loosening the tail), or accept that the near-field pull is a small, partially-loss-shaped effect and the champion is near a metric-shaped ceiling. Decide at a synthesize checkpoint.",
+      "result": "HALF-CONFIRMED, and instructive. log_mae LOSS on the champion moved the 1-2m ratio histogram exactly as predicted: the pile at 0.9-1.0 fell 32.1%->29.1% and the centre 1.0-1.11 rose 29.2%->32.1% (+2.9%, toward batvision's 40.4%). So the median-pull mechanism is REAL and log-space loss IS its lever -- the diagnosis and the direction both hold. BUT 1-2m interior d1 fell -0.0034, because the same loss thickened the OVER-prediction tail (>1.25: 15.0%->16.2%). Centring the bulk cost accuracy in the tail; the two cancel at the threshold.",
+      "interpretation": "log_mae penalises equal ratio errors equally, so relative to MAE it relaxes the penalty on large LINEAR errors -- which at 1-2m are the over-predictions. It fixes the systematic under-pull but loosens the tail. The net on a +-25% threshold is a wash. A pure geometric-median loss is not enough; the near-field needs the centre AND the tail, which points at a HUBER-like log loss (quadratic near ratio 1, linear in the tail) or a small d1-surrogate term, not a plain log_mae.",
+      "scope_of_negative_evidence": "Refutes plain log_mae as a near-field d1 cure on the champion. Confirms median-pull is real and log-space is the right axis. The refined form (bounded/Huber log loss) is untested."
     }
   ],
   "discrepancies": [

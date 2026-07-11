@@ -4,7 +4,7 @@
   "reset_note": "Fresh from original baseline f677b0f + mask-weighted coarse/low loss targets + composite abs_rel weight 0.75->0.35 + PLANAR (cubemap) depth target.",
   "depth_convention": "planar (cubemap perpendicular-Z); stored erp_depth used as-is; radial_factor removed",
   "metric": "composite (selection) = rmse/1.6 + (1-d1)/0.46 + 0.35*abs_rel  (lower better; RMSE+d1 dominate; abs_rel de-weighted)",
-  "next_exp_id": "E34",
+  "next_exp_id": "E35",
   "global_champion": null,
   "concluded_studies": [
     {
@@ -397,10 +397,43 @@
         "Five echo-delay runs converge: first dose helps, all further time-resolution increases saturate or hurt. Far field is sensor-limited (I7).",
         "The time-resolution research line is CLOSED. The far-field lever moves to the representation or is a scoped ceiling."
       ]
+    },
+    {
+      "study_id": "H0",
+      "lineage": "depth-objective",
+      "parent": "E23 (champion)",
+      "type": "new",
+      "status": "concluded",
+      "general_hypothesis": "The champion's residual gap is near-field median-pull compression (I24): masked-MAE on linear depth converges to the arithmetic median, below the geometric median that d1's ratio threshold rewards, so flat walls land just under. Regressing log-depth moves the optimum to the geometric median.",
+      "detailed_hypothesis": "D = exp-map of sigmoid(head) instead of sigmoid(head). Re-parameterisation only. E32 log-out alone; E33 log-out + EchoDelayVolume (near + far cures, non-overlapping).",
+      "experiment_note": "E32 --depth-out log; E33 --depth-out log --depth-volume True. Champion arch, control E23 (1.8962).",
+      "hpo_stage": "structural-screen",
+      "hpo_runs_used": 0,
+      "runs": [
+        {
+          "exp_id": "E32",
+          "note": "log-OUTPUT: histogram unchanged, wrong implementation"
+        },
+        {
+          "exp_id": "E33",
+          "note": "log-out + EDE: worse, combine has no cure to contribute"
+        },
+        {
+          "exp_id": "E34",
+          "note": "log_mae LOSS: histogram centred (+2.9% at 1.0-1.11) but d1 -0.0034, over-prediction tail thickened"
+        }
+      ],
+      "decision_rule": "Judge on 1-2m INTERIOR d1 (the diagnosed locus) FIRST, then overall d1. ABS_REL is not evidence. Distinct from I13: that re-weighted the loss on a range mis-diagnosis; this re-parameterises the output on a metric diagnosis.",
+      "conclusion": "FAIL on d1, but median-pull mechanism confirmed (histogram shifted; tail cancelled the gain)",
+      "observations": [
+        "The near-field median-pull is REAL and log-space loss is its correct lever -- E34 shifted the ratio histogram toward centre exactly as diagnosed.",
+        "But plain log_mae relaxes the tail (>1.25: +1.2%) while centring the bulk, and the two cancel at the +-25% threshold. d1 net -0.0034.",
+        "The near-field gap is a small, partially-loss-shaped effect. A Huber-log loss (centre + bounded tail) is the untested refinement; else the champion is near a metric-shaped ceiling."
+      ]
     }
   ],
-  "mode": "exploit",
-  "mode_reason": "I24 diagnosed the champion's deficit as near-field median-pull, a metric-shaped effect. log-depth output re-parameterises the model so its optimum is the geometric median (ratio 1), matching d1. This is the fix the diagnosis directly implies.",
+  "mode": "synthesize",
+  "mode_reason": "Three objective-line runs (E32/E33/E34) converge: median-pull is real and log-space is its axis, but plain log_mae trades centre for tail and nets zero on d1. Before a Huber-log refinement, a synthesize checkpoint should weigh it against the accumulated evidence that both the far field (sensor-limited) and now the near field (metric-shaped, small) may be near ceilings -- and whether the honest result is that RayDPT at 5.89M essentially matches a 54M U-Net.",
   "studies_since_synthesize": 0,
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",
@@ -409,14 +442,33 @@
     "lineage": "depth-objective",
     "parent": "E23 (champion)",
     "type": "new",
-    "status": "running",
+    "status": "concluded",
     "general_hypothesis": "The champion's residual gap is near-field median-pull compression (I24): masked-MAE on linear depth converges to the arithmetic median, below the geometric median that d1's ratio threshold rewards, so flat walls land just under. Regressing log-depth moves the optimum to the geometric median.",
     "detailed_hypothesis": "D = exp-map of sigmoid(head) instead of sigmoid(head). Re-parameterisation only. E32 log-out alone; E33 log-out + EchoDelayVolume (near + far cures, non-overlapping).",
     "experiment_note": "E32 --depth-out log; E33 --depth-out log --depth-volume True. Champion arch, control E23 (1.8962).",
     "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
-    "runs": [],
-    "decision_rule": "Judge on 1-2m INTERIOR d1 (the diagnosed locus) FIRST, then overall d1. ABS_REL is not evidence. Distinct from I13: that re-weighted the loss on a range mis-diagnosis; this re-parameterises the output on a metric diagnosis."
+    "runs": [
+      {
+        "exp_id": "E32",
+        "note": "log-OUTPUT: histogram unchanged, wrong implementation"
+      },
+      {
+        "exp_id": "E33",
+        "note": "log-out + EDE: worse, combine has no cure to contribute"
+      },
+      {
+        "exp_id": "E34",
+        "note": "log_mae LOSS: histogram centred (+2.9% at 1.0-1.11) but d1 -0.0034, over-prediction tail thickened"
+      }
+    ],
+    "decision_rule": "Judge on 1-2m INTERIOR d1 (the diagnosed locus) FIRST, then overall d1. ABS_REL is not evidence. Distinct from I13: that re-weighted the loss on a range mis-diagnosis; this re-parameterises the output on a metric diagnosis.",
+    "conclusion": "FAIL on d1, but median-pull mechanism confirmed (histogram shifted; tail cancelled the gain)",
+    "observations": [
+      "The near-field median-pull is REAL and log-space loss is its correct lever -- E34 shifted the ratio histogram toward centre exactly as diagnosed.",
+      "But plain log_mae relaxes the tail (>1.25: +1.2%) while centring the bulk, and the two cancel at the +-25% threshold. d1 net -0.0034.",
+      "The near-field gap is a small, partially-loss-shaped effect. A Huber-log loss (centre + bounded tail) is the untested refinement; else the champion is near a metric-shaped ceiling."
+    ]
   },
   "backlog": [
     {

@@ -28,3 +28,4 @@ a7b0613	0.4203	1.3183	0.5733	15.2	keep	E24 EchoDelayVolume: per-ray soft-argmax 
 b066475	0.4350	1.3108	0.5725	25.2	keep	E31 EchoDelayVolume reads raw STFT (time 512, encoder time-pooling bypassed) (G2/I22)
 54678e3	0.4166	1.3346	0.5721	16.0	keep	E32 log-depth output (I25: cure near-field median-pull)
 54678e3	0.4197	1.3152	0.5722	17.3	keep	E33 log-depth output + EchoDelayVolume (I26 combine)
+61ef585	0.4210	1.3230	0.5750	16.0	keep	E34 log_mae LOSS on champion (I27: geometric-median objective for near-field)

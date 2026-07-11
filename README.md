@@ -7,13 +7,13 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | | |
 |---|---|
-| **Mode** | `EXPLOIT` — adaptive HPO ladder 3 -> 5 -> 7 -> 10, each step justified by evidence -> PASS / FAIL |
-| **Active study** | `H0` [new] depth-objective (*running*) |
+| **Mode** | `SYNTHESIZE` — no runs; review evidence, find contradictions, pick the highest-information next question |
+| **Active study** | `H0` [new] depth-objective (*concluded*) |
 | **Research question** | The champion's residual gap is near-field median-pull compression (I24): masked-MAE on linear depth converges to the arithmetic median, below the geometric median that d1's ratio threshold rewards, so |
 | **Current action** | E32 --depth-out log; E33 --depth-out log --depth-volume True. Champion arch, control E23 (1.8962). |
-| **Latest result** | *(no scored run in this study yet)* |
+| **Latest result** | `E34` : composite **None** (rmse None, d1 None, abs_rel None), best epoch None/None |
 | **Next decision** | Judge on 1-2m INTERIOR d1 (the diagnosed locus) FIRST, then overall d1. ABS_REL is not evidence. Distinct from I13: that re-weighted the loss on a range mis-diagnosis; this re-parameterises the output |
-| **Why this mode** | I24 diagnosed the champion's deficit as near-field median-pull, a metric-shaped effect. log-depth output re-parameterises the model so its optimum is the geometric median (ratio 1), matching d1. This  |
+| **Why this mode** | Three objective-line runs (E32/E33/E34) converge: median-pull is real and log-space is its axis, but plain log_mae trades centre for tail and nets zero on d1. Before a Huber-log refinement, a synthesi |
 
 ### Current hypothesis
 
@@ -33,7 +33,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I14` | ray conditioning / audio token routing | mid | far-field rays cannot see the late, weak echo that carries distance | probing | E16 (control) then E15b (treatment), both at lr 6e-4. Pre-registered falsification unchang |
 | `I19` | ray conditioning / physically-structured decoding | far | the model must LEARN that echo delay encodes depth, and it fails to, collapsing far surfaces toward the median | inconclusive | Do NOT crown. Test the ONE compatible combination the scope predicts: EchoDelayVolume + fi |
 | `I24` | reframing / where-the-gain-is | n/a (redirection) | the 1-2 m near field, which is 52.5% of pixels and over half the total d1 gap to batvision | candidate | A near-field compression cure that is NOT time-resolution: candidates are (a) a small per- |
-| `I27` | depth objective | mid | near-field median-pull: the loss must optimise the geometric median, which requires the LOSS in log space, not the output | backlog | run --main-loss log_mae on the champion; control E23. |
+| `I27` | depth objective | mid | near-field median-pull: the loss must optimise the geometric median, which requires the LOSS in log space, not the output | inconclusive | Either a Huber-log loss (centre without loosening the tail), or accept that the near-field |
 
 ### Open discrepancies
 
@@ -50,6 +50,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-12T04:46 | `synthesize` | experiment_completed | log_mae LOSS on champion: HALF-confirmed. The 1-2m ratio histogram moved exactly as predicted (0.9-1.0 pile 32.1->29.1%, centre 1. |
 | 2026-07-12T03:44 | `exploit` | candidate_dropped | FAILED pre-registered near-field test: 1-2m interior d1 unmoved (0.7523->0.7521), ratio histogram unchanged. Re-parameterising the |
 | 2026-07-12T02:53 | `exploit` | experiment_completed | log-depth output: composite 1.9102 vs E23 1.8962 (+0.0140 worse), overall d1 -0.0044, converged. NOT the test -- the pre-registere |
 | 2026-07-12T01:42 | `exploit` | idea_added | log-depth output cures near-field median-pull. d1 is a +-25% ratio threshold; masked-MAE on linear depth converges to the arithmet |
@@ -57,7 +58,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | 2026-07-12T01:27 | `synthesize` | direction_changed | Representation lever OPENED per request and REFUTED at zero GPU: coherence correlates +0.17 (wrong sign) and late-tail waveform en |
 | 2026-07-11T21:36 | `synthesize` | experiment_completed | DECISIVE FAIL. Bypassing encoder time pooling (raw STFT, 512 time cols, freq matched to e3) still regressed the far deciles ~0.04  |
 | 2026-07-11T20:31 | `exploit` | experiment_completed | First attempt OOMed (raw logits 9GB at batch64; CPU smoke at batch2 hid it -- lesson: smoke at the real batch). Fixed with freq_st |
-| 2026-07-11T20:29 | `exploit` | idea_added | D13's decider. EchoDelayVolume reading the STFT spec DIRECTLY (512 time columns, 2cm spacing, encoder pooling bypassed). If the fa |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->
@@ -120,6 +120,7 @@ running best highlighted):
 | 27 | `b066475` | 0.4350 | 1.3108 | 0.5725 | 1.9008 | keep | E31 EchoDelayVolume reads raw STFT (time 512, encoder time-pooling bypassed) (G2/I22) |
 | 28 | `54678e3` | 0.4166 | 1.3346 | 0.5721 | 1.9102 | keep | E32 log-depth output (I25: cure near-field median-pull) |
 | 29 | `54678e3` | 0.4197 | 1.3152 | 0.5722 | 1.8989 | keep | E33 log-depth output + EchoDelayVolume (I26 combine) |
+| 30 | `61ef585` | 0.4210 | 1.3230 | 0.5750 | 1.8981 | keep | E34 log_mae LOSS on champion (I27: geometric-median objective for near-field) |
 <!-- RESULTS:END -->
 
 ## Progression (composite, lower = better)
