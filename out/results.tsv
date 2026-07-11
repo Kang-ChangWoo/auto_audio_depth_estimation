@@ -25,3 +25,4 @@ a7b0613	0.4203	1.3183	0.5733	15.2	keep	E24 EchoDelayVolume: per-ray soft-argmax 
 9a26c0c	0.4301	1.3382	0.5675	17.3	keep	E27 CHAMPION + EchoDelayVolume, epochs matched to budget (G1b/I19)
 00bdb13	0.4128	1.3228	0.5725	17.4	keep	E29 EchoDelayVolume on e2 (time 128, 2x delay resolution) fast parent (G1/I20)
 00bdb13	0.4528	1.3372	0.5600	27.9	keep	E30 EchoDelayVolume + cross_kv32=e3 (combine, fast parent) (G1/I21)
+b066475	0.4350	1.3108	0.5725	25.2	keep	E31 EchoDelayVolume reads raw STFT (time 512, encoder time-pooling bypassed) (G2/I22)

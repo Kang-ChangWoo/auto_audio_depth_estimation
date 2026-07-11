@@ -120,7 +120,8 @@
       "evidence_required": "survives if and only if I6's ablation fails to restore high-frequency content.",
       "next_action": "Do not chase high-frequency power as a goal. Re-test the observability claim once RayDPT converges (E7), using I11's contrast.",
       "support": "Survives by elimination, per the pre-registered rule. The low-pass character is ROBUST to (a) a 58% change in the objective (I6: high-freq 10.8% -> 12.3% of GT) and (b) a 6.2x change in temporal resolution (E6). Two very different interventions upstream and downstream both fail to restore fine azimuthal structure, which is what an observability limit looks like. FURTHER: I11 refuted the bottleneck explanation. Low-pass behaviour now survives (a) a 58% change to the objective, (b) a 6.2x change in temporal resolution, and (c) removing the network's information waist entirely. Three independent interventions, upstream and downstream, none of which restores fine azimuthal structure.",
-      "caveat_strong_form": "The STRONG form -- 'high azimuthal frequencies are unobservable, so recovering them is the goal' -- is itself now suspect, because E6 has 29.7% LESS high-frequency power than E2 yet a BETTER d1 (0.6005 vs 0.5938). Sharpness and d1 are not the same thing: d1 rewards each pixel landing within +-25% of truth, which a well-centred smooth field can do better than a wrongly-placed sharp one. So 'restore high frequencies' may be the wrong objective entirely."
+      "caveat_strong_form": "The STRONG form -- 'high azimuthal frequencies are unobservable, so recovering them is the goal' -- is itself now suspect, because E6 has 29.7% LESS high-frequency power than E2 yet a BETTER d1 (0.6005 vs 0.5938). Sharpness and d1 are not the same thing: d1 rewards each pixel landing within +-25% of truth, which a well-centred smooth field can do better than a wrongly-placed sharp one. So 'restore high frequencies' may be the wrong objective entirely.",
+      "strengthened_by": " DECISIVE: D13 resolved sensor-limited. FIVE echo-delay-time-resolution runs (E24/E27/E29/E30/E31) saturate past the first dose, and E31 bypassing the encoder entirely still regressed the far field. Time resolution is exhausted as a far-field lever; what remains is angular/range observability with two mics, which is exactly I7."
     },
     {
       "id": "I8",
@@ -410,7 +411,7 @@
     },
     {
       "id": "I22",
-      "status": "probing",
+      "status": "dropped",
       "priority": "high",
       "origin": "D13 -- the decoder-side far-field lever saturated; move the question upstream",
       "target_bottleneck": "the ENCODER pools the STFT's 512 time columns down to e3's 64 (8x) before EchoDelayVolume ever reads them",
@@ -424,7 +425,9 @@
       "evidence_required": "far-decile improvement over E24, on the fast parent.",
       "next_action": "E31 running. This run DECIDES between encoder-limited and sensor-limited far field.",
       "implementation_note": "First E31 OOMed: raw's (B,N=512,F=256,T=512) logits are 9GB at batch 64 (the CPU smoke at batch 2 hid it). Fixed with freq_stride=8 in EchoDelayVolume's input conv, pooling F 256->32 -- the SAME frequency size as e3, so the run now isolates purely the TIME axis (512 vs e3's 64). Frequency is only ever reduced by the volume's own attention softmax, so pre-pooling it loses nothing. Logits now 1.1GB; peak 25GB at batch 64, verified with a batch-64 GPU smoke (the CPU smoke that missed the OOM is why).",
-      "cleaner_than_planned": "This is a BETTER test than intended: raw now differs from e3 ONLY in time resolution (512 vs 64), not frequency. A pure encoder-time-pooling probe."
+      "cleaner_than_planned": "This is a BETTER test than intended: raw now differs from e3 ONLY in time resolution (512 vs 64), not frequency. A pure encoder-time-pooling probe.",
+      "why_dropped": "PRE-REGISTERED FALSIFICATION FAILED, decisively. Bypassing the encoder's 8x time pooling entirely -- EchoDelayVolume reading the STFT's 512 time columns at 2cm spacing, frequency matched to e3 so ONLY time differs -- made the far deciles WORSE, not better: 7-8m -0.0489, 8-9m -0.0412, 9-10m -0.0421 vs E24. Mean predicted depth at GT 8-9m FELL from 5.238m to 5.092m. The encoder's time pooling was NOT the bottleneck.",
+      "closes_the_line": "This is the decider D13 asked for, and it settles branch B. Across FIVE runs -- E24 (bare, helps), E27 (dense), E29 (finer bins), E30 (fine tokens), E31 (raw, encoder bypassed) -- the first dose of echo-delay time structure helps and every subsequent increase in time resolution, by any path, does nothing or hurts. Far-field d1 is NOT limited by time resolution anywhere in the pipeline. The remaining candidate is the SENSOR: two microphones under-determine range/angle for far, faint echoes (I7)."
     }
   ],
   "discrepancies": [
@@ -547,11 +550,13 @@
     },
     {
       "id": "D13",
-      "status": "open",
+      "status": "resolved",
       "observation": "THREE ways of adding far-field time resolution to a model that already has EchoDelayVolume all FAILED to improve the far deciles: finer volume bins (E29 e2), fine-token routing (E30 kv=e3), and the champion's dense capacity (E27). Yet EchoDelayVolume itself, added to a bare model, DID improve them (E24).",
       "why_it_matters": "It is the signature of a SATURATING resource. The first dose of far-field time-resolution structure helps (E24: +0.06-0.08); every additional dose, by any path, does nothing or hurts. So RayDPT's far-field d1 is now limited by something OTHER than how much echo-timing structure the decoder has. The remaining suspects have not been touched: angular observability with two mics (I7), or the ENCODER discarding time before the volume ever reads it -- e3 is the STFT's 512 columns pooled 8x by the encoder, and no amount of downstream structure recovers what the encoder averaged away.",
       "diagnostic_value": "Redirects the far-field question from the DECODER (exhausted: E24/E27/E29/E30) to the ENCODER and the REPRESENTATION. If the encoder's pooling is the limit, a volume read from a LESS-pooled feature -- or the raw STFT -- should help where e2 did not. If even that saturates, the limit is the sensor (I7).",
-      "next_action": "Test whether the ENCODER is the bottleneck: EchoDelayVolume reading a minimally-pooled time axis (e2 was only 2x; try the STFT's own time resolution). If that also saturates, the far field is sensor-limited and the lever moves to the representation (multi-window STFT) or is a genuine ceiling."
+      "next_action": "Test whether the ENCODER is the bottleneck: EchoDelayVolume reading a minimally-pooled time axis (e2 was only 2x; try the STFT's own time resolution). If that also saturates, the far field is sensor-limited and the lever moves to the representation (multi-window STFT) or is a genuine ceiling.",
+      "resolution": "SENSOR-LIMITED, not encoder-limited. E31 removed ALL encoder time pooling (raw STFT, 512 time columns, frequency held at e3's size so time was the only variable) and the far deciles still regressed by ~0.04. Time resolution is not the far-field bottleneck at any stage: representation (STFT hop/window), encoder pooling, volume bins, and token routing were all tested and all saturate past the first dose. The far field is limited by what two microphones can OBSERVE about distant faint echoes (I7), not by how finely the pipeline resolves arrival time.",
+      "implication": "Every decoder- and encoder-side far-field lever is now exhausted. The lever, if one exists, is the REPRESENTATION (cues carrying more range information -- multi-resolution STFT, interaural coherence) or it is a scoped ceiling to be stated as such."
     }
   ],
   "divergence_checkpoints": [
