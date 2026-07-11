@@ -4,7 +4,7 @@
   "reset_note": "Fresh from original baseline f677b0f + mask-weighted coarse/low loss targets + composite abs_rel weight 0.75->0.35 + PLANAR (cubemap) depth target.",
   "depth_convention": "planar (cubemap perpendicular-Z); stored erp_depth used as-is; radial_factor removed",
   "metric": "composite (selection) = rmse/1.6 + (1-d1)/0.46 + 0.35*abs_rel  (lower better; RMSE+d1 dominate; abs_rel de-weighted)",
-  "next_exp_id": "E31",
+  "next_exp_id": "E32",
   "global_champion": null,
   "concluded_studies": [
     {
@@ -372,44 +372,24 @@
       ]
     }
   ],
-  "mode": "synthesize",
-  "mode_reason": "Four studies since DC2's opening (G0, G1) and both G1 arms failed the same test. The decoder-side far-field lever is exhausted (E24/E27/E29/E30 all agree). A divergence checkpoint must move the far-field question upstream, to the encoder or the representation.",
+  "mode": "exploit",
+  "mode_reason": "D13 named the exact next test -- read the STFT directly, bypassing encoder pooling -- so no divergence checkpoint is needed; the decisive experiment is already specified.",
   "studies_since_synthesize": 0,
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",
   "active_study": {
-    "study_id": "G1",
+    "study_id": "G2",
     "lineage": "echo-delay-volume",
-    "parent": "E24 (raydpt_e24_echodelay, fast parent)",
-    "type": "refine",
-    "status": "concluded",
-    "general_hypothesis": "The echo-delay cost volume is the project's one confirmed mechanism (pre-registered far-decile prediction held on the fast parent). Its through-line is time resolution: every far-field result -- E9/E12 fine tokens, E24 itself, batvision's full-res skips -- says the lever is resolving echo arrival time finely. So push the volume's own time resolution, and pair it with a second far-field path.",
-    "detailed_hypothesis": "E29 (I20): read e2 (time 128) for 2x delay resolution. E30 (I21): combine with fine-token routing (cross_kv32=e3). Both extend E24 on the fast parent, control E24 (1.8987), each differing in one variable.",
-    "experiment_note": "E29 --depth-volume-src e2; E30 --cross-kv32 e3. Both on win32=3 ffn=2 lr 3e-4.",
+    "parent": "E24 (fast parent)",
+    "type": "new",
+    "status": "running",
+    "general_hypothesis": "D13 showed decoder-side far-field time structure saturates at e3's 64 columns. The remaining question is binary: is the limit the ENCODER (which pooled 512->64 before the volume read it) or the SENSOR (two-mic observability, I7)?",
+    "detailed_hypothesis": "Read the STFT spec directly (512 time columns, 2 cm depth spacing, encoder bypassed). Improvement over E24 => encoder-limited. Saturation => sensor-limited, closing the time-resolution line.",
+    "experiment_note": "E31 raydpt_e31_ede_raw: --depth-volume-src raw on the fast parent.",
     "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
-    "runs": [
-      {
-        "exp_id": "E29",
-        "composite": 1.9006,
-        "far_delta": "-0.04 to -0.02",
-        "verdict": "FAIL"
-      },
-      {
-        "exp_id": "E30",
-        "composite": 1.9508,
-        "far_delta": "-0.04 to -0.02",
-        "verdict": "FAIL, budget-starved"
-      }
-    ],
-    "decision_rule": "Pre-registered, per idea I19's line: the 7-10m deciles must improve over E24, or drop. Judge on far deciles and d1; ABS_REL is not evidence. E30 additionally must not diverge (D11).",
-    "conclusion": "FAIL (both pre-registered far-decile tests failed); EchoDelayVolume saturates",
-    "observations": [
-      "Finer volume time bins (e2) did not improve the far field: the volume's 64 columns already out-resolve the achieved RMSE.",
-      "EchoDelayVolume + kv=e3 do not compose: same signal, different path -- redundant like E27's EDE+dense.",
-      "D13: far-field time-resolution structure in the DECODER has saturated. The limit is upstream (encoder pooling) or the sensor (I7).",
-      "Side gain: kv=e3 is stable at lr 3e-4, reopening a knob D11 had closed."
-    ]
+    "runs": [],
+    "decision_rule": "Pre-registered: the 7-10m deciles must improve over E24 (1.8987), or the entire time-resolution line closes and the far field is declared sensor-limited (a scoped ceiling, I7). Judge on far deciles and d1."
   },
   "backlog": [
     {

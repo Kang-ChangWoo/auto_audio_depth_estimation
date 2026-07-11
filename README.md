@@ -7,19 +7,19 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | | |
 |---|---|
-| **Mode** | `SYNTHESIZE` — no runs; review evidence, find contradictions, pick the highest-information next question |
-| **Active study** | `G1` [refine] echo-delay-volume (*concluded*) |
-| **Research question** | The echo-delay cost volume is the project's one confirmed mechanism (pre-registered far-decile prediction held on the fast parent). Its through-line is time resolution: every far-field result -- E9/E1 |
-| **Current action** | E29 --depth-volume-src e2; E30 --cross-kv32 e3. Both on win32=3 ffn=2 lr 3e-4. |
-| **Latest result** | `E30` : composite **1.9508** (rmse None, d1 None, abs_rel None), best epoch None/None |
-| **Next decision** | Pre-registered, per idea I19's line: the 7-10m deciles must improve over E24, or drop. Judge on far deciles and d1; ABS_REL is not evidence. E30 additionally must not diverge (D11). |
-| **Why this mode** | Four studies since DC2's opening (G0, G1) and both G1 arms failed the same test. The decoder-side far-field lever is exhausted (E24/E27/E29/E30 all agree). A divergence checkpoint must move the far-fi |
+| **Mode** | `EXPLOIT` — adaptive HPO ladder 3 -> 5 -> 7 -> 10, each step justified by evidence -> PASS / FAIL |
+| **Active study** | `G2` [new] echo-delay-volume (*running*) |
+| **Research question** | D13 showed decoder-side far-field time structure saturates at e3's 64 columns. The remaining question is binary: is the limit the ENCODER (which pooled 512->64 before the volume read it) or the SENSOR |
+| **Current action** | E31 raydpt_e31_ede_raw: --depth-volume-src raw on the fast parent. |
+| **Latest result** | *(no scored run in this study yet)* |
+| **Next decision** | Pre-registered: the 7-10m deciles must improve over E24 (1.8987), or the entire time-resolution line closes and the far field is declared sensor-limited (a scoped ceiling, I7). Judge on far deciles an |
+| **Why this mode** | D13 named the exact next test -- read the STFT directly, bypassing encoder pooling -- so no divergence checkpoint is needed; the decisive experiment is already specified. |
 
 ### Current hypothesis
 
-- **General** — The echo-delay cost volume is the project's one confirmed mechanism (pre-registered far-decile prediction held on the fast parent). Its through-line is time resolution: every far-field result -- E9/E12 fine tokens, E24 itself, batvision's full-res skips -- says the lever is resolving echo arrival time finely. So push the volume's own time resolution, and pair it with a second far-field path.
-- **Detailed** — E29 (I20): read e2 (time 128) for 2x delay resolution. E30 (I21): combine with fine-token routing (cross_kv32=e3). Both extend E24 on the fast parent, control E24 (1.8987), each differing in one variable.
-- **Implementation note** — E29 --depth-volume-src e2; E30 --cross-kv32 e3. Both on win32=3 ffn=2 lr 3e-4.
+- **General** — D13 showed decoder-side far-field time structure saturates at e3's 64 columns. The remaining question is binary: is the limit the ENCODER (which pooled 512->64 before the volume read it) or the SENSOR (two-mic observability, I7)?
+- **Detailed** — Read the STFT spec directly (512 time columns, 2 cm depth spacing, encoder bypassed). Improvement over E24 => encoder-limited. Saturation => sensor-limited, closing the time-resolution line.
+- **Implementation note** — E31 raydpt_e31_ede_raw: --depth-volume-src raw on the fast parent.
 
 ### Research portfolio
 
@@ -32,6 +32,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I10` | acoustic-representation / interpolation | mid | the nearest-neighbour resize in _features() turns the time axis into a coarse staircase | inconclusive | deferred confirm: run `--feat-interp bilinear --stft-hop 40` after the RayDPT throughput s |
 | `I14` | ray conditioning / audio token routing | mid | far-field rays cannot see the late, weak echo that carries distance | probing | E16 (control) then E15b (treatment), both at lr 6e-4. Pre-registered falsification unchang |
 | `I19` | ray conditioning / physically-structured decoding | far | the model must LEARN that echo delay encodes depth, and it fails to, collapsing far surfaces toward the median | inconclusive | Do NOT crown. Test the ONE compatible combination the scope predicts: EchoDelayVolume + fi |
+| `I22` | encoder / time preservation | mid | the ENCODER pools the STFT's 512 time columns down to e3's 64 (8x) before EchoDelayVolume ever reads them | probing | E31 running. This run DECIDES between encoder-limited and sensor-limited far field. |
 
 ### Open discrepancies
 
@@ -50,6 +51,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-11T20:29 | `exploit` | idea_added | D13's decider. EchoDelayVolume reading the STFT spec DIRECTLY (512 time columns, 2cm spacing, encoder pooling bypassed). If the fa |
 | 2026-07-11T05:36 | `synthesize` | experiment_completed | EchoDelayVolume + kv=e3 FAILED the pre-registered far-decile test (all three regressed vs E24) and was budget-starved (16 vs 24 ep |
 | 2026-07-11T04:41 | `exploit` | experiment_completed | EchoDelayVolume on e2 (time 128, 2x delay resolution): composite 1.9006 vs E24's 1.8987, delta +0.0019 below sigma, converged. The |
 | 2026-07-11T03:26 | `synthesize` | divergence_checkpoint | DC2 after F0/F1/G0. Six competing hypotheses across five families (time resolution, combine, decoder/skip, data sampling, sensing  |
@@ -57,7 +59,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | 2026-07-11T00:42 | `verify` | discrepancy_recorded | D12: the same mechanism beats its control on the fast parent (+0.0112) and loses on the champion parent (-0.0121), both above sigm |
 | 2026-07-11T00:42 | `verify` | experiment_completed | INCONCLUSIVE, not negative. Champion + EchoDelayVolume scored 1.9083 vs E23's 1.8962 -- opposite sign from E24 -- but it did NOT c |
 | 2026-07-10T23:38 | `verify` | experiment_completed | I19 PASSED its pre-registered falsification: every far decile improved (7-8m +0.0692, 8-9m +0.0759, 9-10m +0.0595) and the mean pr |
-| 2026-07-10T22:37 | `exploit` | experiment_completed | NEW RayDPT CHAMPION 1.8962 (win5/ffn4 @ lr 3e-4, 22 epochs, stable). Closing the 2x2 OVERTURNED the previous reading: lr 3e-4 gain |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->

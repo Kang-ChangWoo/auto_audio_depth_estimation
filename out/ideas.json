@@ -407,6 +407,22 @@
       "why_dropped": "PRE-REGISTERED FALSIFICATION FAILED, and it is confounded on top. E30 (EchoDelayVolume + kv=e3) regressed every far decile vs E24 (7-8m -0.0416, 8-9m -0.0243, 9-10m -0.0349) and its composite is 1.9508, far worse. It was ALSO budget-starved: kv=e3 is 4x cr32 attention (218.5 s/epoch), so only 16 epochs fit vs E24's 24.",
       "interpretation": "The two far-field paths do NOT compose -- they behave like E27's EDE+dense: redundant, not complementary. Both the volume and kv=e3 target the SAME signal (fine echo timing), so stacking them adds cost without adding information, exactly as D12 warned when the paths overlap. The scope prediction was wrong: 'different path' is not enough; the paths must carry DIFFERENT information, and these carry the same.",
       "what_survives": "E30 confirmed kv=e3 is STABLE at lr 3e-4 (I18's fix), which reopens kv=e3 as a research knob that D11 had closed. That is a real infrastructure gain even though the combine failed."
+    },
+    {
+      "id": "I22",
+      "status": "probing",
+      "priority": "high",
+      "origin": "D13 -- the decoder-side far-field lever saturated; move the question upstream",
+      "target_bottleneck": "the ENCODER pools the STFT's 512 time columns down to e3's 64 (8x) before EchoDelayVolume ever reads them",
+      "mechanism_family": "encoder / time preservation",
+      "causal_distance": "mid",
+      "general_hypothesis": "No downstream structure can recover time resolution the encoder has already averaged away. If the far-field limit is encoder pooling, an echo-delay volume that reads the STFT directly -- 512 time columns, 2 cm depth spacing, encoder bypassed -- should improve the far field where e3 (64 cols) and e2 (128) saturated. If it also saturates, the limit is not time resolution but the sensor (I7).",
+      "detailed_hypothesis": "EchoDelayVolume with depth_volume_src=raw reads the (in_ch, 256, 512) spec tensor. Each of its 512 time columns is a depth hypothesis at 2 cm spacing. This is the cleanest possible test of D13's two branches -- it removes ALL encoder pooling from the volume's input, not just 2x.",
+      "expected_metric_effect": "the 7-10m deciles improve over E24; if they do, encoder pooling was the bottleneck.",
+      "main_falsification_condition": "the far deciles saturate again (no improvement over E24) -> time resolution is NOT the far-field limit; it is the sensor. This CLOSES the whole time-resolution line and reopens I7 / the representation.",
+      "budget_risk": "low-medium; raw has 512 columns (8x e3's attention) but only in_ch=5 channels, so cheaper per column. Benchmarked implicitly by the run.",
+      "evidence_required": "far-decile improvement over E24, on the fast parent.",
+      "next_action": "E31 running. This run DECIDES between encoder-limited and sensor-limited far field."
     }
   ],
   "discrepancies": [
