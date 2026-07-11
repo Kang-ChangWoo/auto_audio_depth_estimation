@@ -81,3 +81,5 @@ out/.h0.lock
 out/h0_driver.log
 out/.h1.lock
 out/h1_driver.log
+out/.h2.lock
+out/h2_driver.log

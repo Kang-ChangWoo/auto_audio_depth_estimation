@@ -7,19 +7,19 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | | |
 |---|---|
-| **Mode** | `SYNTHESIZE` — no runs; review evidence, find contradictions, pick the highest-information next question |
-| **Active study** | `H0` [new] depth-objective (*concluded*) |
-| **Research question** | The champion's residual gap is near-field median-pull compression (I24): masked-MAE on linear depth converges to the arithmetic median, below the geometric median that d1's ratio threshold rewards, so |
-| **Current action** | E32 --depth-out log; E33 --depth-out log --depth-volume True. Champion arch, control E23 (1.8962). |
-| **Latest result** | `E34` : composite **None** (rmse None, d1 None, abs_rel None), best epoch None/None |
-| **Next decision** | Judge on 1-2m INTERIOR d1 (the diagnosed locus) FIRST, then overall d1. ABS_REL is not evidence. Distinct from I13: that re-weighted the loss on a range mis-diagnosis; this re-parameterises the output |
-| **Why this mode** | Three objective-line runs (E32/E33/E34) converge: median-pull is real and log-space is its axis, but plain log_mae trades centre for tail and nets zero on d1. Before a Huber-log refinement, a synthesi |
+| **Mode** | `EXPLOIT` — adaptive HPO ladder 3 -> 5 -> 7 -> 10, each step justified by evidence -> PASS / FAIL |
+| **Active study** | `H1` [refine] depth-objective (*running*) |
+| **Research question** | The near-field median-pull is loss-shaped (E34 confirmed the histogram moves) but plain log_mae cancels its own gain by loosening the over-prediction tail. A loss that is quadratic inside d1's +-25% b |
+| **Current action** | E35 --main-loss log_huber on the champion. |
+| **Latest result** | *(no scored run in this study yet)* |
+| **Next decision** | 1-2m interior d1 must beat BOTH E23 and E34, with the >1.25 tail not exceeding E23's 15.0%. Judge on the interior histogram; ABS_REL is not evidence. If the tail still grows, the near-field pull is no |
+| **Why this mode** | E34 localised the near-field problem to a loss SHAPE issue (centre vs tail); log_huber is the shape that separates them. A targeted refinement, not a new direction. |
 
 ### Current hypothesis
 
-- **General** — The champion's residual gap is near-field median-pull compression (I24): masked-MAE on linear depth converges to the arithmetic median, below the geometric median that d1's ratio threshold rewards, so flat walls land just under. Regressing log-depth moves the optimum to the geometric median.
-- **Detailed** — D = exp-map of sigmoid(head) instead of sigmoid(head). Re-parameterisation only. E32 log-out alone; E33 log-out + EchoDelayVolume (near + far cures, non-overlapping).
-- **Implementation note** — E32 --depth-out log; E33 --depth-out log --depth-volume True. Champion arch, control E23 (1.8962).
+- **General** — The near-field median-pull is loss-shaped (E34 confirmed the histogram moves) but plain log_mae cancels its own gain by loosening the over-prediction tail. A loss that is quadratic inside d1's +-25% band and linear outside should centre the bulk without the tail cost.
+- **Detailed** — log_huber, delta=log(1.25). Controls E23 (mae) and E34 (log_mae) bracket it: mae centres nothing, log_mae centres but loosens the tail, log_huber should centre AND hold the tail.
+- **Implementation note** — E35 --main-loss log_huber on the champion.
 
 ### Research portfolio
 
@@ -34,6 +34,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I19` | ray conditioning / physically-structured decoding | far | the model must LEARN that echo delay encodes depth, and it fails to, collapsing far surfaces toward the median | inconclusive | Do NOT crown. Test the ONE compatible combination the scope predicts: EchoDelayVolume + fi |
 | `I24` | reframing / where-the-gain-is | n/a (redirection) | the 1-2 m near field, which is 52.5% of pixels and over half the total d1 gap to batvision | candidate | A near-field compression cure that is NOT time-resolution: candidates are (a) a small per- |
 | `I27` | depth objective | mid | near-field median-pull: the loss must optimise the geometric median, which requires the LOSS in log space, not the output | inconclusive | Either a Huber-log loss (centre without loosening the tail), or accept that the near-field |
+| `I28` | depth objective | near (refines I27) | a near-field loss that centres the ratio bulk at 1 WITHOUT relaxing the over-prediction tail | probing | E35 running; controls E23 and E34. |
 
 ### Open discrepancies
 
@@ -50,6 +51,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-12T04:58 | `exploit` | idea_added | log_huber: Huber on the log-ratio with delta=log(1.25)=0.223, exactly d1's +-25% band. Quadratic inside (centres the 1-2m bulk 4x  |
 | 2026-07-12T04:46 | `synthesize` | experiment_completed | log_mae LOSS on champion: HALF-confirmed. The 1-2m ratio histogram moved exactly as predicted (0.9-1.0 pile 32.1->29.1%, centre 1. |
 | 2026-07-12T03:44 | `exploit` | candidate_dropped | FAILED pre-registered near-field test: 1-2m interior d1 unmoved (0.7523->0.7521), ratio histogram unchanged. Re-parameterising the |
 | 2026-07-12T02:53 | `exploit` | experiment_completed | log-depth output: composite 1.9102 vs E23 1.8962 (+0.0140 worse), overall d1 -0.0044, converged. NOT the test -- the pre-registere |
@@ -57,7 +59,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | 2026-07-12T01:31 | `synthesize` | discrepancy_recorded | Near-field diagnosis (1-2m, 52.5% of pixels): the gap is INTERIOR (flat walls), not boundary -- ties batvision on edges (0.4447 vs |
 | 2026-07-12T01:27 | `synthesize` | direction_changed | Representation lever OPENED per request and REFUTED at zero GPU: coherence correlates +0.17 (wrong sign) and late-tail waveform en |
 | 2026-07-11T21:36 | `synthesize` | experiment_completed | DECISIVE FAIL. Bypassing encoder time pooling (raw STFT, 512 time cols, freq matched to e3) still regressed the far deciles ~0.04  |
-| 2026-07-11T20:31 | `exploit` | experiment_completed | First attempt OOMed (raw logits 9GB at batch64; CPU smoke at batch2 hid it -- lesson: smoke at the real batch). Fixed with freq_st |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->

@@ -518,6 +518,22 @@
       "result": "HALF-CONFIRMED, and instructive. log_mae LOSS on the champion moved the 1-2m ratio histogram exactly as predicted: the pile at 0.9-1.0 fell 32.1%->29.1% and the centre 1.0-1.11 rose 29.2%->32.1% (+2.9%, toward batvision's 40.4%). So the median-pull mechanism is REAL and log-space loss IS its lever -- the diagnosis and the direction both hold. BUT 1-2m interior d1 fell -0.0034, because the same loss thickened the OVER-prediction tail (>1.25: 15.0%->16.2%). Centring the bulk cost accuracy in the tail; the two cancel at the threshold.",
       "interpretation": "log_mae penalises equal ratio errors equally, so relative to MAE it relaxes the penalty on large LINEAR errors -- which at 1-2m are the over-predictions. It fixes the systematic under-pull but loosens the tail. The net on a +-25% threshold is a wash. A pure geometric-median loss is not enough; the near-field needs the centre AND the tail, which points at a HUBER-like log loss (quadratic near ratio 1, linear in the tail) or a small d1-surrogate term, not a plain log_mae.",
       "scope_of_negative_evidence": "Refutes plain log_mae as a near-field d1 cure on the champion. Confirms median-pull is real and log-space is the right axis. The refined form (bounded/Huber log loss) is untested."
+    },
+    {
+      "id": "I28",
+      "status": "probing",
+      "priority": "high",
+      "origin": "E34's half-confirmation -- log_mae centres the histogram but loosens the tail",
+      "target_bottleneck": "a near-field loss that centres the ratio bulk at 1 WITHOUT relaxing the over-prediction tail",
+      "mechanism_family": "depth objective",
+      "causal_distance": "near (refines I27)",
+      "general_hypothesis": "E34 proved median-pull is real and log-space is its axis, but plain log_mae trades centre for tail: quadratic-like near 0 it would centre harder, but log_mae is LINEAR everywhere, so its only lever on the bulk is the same slope it applies to the tail. A Huber on the log-ratio decouples them -- quadratic inside d1's band centres the bulk, linear outside keeps the tail penalty.",
+      "detailed_hypothesis": "log_huber: Huber(r) with r=log D - log gt and delta=log(1.25)=0.223, the exact +-25% threshold. |r|<=delta -> 0.5 r^2/delta (quadratic, steep pull to ratio 1); |r|>delta -> |r|-0.5*delta (linear, same asymptotic slope as log_mae). Verified numerically: at ratio 0.9 the loss is 0.025 vs log_mae's 0.105 (4x steeper centring), while at ratio 2.0 it matches log_mae's slope.",
+      "expected_metric_effect": "1-2m interior d1 improves over BOTH E23 (mae) and E34 (log_mae); the ratio histogram centres AND the >1.25 tail does not grow past E23's 15.0%.",
+      "main_falsification_condition": "the tail still grows past 15.0%, OR interior d1 does not beat E23 -> the near-field pull is not cleanly loss-shapeable; close the objective line for the near field.",
+      "budget_risk": "none.",
+      "evidence_required": "interior d1 up AND tail contained.",
+      "next_action": "E35 running; controls E23 and E34."
     }
   ],
   "discrepancies": [

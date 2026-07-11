@@ -568,6 +568,9 @@ def masked_mae(D, gt, mask):
 #
 # program.md warns that ABS_REL as a METRIC is gameable. That is why this study is judged on
 # d1 and RMSE, never on abs_rel.
+_HUBER_DELTA = math.log(1.25)   # 0.223: d1's +-25% ratio threshold in log space (I28)
+
+
 def masked_main(D, gt, mask, kind='mae', eps=1e-3):
     if kind == 'mae':
         return masked_mae(D, gt, mask)
@@ -577,6 +580,19 @@ def masked_main(D, gt, mask, kind='mae', eps=1e-3):
     if kind == 'log_mae':                       # |log D - log gt| (symmetric in the ratio)
         r = (torch.log(D.clamp(min=eps)) - torch.log(gt.clamp(min=eps))).abs()
         return (r * mask).sum() / mask.sum().clamp(min=1e-6)
+    if kind == 'log_huber':
+        # Huber on the LOG-RATIO r = log D - log gt (idea I28). Quadratic for |r|<=delta,
+        # linear beyond. Diagnosis (E34): log_mae centres the 1-2m ratio histogram at 1 but
+        # LOOSENS the over-prediction tail, so its d1 gain cancels. The quadratic core pulls
+        # HARDER toward ratio 1 than plain log_mae (centres the bulk); the linear tail keeps
+        # the SAME slope as log_mae past delta (does not loosen it). delta = log(1.25) = 0.223
+        # sets the transition exactly at d1's +-25% threshold: everything inside the band is
+        # centred quadratically, everything outside is charged linearly.
+        r = torch.log(D.clamp(min=eps)) - torch.log(gt.clamp(min=eps))
+        a = r.abs()
+        h = torch.where(a <= _HUBER_DELTA, 0.5 * r * r / _HUBER_DELTA,
+                        a - 0.5 * _HUBER_DELTA)
+        return (h * mask).sum() / mask.sum().clamp(min=1e-6)
     raise ValueError(kind)
 
 
@@ -960,7 +976,7 @@ def parse_args():
     p.add_argument('--time-budget', type=int, default=3600,
                    help='wall-clock seconds. 3600 = scored. Anything else is a SCREENING run and '
                         'its metrics are NON-AUTHORITATIVE (epochs-fit is part of the score).')
-    p.add_argument('--main-loss', type=str, default='mae', choices=['mae', 'rel_mae', 'log_mae'],
+    p.add_argument('--main-loss', type=str, default='mae', choices=['mae', 'rel_mae', 'log_mae', 'log_huber'],
                    help="dense term. 'mae' drives to the conditional median and compresses far depth; "
                         "'rel_mae'/'log_mae' charge relative error, aligning the loss with d1 (idea I13).")
     p.add_argument('--ffn-mult', type=int, default=4,
