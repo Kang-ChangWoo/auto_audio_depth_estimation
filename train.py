@@ -375,12 +375,18 @@ class EchoDelayVolume(nn.Module):
     """
 
     def __init__(self, e3_ch, dim, dv=48, n_bins=64, max_depth=10.0,
-                 cut=2823, sample_rate=48000, c=340.0):
+                 cut=2823, sample_rate=48000, c=340.0, freq_stride=1):
         # n_bins = number of TIME columns of the source feature (e3 -> 64, e2 -> 128).
         # Each column is a depth hypothesis d = c*t/2; more columns = finer delay resolution.
         super().__init__()
         self.dv = dv
-        self.proj = nn.Conv2d(e3_ch, dv, 1)                      # e3 -> (B, dv, F, T)
+        # freq_stride pools the FREQUENCY axis at the volume's input. Time (the depth axis) is
+        # kept intact. For raw spec (F=256) this brings F down to e3-like sizes so the
+        # (B,N,F,T) logits fit; for e2/e3 the default stride 1 is a no-op. Frequency is only
+        # ever reduced by an attention softmax here, so pre-pooling it loses nothing the volume
+        # would have kept, while cutting the logits tensor by `freq_stride`x.
+        self.proj = nn.Conv2d(e3_ch, dv, kernel_size=(freq_stride, 1),
+                              stride=(freq_stride, 1))            # (B, dv, F/stride, T)
         self.q = nn.Linear(dim, dv)
         self.score = nn.Sequential(nn.Linear(dv, 64), nn.GELU(), nn.Linear(64, 1))
         self.ctx = nn.Linear(dv, dim)
@@ -439,9 +445,10 @@ class RayDPT(nn.Module):
         self.coarse_norm = (nn.GroupNorm(1, dim) if bool(getattr(cfg, "coarse_norm", False))
                             else nn.Identity())
         self.dv_src = str(getattr(cfg, "depth_volume_src", "e3"))   # e3(64) | e2(128) | raw(512, spec)
-        _dv_ch, _dv_bins = {"e2": (ngf * 2, 128),
-                            "raw": (getattr(cfg, "in_ch", 5), 512)}.get(self.dv_src, (ngf * 4, 64))
-        self.depth_volume = (EchoDelayVolume(_dv_ch, dim, n_bins=_dv_bins,
+        _dv_ch, _dv_bins, _dv_fs = {"e2": (ngf * 2, 128, 1),
+                                   "raw": (getattr(cfg, "in_ch", 5), 512, 8)}.get(
+                                       self.dv_src, (ngf * 4, 64, 1))
+        self.depth_volume = (EchoDelayVolume(_dv_ch, dim, n_bins=_dv_bins, freq_stride=_dv_fs,
                                              max_depth=float(getattr(cfg, "max_depth", 10.0)))
                              if bool(getattr(cfg, "depth_volume", False)) else None)
         self.coarse_head = nn.Conv2d(dim, 1, 1)
