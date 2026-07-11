@@ -521,7 +521,7 @@
     },
     {
       "id": "I28",
-      "status": "probing",
+      "status": "dropped",
       "priority": "high",
       "origin": "E34's half-confirmation -- log_mae centres the histogram but loosens the tail",
       "target_bottleneck": "a near-field loss that centres the ratio bulk at 1 WITHOUT relaxing the over-prediction tail",
@@ -533,7 +533,10 @@
       "main_falsification_condition": "the tail still grows past 15.0%, OR interior d1 does not beat E23 -> the near-field pull is not cleanly loss-shapeable; close the objective line for the near field.",
       "budget_risk": "none.",
       "evidence_required": "interior d1 up AND tail contained.",
-      "next_action": "E35 running; controls E23 and E34."
+      "next_action": "none from the objective. Near AND far are now both near ceilings (far sensor-limited D13; near not loss-shapeable). Synthesize checkpoint to decide whether RayDPT-at-5.89M matching a 54M U-Net within 0.04 is the honest result.",
+      "why_dropped": "The loss shape worked exactly as designed -- and it STILL nets negative on d1. log_huber held the over-prediction tail (>1.25: 14.6%, BELOW E23's 15.0% and well below E34's 16.2%), fixing precisely what log_mae broke. But its quadratic core, gentle inside delta=0.223, centred the bulk only +1.4% (1.0-1.11: 29.2%->30.6%) versus log_mae's +2.9%, and its under-prediction pile GREW (<0.8: 9.8%->10.3%). 1-2m interior d1 = 0.7510, still -0.0014 below E23. It beats E34 (+0.0021) but not the mae baseline.",
+      "closes_the_line": "Three loss shapes now bracket the near field and none clears E23: mae (arithmetic median, the baseline), log_mae (centres the bulk but loosens the tail, -0.0034), log_huber (holds the tail but under-centres, -0.0014). Every attempt trades centring against the tail and lands at or below the mae baseline. The near-field median-pull is REAL as a distribution effect but is NOT convertible into d1 by reshaping the objective: at the +-25% threshold, whatever a loss gains at the centre it gives back at a tail. The objective line for the near field is CLOSED.",
+      "scope": "Refutes loss-reshaping as a near-field d1 lever on the champion, across mae/log_mae/log_huber. The median-pull diagnosis stands; it is simply not loss-shapeable into the metric. Note ABS_REL did improve (log_huber 0.3870 vs E23 0.4131) -- the geometric objective works, just not for a ratio-threshold metric."
     }
   ],
   "discrepancies": [
