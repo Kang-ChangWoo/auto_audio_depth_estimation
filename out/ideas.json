@@ -537,6 +537,33 @@
       "why_dropped": "The loss shape worked exactly as designed -- and it STILL nets negative on d1. log_huber held the over-prediction tail (>1.25: 14.6%, BELOW E23's 15.0% and well below E34's 16.2%), fixing precisely what log_mae broke. But its quadratic core, gentle inside delta=0.223, centred the bulk only +1.4% (1.0-1.11: 29.2%->30.6%) versus log_mae's +2.9%, and its under-prediction pile GREW (<0.8: 9.8%->10.3%). 1-2m interior d1 = 0.7510, still -0.0014 below E23. It beats E34 (+0.0021) but not the mae baseline.",
       "closes_the_line": "Three loss shapes now bracket the near field and none clears E23: mae (arithmetic median, the baseline), log_mae (centres the bulk but loosens the tail, -0.0034), log_huber (holds the tail but under-centres, -0.0014). Every attempt trades centring against the tail and lands at or below the mae baseline. The near-field median-pull is REAL as a distribution effect but is NOT convertible into d1 by reshaping the objective: at the +-25% threshold, whatever a loss gains at the centre it gives back at a tail. The objective line for the near field is CLOSED.",
       "scope": "Refutes loss-reshaping as a near-field d1 lever on the champion, across mae/log_mae/log_huber. The median-pull diagnosis stands; it is simply not loss-shapeable into the metric. Note ABS_REL did improve (log_huber 0.3870 vs E23 0.4131) -- the geometric objective works, just not for a ratio-threshold metric."
+    },
+    {
+      "id": "I29",
+      "status": "dropped",
+      "origin": "(b) near-field architecture lever -- oracle + roughness diagnostics",
+      "target_bottleneck": "(claimed) x8 decode upsample or per-ray decoding blurs near-field walls",
+      "mechanism_family": "decoder resolution / smoothness",
+      "causal_distance": "mid",
+      "why_dropped": "REFUTED by two zero-GPU diagnostics. (1) Oracle: a PERFECT predictor at the champion's 32x64 decode scores 1-2m interior d1 = 0.9816, far above the achieved 0.7523 -- the x8 upsample has 0.23 of headroom, so it is NOT the near-field bottleneck (same logic as I2 for the far field). (2) Roughness: RayDPT's predicted local roughness on smooth walls is 0.0115 (pred/GT 1.02), SMOOTHER than batvision's 0.0199 (pred/GT 1.75). Per-ray decoding does not hurt local smoothness -- it helps it. So there is no near-field architecture bottleneck to fix.",
+      "what_it_reveals": "RayDPT is smoother AND has smaller bias AND smaller variance than batvision on near walls, yet loses d1. The entire gap is that batvision AIMS at the +-25% band centre (40% at ratio 1.0-1.11) while RayDPT sits just under (32% at 0.9-1.0). It is a pure ABSOLUTE-SCALE offset of a few percent, not resolution, not smoothness, not noise -- and not loss-shapeable (H0/H1). The one thing left is explicit scale CALIBRATION.",
+      "next_action": "I30: a learned per-image scale correction, the only untested lever for a pure scale offset."
+    },
+    {
+      "id": "I30",
+      "status": "probing",
+      "priority": "high",
+      "origin": "the near-field gap is a pure absolute-scale offset (I29)",
+      "target_bottleneck": "RayDPT's predictions sit a few percent under the +-25% band centre -- a global scale the model does not self-correct",
+      "mechanism_family": "architecture / output calibration",
+      "causal_distance": "mid",
+      "general_hypothesis": "If every diagnostic says RayDPT is smoother, less biased, lower variance, yet lands just under the ratio-1 band, the missing piece is a global scale the per-ray head cannot see: each ray predicts its own depth with no mechanism to correct a systematic multiplicative offset shared across the image. Batvision's global bottleneck implicitly carries that scale; RayDPT's per-ray decoding does not. Give it an explicit, learned per-image scale head.",
+      "detailed_hypothesis": "Add a lightweight global head: pool the coarse feature m16 to a vector, predict one scalar log-scale s per image, and multiply the depth map by exp(s). The per-ray head keeps doing relative structure; the scale head fixes the shared multiplicative offset. This is a NEW mechanism (global calibration), not a loss reshape (H0/H1) or a resolution change (I29).",
+      "expected_metric_effect": "the 1-2m interior ratio histogram shifts bodily toward centre (1.0-1.11), and interior d1 rises -- because a global multiply moves ALL pixels the same ratio, exactly matching a scale offset.",
+      "main_falsification_condition": "the histogram does not shift, or shifts but d1 does not improve -> the offset is not global/multiplicative and the near field is a genuine ceiling.",
+      "budget_risk": "low; a pooling + MLP + scalar, +tiny params.",
+      "evidence_required": "near-field interior d1 improvement over E23.",
+      "next_action": "implement a per-image log-scale head; run on the champion, control E23."
     }
   ],
   "discrepancies": [

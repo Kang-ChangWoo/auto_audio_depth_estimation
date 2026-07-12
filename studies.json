@@ -461,39 +461,24 @@
       ]
     }
   ],
-  "mode": "synthesize",
-  "mode_reason": "Both remaining deficits are now characterised as ceilings: the far field is sensor-limited (D13, five runs), and the near field's median-pull is real but not loss-shapeable into d1 (H0/H1, three loss shapes). RayDPT at 5.89M sits 0.0395 behind a 54.4M U-Net. A synthesize checkpoint must decide whether that is the honest scientific result, or whether an untested causal family (near-field ARCHITECTURE rather than loss) remains.",
+  "mode": "exploit",
+  "mode_reason": "(b) architecture lever refuted by oracle+roughness (I29): no near-field resolution or smoothness bottleneck. The gap is a pure absolute-scale offset, and the one untested lever for that is explicit per-image scale calibration (I30) -- a new mechanism, not loss or resolution.",
   "studies_since_synthesize": 0,
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",
   "active_study": {
-    "study_id": "H1",
-    "lineage": "depth-objective",
+    "study_id": "H2",
+    "lineage": "output-calibration",
     "parent": "E23 (champion)",
-    "type": "refine",
-    "status": "concluded",
-    "general_hypothesis": "The near-field median-pull is loss-shaped (E34 confirmed the histogram moves) but plain log_mae cancels its own gain by loosening the over-prediction tail. A loss that is quadratic inside d1's +-25% band and linear outside should centre the bulk without the tail cost.",
-    "detailed_hypothesis": "log_huber, delta=log(1.25). Controls E23 (mae) and E34 (log_mae) bracket it: mae centres nothing, log_mae centres but loosens the tail, log_huber should centre AND hold the tail.",
-    "experiment_note": "E35 --main-loss log_huber on the champion.",
+    "type": "new",
+    "status": "pending",
+    "general_hypothesis": "RayDPT loses the near field despite being smoother, less biased and lower variance than batvision, because its per-ray head has no way to correct a global multiplicative scale offset shared across the image. A learned per-image scale head supplies exactly that.",
+    "detailed_hypothesis": "Pool m16 -> per-image log-scale s -> D * exp(s). Per-ray head does relative structure; scale head fixes the shared offset.",
+    "experiment_note": "E36: add --scale-head; champion arch, control E23.",
     "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
-    "runs": [
-      {
-        "exp_id": "E35",
-        "name": "raydpt_e35_loghuber",
-        "interior_d1_12m": 0.751,
-        "tail_gt125": 0.146,
-        "composite": 1.9091,
-        "verdict": "held the tail as designed but under-centred; -0.0014 vs E23"
-      }
-    ],
-    "decision_rule": "1-2m interior d1 must beat BOTH E23 and E34, with the >1.25 tail not exceeding E23's 15.0%. Judge on the interior histogram; ABS_REL is not evidence. If the tail still grows, the near-field pull is not cleanly loss-shapeable and the objective line closes.",
-    "conclusion": "FAIL -- near-field median-pull is real but not loss-shapeable into d1",
-    "observations": [
-      "log_huber held the tail exactly as designed (>1.25: 14.6% vs E23 15.0%, E34 16.2%) but centred the bulk less than log_mae, and its under-prediction pile grew.",
-      "Three loss shapes (mae/log_mae/log_huber) bracket the near field; none beats the mae baseline. Every shape trades centre against tail at the +-25% threshold.",
-      "The near-field median-pull is real as a distribution effect but is NOT convertible into d1 by reshaping the loss. Objective line closed for the near field."
-    ]
+    "runs": [],
+    "decision_rule": "Judge on 1-2m interior d1 and its ratio histogram shift toward centre. ABS_REL is not evidence. If the histogram does not shift bodily, the offset is not global and the near field is a ceiling."
   },
   "backlog": [
     {

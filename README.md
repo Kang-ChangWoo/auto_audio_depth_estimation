@@ -7,19 +7,19 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | | |
 |---|---|
-| **Mode** | `SYNTHESIZE` — no runs; review evidence, find contradictions, pick the highest-information next question |
-| **Active study** | `H1` [refine] depth-objective (*concluded*) |
-| **Research question** | The near-field median-pull is loss-shaped (E34 confirmed the histogram moves) but plain log_mae cancels its own gain by loosening the over-prediction tail. A loss that is quadratic inside d1's +-25% b |
-| **Current action** | E35 --main-loss log_huber on the champion. |
-| **Latest result** | `E35` raydpt_e35_loghuber: composite **1.9091** (rmse None, d1 None, abs_rel None), best epoch None/None |
-| **Next decision** | 1-2m interior d1 must beat BOTH E23 and E34, with the >1.25 tail not exceeding E23's 15.0%. Judge on the interior histogram; ABS_REL is not evidence. If the tail still grows, the near-field pull is no |
-| **Why this mode** | Both remaining deficits are now characterised as ceilings: the far field is sensor-limited (D13, five runs), and the near field's median-pull is real but not loss-shapeable into d1 (H0/H1, three loss  |
+| **Mode** | `EXPLOIT` — adaptive HPO ladder 3 -> 5 -> 7 -> 10, each step justified by evidence -> PASS / FAIL |
+| **Active study** | `H2` [new] output-calibration (*pending*) |
+| **Research question** | RayDPT loses the near field despite being smoother, less biased and lower variance than batvision, because its per-ray head has no way to correct a global multiplicative scale offset shared across the |
+| **Current action** | E36: add --scale-head; champion arch, control E23. |
+| **Latest result** | *(no scored run in this study yet)* |
+| **Next decision** | Judge on 1-2m interior d1 and its ratio histogram shift toward centre. ABS_REL is not evidence. If the histogram does not shift bodily, the offset is not global and the near field is a ceiling. |
+| **Why this mode** | (b) architecture lever refuted by oracle+roughness (I29): no near-field resolution or smoothness bottleneck. The gap is a pure absolute-scale offset, and the one untested lever for that is explicit pe |
 
 ### Current hypothesis
 
-- **General** — The near-field median-pull is loss-shaped (E34 confirmed the histogram moves) but plain log_mae cancels its own gain by loosening the over-prediction tail. A loss that is quadratic inside d1's +-25% band and linear outside should centre the bulk without the tail cost.
-- **Detailed** — log_huber, delta=log(1.25). Controls E23 (mae) and E34 (log_mae) bracket it: mae centres nothing, log_mae centres but loosens the tail, log_huber should centre AND hold the tail.
-- **Implementation note** — E35 --main-loss log_huber on the champion.
+- **General** — RayDPT loses the near field despite being smoother, less biased and lower variance than batvision, because its per-ray head has no way to correct a global multiplicative scale offset shared across the image. A learned per-image scale head supplies exactly that.
+- **Detailed** — Pool m16 -> per-image log-scale s -> D * exp(s). Per-ray head does relative structure; scale head fixes the shared offset.
+- **Implementation note** — E36: add --scale-head; champion arch, control E23.
 
 ### Research portfolio
 
@@ -34,6 +34,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | `I19` | ray conditioning / physically-structured decoding | far | the model must LEARN that echo delay encodes depth, and it fails to, collapsing far surfaces toward the median | inconclusive | Do NOT crown. Test the ONE compatible combination the scope predicts: EchoDelayVolume + fi |
 | `I24` | reframing / where-the-gain-is | n/a (redirection) | the 1-2 m near field, which is 52.5% of pixels and over half the total d1 gap to batvision | candidate | A near-field compression cure that is NOT time-resolution: candidates are (a) a small per- |
 | `I27` | depth objective | mid | near-field median-pull: the loss must optimise the geometric median, which requires the LOSS in log space, not the output | inconclusive | Either a Huber-log loss (centre without loosening the tail), or accept that the near-field |
+| `I30` | architecture / output calibration | mid | RayDPT's predictions sit a few percent under the +-25% band centre -- a global scale the model does not self-correct | probing | implement a per-image log-scale head; run on the champion, control E23. |
 
 ### Open discrepancies
 
@@ -50,6 +51,7 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-13T03:48 | `exploit` | candidate_dropped | (b) near-field ARCHITECTURE lever REFUTED at zero GPU. Oracle: 32x64 decode's 1-2m interior d1 ceiling is 0.9816 vs achieved 0.752 |
 | 2026-07-12T06:00 | `synthesize` | experiment_completed | log_huber held the tail exactly as designed (>1.25: 14.6% < E23's 15.0% < E34's 16.2%) but under-centred the bulk (+1.4% vs log_ma |
 | 2026-07-12T04:58 | `exploit` | idea_added | log_huber: Huber on the log-ratio with delta=log(1.25)=0.223, exactly d1's +-25% band. Quadratic inside (centres the 1-2m bulk 4x  |
 | 2026-07-12T04:46 | `synthesize` | experiment_completed | log_mae LOSS on champion: HALF-confirmed. The 1-2m ratio histogram moved exactly as predicted (0.9-1.0 pile 32.1->29.1%, centre 1. |
@@ -57,7 +59,6 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 | 2026-07-12T02:53 | `exploit` | experiment_completed | log-depth output: composite 1.9102 vs E23 1.8962 (+0.0140 worse), overall d1 -0.0044, converged. NOT the test -- the pre-registere |
 | 2026-07-12T01:42 | `exploit` | idea_added | log-depth output cures near-field median-pull. d1 is a +-25% ratio threshold; masked-MAE on linear depth converges to the arithmet |
 | 2026-07-12T01:31 | `synthesize` | discrepancy_recorded | Near-field diagnosis (1-2m, 52.5% of pixels): the gap is INTERIOR (flat walls), not boundary -- ties batvision on edges (0.4447 vs |
-| 2026-07-12T01:27 | `synthesize` | direction_changed | Representation lever OPENED per request and REFUTED at zero GPU: coherence correlates +0.17 (wrong sign) and late-tail waveform en |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->

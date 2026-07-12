@@ -123,6 +123,7 @@ def make_config(args):
             depth_volume=args.depth_volume,
             depth_volume_src=args.depth_volume_src,
             depth_out=args.depth_out,
+            scale_head=args.scale_head,
             # ray-feature bank flags
             use_xyz=True,
             use_fourier_pe=True,
@@ -456,6 +457,11 @@ class RayDPT(nn.Module):
         self.head = nn.Sequential(conv_bn(dim, ngf), conv_bn(ngf, ngf), nn.Conv2d(ngf, 1, 3, 1, 1))
         # log-depth output (I25): map sigmoid(head) -> depth GEOMETRICALLY over [d_min, 1] (normalised).
         self.depth_out = str(getattr(cfg, "depth_out", "linear"))
+        # per-image log-scale head (I30): the per-ray head does relative structure; this corrects a
+        # global multiplicative offset the per-ray decoding cannot see (batvision's global bottleneck
+        # carries scale implicitly; RayDPT's does not). Pool m16 -> one log-scale s; D *= exp(s).
+        self.scale_head = (nn.Sequential(nn.Linear(dim, dim), nn.GELU(), nn.Linear(dim, 1))
+                           if bool(getattr(cfg, "scale_head", False)) else None)
         _dmin = 0.02                                          # normalised floor (0.2 m); log needs d>0
         self.register_buffer("_log_dmin", torch.tensor(math.log(_dmin)))
         self.register_buffer("_log_span", torch.tensor(-math.log(_dmin)))   # log(1) - log(dmin)
@@ -527,6 +533,9 @@ class RayDPT(nn.Module):
             D = torch.exp(self._log_dmin + torch.sigmoid(h) * self._log_span)
         else:
             D = torch.sigmoid(h)
+        if self.scale_head is not None:
+            s = self.scale_head(m16.mean(dim=(2, 3)))            # (B,1) per-image log-scale
+            D = (D * torch.exp(0.3 * s).view(-1, 1, 1, 1)).clamp(1e-4, 1.0)
         D = F.interpolate(D, (self.H, self.W), mode="bilinear", align_corners=False)
         return {"D": D, "D0": D, "extras": {"D_coarse": d_c}}
 
@@ -954,6 +963,9 @@ def parse_args():
     # --- architecture knobs the GPU profiler showed dominate (see README "fast baseline") ---
     p.add_argument('--depth-volume-src', type=str, default='e3', choices=['e3', 'e2', 'raw'],
                    help='which encoder scale EchoDelayVolume reads. e3 = time 64, e2 = time 128, raw = the STFT spec itself (time 512, encoder BYPASSED; idea D13).')
+    p.add_argument('--scale-head', type=lambda s: s == 'True', default=False,
+                   help='per-image learned log-scale correction (I30): pools m16 -> one scalar s, '
+                        'D *= exp(0.3 s). Fixes a global multiplicative offset the per-ray head cannot see.')
     p.add_argument('--depth-out', type=str, default='linear', choices=['linear', 'log'],
                    help='output parameterisation. linear = sigmoid depth (median-pull to arithmetic '
                         'median). log = regress log-depth (optimum at the GEOMETRIC median, ratio 1), '
