@@ -50,14 +50,14 @@ Autonomous research — binaural echoes → ERP planar (cubemap) depth (SoundSpa
 
 | When | Mode | Event | Note |
 |---|---|---|---|
+| 2026-07-13T07:38 | `synthesize` | hypothesis_concluded | Champion CONFIRMED over 3 draws: composite 1.8962/1.8993/1.9004 -> mean 1.8986 +- 0.0018. Reproducibility std is 4x below the phas |
+| 2026-07-13T05:39 | `synthesize` | study_opened | Champion confirm draws (E38/E39): E23's 1.8962 -- the number the whole phase conclusion rests on -- is a single draw. Two more dra |
 | 2026-07-13T04:54 | `synthesize` | divergence_checkpoint | SYNTHESIS 2026-07-13: entire original backlog resolved + new families explored (throughput, echo-delay volume, depth objective, ca |
 | 2026-07-13T04:54 | `synthesize` | experiment_completed | eval-time L/R-flip TTA REFUTED (zero training): champion worse by 0.1186 composite. Planar GT differs from its width-flip by 0.638 |
 | 2026-07-13T04:51 | `synthesize` | experiment_completed | per-image scale head: composite +0.0220, d1 -0.0080. Moved the 1-2m centre 1.0-1.11 from 29.2%->32.5% (toward batvision) exactly a |
 | 2026-07-13T03:48 | `exploit` | candidate_dropped | (b) near-field ARCHITECTURE lever REFUTED at zero GPU. Oracle: 32x64 decode's 1-2m interior d1 ceiling is 0.9816 vs achieved 0.752 |
 | 2026-07-12T06:00 | `synthesize` | experiment_completed | log_huber held the tail exactly as designed (>1.25: 14.6% < E23's 15.0% < E34's 16.2%) but under-centred the bulk (+1.4% vs log_ma |
 | 2026-07-12T04:58 | `exploit` | idea_added | log_huber: Huber on the log-ratio with delta=log(1.25)=0.223, exactly d1's +-25% band. Quadratic inside (centres the 1-2m bulk 4x  |
-| 2026-07-12T04:46 | `synthesize` | experiment_completed | log_mae LOSS on champion: HALF-confirmed. The 1-2m ratio histogram moved exactly as predicted (0.9-1.0 pile 32.1->29.1%, centre 1. |
-| 2026-07-12T03:44 | `exploit` | candidate_dropped | FAILED pre-registered near-field test: 1-2m interior d1 unmoved (0.7523->0.7521), ratio histogram unchanged. Re-parameterising the |
 
 *Updated by `python utils/report.py research`. Champion: none yet.*
 <!-- RESEARCH:END -->
@@ -123,6 +123,8 @@ running best highlighted):
 | 30 | `61ef585` | 0.4210 | 1.3230 | 0.5750 | 1.8981 | keep | E34 log_mae LOSS on champion (I27: geometric-median objective for near-field) |
 | 31 | `70b2eed` | 0.3870 | 1.3414 | 0.5698 | 1.9090 | keep | E35 log_huber LOSS on champion (I28: centre + hold tail for near-field) |
 | 32 | `8275dbf` | 0.4226 | 1.3316 | 0.5685 | 1.9182 | keep | E36 per-image scale head (I30: near-field scale calibration) |
+| 33 | `276a64b` | 0.4159 | 1.3291 | 0.5754 | 1.8993 | keep | E38 champion E23 confirm draw 1 (reproducibility) |
+| 34 | `276a64b` | 0.4162 | 1.3293 | 0.5750 | 1.9004 | keep | E39 champion E23 confirm draw 2 (reproducibility) |
 <!-- RESULTS:END -->
 
 ## Progression (composite, lower = better)

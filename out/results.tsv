@@ -31,3 +31,5 @@ b066475	0.4350	1.3108	0.5725	25.2	keep	E31 EchoDelayVolume reads raw STFT (time 
 61ef585	0.4210	1.3230	0.5750	16.0	keep	E34 log_mae LOSS on champion (I27: geometric-median objective for near-field)
 70b2eed	0.3870	1.3414	0.5698	16.0	keep	E35 log_huber LOSS on champion (I28: centre + hold tail for near-field)
 8275dbf	0.4226	1.3316	0.5685	16.0	keep	E36 per-image scale head (I30: near-field scale calibration)
+276a64b	0.4159	1.3291	0.5754	16.0	keep	E38 champion E23 confirm draw 1 (reproducibility)
+276a64b	0.4162	1.3293	0.5750	16.0	keep	E39 champion E23 confirm draw 2 (reproducibility)

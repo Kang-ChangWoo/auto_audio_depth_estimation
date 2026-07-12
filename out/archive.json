@@ -42,7 +42,9 @@
         "vram_gb": 16.0,
         "params_m": 5.89,
         "provisional": false,
-        "note": "Best RayDPT of the project. decode 32, 2 cross layers, kv32=e4, win32=5, ffn=4, batch 64, lr 3e-4 (UNSCALED). Beats E11 by 0.0131 (above sigma) purely by not scaling the lr with the batch. Gap to the batvision reference (E3, 1.8567) is now 0.0395, down from 0.0526."
+        "note": "Best RayDPT of the project. decode 32, 2 cross layers, kv32=e4, win32=5, ffn=4, batch 64, lr 3e-4 (UNSCALED). Beats E11 by 0.0131 (above sigma) purely by not scaling the lr with the batch. Gap to the batvision reference (E3, 1.8567) is now 0.0395, down from 0.0526.",
+        "confirmed": "3 draws: 1.8962/1.8993/1.9004, mean 1.8986 +- 0.0018. Reproducibility std (0.0018) is 4x below the phase sigma (0.008) and 23x below the gap to batvision (0.0419), so the champion number and the deficit are both real, not draw noise.",
+        "gap_to_reference": "+0.0419 +- 0.0018 (mean of 3 draws vs batvision E3 1.8567)"
       },
       "dead_parameters": "e5..e8 = 16.78M of 24.44M (68.7%): built by UNet8Encoder, never used in forward, receive no gradient. See I9."
     },

@@ -85,3 +85,5 @@ out/.h2.lock
 out/h2_driver.log
 out/.h3.lock
 out/h3_driver.log
+out/.confirm.lock
+out/confirm_driver.log
