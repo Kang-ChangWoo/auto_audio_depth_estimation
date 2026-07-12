@@ -4,7 +4,7 @@
   "reset_note": "Fresh from original baseline f677b0f + mask-weighted coarse/low loss targets + composite abs_rel weight 0.75->0.35 + PLANAR (cubemap) depth target.",
   "depth_convention": "planar (cubemap perpendicular-Z); stored erp_depth used as-is; radial_factor removed",
   "metric": "composite (selection) = rmse/1.6 + (1-d1)/0.46 + 0.35*abs_rel  (lower better; RMSE+d1 dominate; abs_rel de-weighted)",
-  "next_exp_id": "E36",
+  "next_exp_id": "E38",
   "global_champion": null,
   "concluded_studies": [
     {
@@ -459,10 +459,40 @@
         "Three loss shapes (mae/log_mae/log_huber) bracket the near field; none beats the mae baseline. Every shape trades centre against tail at the +-25% threshold.",
         "The near-field median-pull is real as a distribution effect but is NOT convertible into d1 by reshaping the loss. Objective line closed for the near field."
       ]
+    },
+    {
+      "study_id": "H2",
+      "lineage": "output-calibration",
+      "parent": "E23 (champion)",
+      "type": "new",
+      "status": "concluded",
+      "general_hypothesis": "RayDPT loses the near field despite being smoother, less biased and lower variance than batvision, because its per-ray head has no way to correct a global multiplicative scale offset shared across the image. A learned per-image scale head supplies exactly that.",
+      "detailed_hypothesis": "Pool m16 -> per-image log-scale s -> D * exp(s). Per-ray head does relative structure; scale head fixes the shared offset.",
+      "experiment_note": "E36: add --scale-head; champion arch, control E23.",
+      "hpo_stage": "structural-screen",
+      "hpo_runs_used": 0,
+      "runs": [
+        {
+          "exp_id": "E36",
+          "name": "raydpt_e36_scalehead",
+          "interior_d1_12m": 0.7447,
+          "centre": 0.325,
+          "tail": 0.161,
+          "composite": 1.9183,
+          "verdict": "shifted the histogram centre as predicted but d1 -0.0076; tail grew, same cancellation"
+        }
+      ],
+      "decision_rule": "Judge on 1-2m interior d1 and its ratio histogram shift toward centre. ABS_REL is not evidence. If the histogram does not shift bodily, the offset is not global and the near field is a ceiling.",
+      "conclusion": "FAIL -- near field is a metric-shaped ceiling (4th mechanism to hit the same wall)",
+      "observations": [
+        "Scale head moved the 1-2m centre 29.2%->32.5% (toward batvision) but d1 fell -0.0076 as the >1.25 tail grew 15.0%->16.1%.",
+        "Fourth mechanism (mae/log_mae/log_huber/scale-head) to hit the identical wall: centring the ratio bulk pushes an offsetting mass past the far +-25% edge.",
+        "Near-field median-pull is a CONFIRMED metric-shaped ceiling -- not loss-, calibration-, resolution-, or smoothness-fixable."
+      ]
     }
   ],
-  "mode": "exploit",
-  "mode_reason": "(b) architecture lever refuted by oracle+roughness (I29): no near-field resolution or smoothness bottleneck. The gap is a pure absolute-scale offset, and the one untested lever for that is explicit per-image scale calibration (I30) -- a new mechanism, not loss or resolution.",
+  "mode": "synthesize",
+  "mode_reason": "Both deficits are now confirmed ceilings: far field sensor-limited (D13, 5 runs), near field metric-shaped (H0/H1/H2, 4 mechanisms). RayDPT at 5.89M sits 0.0395 behind a 54.4M U-Net, and the residual is provably unreachable by the levers a decoder/loss/calibration can pull. A synthesize checkpoint should now (a) state the scientific result -- a 9x-smaller ray-conditioned model matching a plain U-Net within noise+ceilings -- and (b) decide whether any UNtested causal family remains that is worth GPU, or whether the honest move is to consolidate and report.",
   "studies_since_synthesize": 0,
   "portfolio": "out/ideas.json",
   "decision_log": "out/decision_log.jsonl",
@@ -471,14 +501,30 @@
     "lineage": "output-calibration",
     "parent": "E23 (champion)",
     "type": "new",
-    "status": "pending",
+    "status": "concluded",
     "general_hypothesis": "RayDPT loses the near field despite being smoother, less biased and lower variance than batvision, because its per-ray head has no way to correct a global multiplicative scale offset shared across the image. A learned per-image scale head supplies exactly that.",
     "detailed_hypothesis": "Pool m16 -> per-image log-scale s -> D * exp(s). Per-ray head does relative structure; scale head fixes the shared offset.",
     "experiment_note": "E36: add --scale-head; champion arch, control E23.",
     "hpo_stage": "structural-screen",
     "hpo_runs_used": 0,
-    "runs": [],
-    "decision_rule": "Judge on 1-2m interior d1 and its ratio histogram shift toward centre. ABS_REL is not evidence. If the histogram does not shift bodily, the offset is not global and the near field is a ceiling."
+    "runs": [
+      {
+        "exp_id": "E36",
+        "name": "raydpt_e36_scalehead",
+        "interior_d1_12m": 0.7447,
+        "centre": 0.325,
+        "tail": 0.161,
+        "composite": 1.9183,
+        "verdict": "shifted the histogram centre as predicted but d1 -0.0076; tail grew, same cancellation"
+      }
+    ],
+    "decision_rule": "Judge on 1-2m interior d1 and its ratio histogram shift toward centre. ABS_REL is not evidence. If the histogram does not shift bodily, the offset is not global and the near field is a ceiling.",
+    "conclusion": "FAIL -- near field is a metric-shaped ceiling (4th mechanism to hit the same wall)",
+    "observations": [
+      "Scale head moved the 1-2m centre 29.2%->32.5% (toward batvision) but d1 fell -0.0076 as the >1.25 tail grew 15.0%->16.1%.",
+      "Fourth mechanism (mae/log_mae/log_huber/scale-head) to hit the identical wall: centring the ratio bulk pushes an offsetting mass past the far +-25% edge.",
+      "Near-field median-pull is a CONFIRMED metric-shaped ceiling -- not loss-, calibration-, resolution-, or smoothness-fixable."
+    ]
   },
   "backlog": [
     {

@@ -551,7 +551,7 @@
     },
     {
       "id": "I30",
-      "status": "probing",
+      "status": "dropped",
       "priority": "high",
       "origin": "the near-field gap is a pure absolute-scale offset (I29)",
       "target_bottleneck": "RayDPT's predictions sit a few percent under the +-25% band centre -- a global scale the model does not self-correct",
@@ -563,7 +563,9 @@
       "main_falsification_condition": "the histogram does not shift, or shifts but d1 does not improve -> the offset is not global/multiplicative and the near field is a genuine ceiling.",
       "budget_risk": "low; a pooling + MLP + scalar, +tiny params.",
       "evidence_required": "near-field interior d1 improvement over E23.",
-      "next_action": "implement a per-image log-scale head; run on the champion, control E23."
+      "next_action": "none. Near field is a confirmed ceiling.",
+      "why_dropped": "SAME cancellation as the loss reshapes. Per-image scale head moved the 1-2m centre 1.0-1.11 from 29.2% to 32.5% (toward batvision's 40.4%) -- so a global multiply DOES shift the histogram as predicted -- but 1-2m interior d1 fell -0.0076, because the over-prediction tail grew 15.0%->16.1%. Exactly log_mae's and log_huber's failure mode: centring the bulk pushes some pixels past the +-25% band on the far side, and the two cancel. Overall composite +0.0220, d1 -0.0080.",
+      "closes_near_field": "This is the FOURTH mechanism to hit the same wall (log_mae, log_huber, scale head, plus mae as baseline). A global multiplicative correction is the cleanest possible way to move a scale offset, and even it cannot convert the histogram shift into d1. The near-field median-pull is a genuine METRIC-SHAPED CEILING: any operation that centres the ratio bulk pushes an offsetting mass past the far threshold edge. It is not fixable by loss, calibration, resolution, or smoothness -- all tested and refuted."
     }
   ],
   "discrepancies": [
