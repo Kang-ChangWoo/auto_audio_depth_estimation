@@ -157,7 +157,11 @@ def build_qualitative(n_scenes=7, out_path=None):
             # RayDPT's dead e5..e8 tail). Extra keys are inert and are dropped loudly. MISSING
             # keys are not: they would silently render a partly-random model as if it were real.
             sd, own = state['state_dict'], model.state_dict()
-            missing = [k for k in own if k not in sd]
+            # Registered CONSTANT buffers (log-depth bins, _log_dmin/_log_span, EchoDelayVolume.bins)
+            # are recomputed at build time and carry no learned state, so a checkpoint predating them
+            # is fine -- exclude them from the missing-key check. Missing LEARNED weights still raise.
+            const_buf = {n for n, _ in model.named_buffers()}
+            missing = [k for k in own if k not in sd and k not in const_buf]
             extra = [k for k in sd if k not in own]
             if missing:
                 raise RuntimeError(f'checkpoint lacks {len(missing)} keys the model needs '
