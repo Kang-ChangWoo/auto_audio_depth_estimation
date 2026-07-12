@@ -169,7 +169,9 @@ def build_qualitative(n_scenes=7, out_path=None):
             if extra:
                 print(f'[report] {label}: dropping {len(extra)} stale checkpoint keys '
                       f'(e.g. {extra[0]})', flush=True)
-            model.load_state_dict({k: v for k, v in sd.items() if k in own})
+            # strict=False: the missing-key guard above already verified all LEARNED weights are
+            # present; constant buffers absent from an older checkpoint are fine (recomputed).
+            model.load_state_dict({k: v for k, v in sd.items() if k in own}, strict=False)
             with torch.no_grad():
                 D = model(specs)['D'][:, 0].cpu().numpy() * MAX_DEPTH
             preds[label] = [D[k] for k in range(len(picks))]
